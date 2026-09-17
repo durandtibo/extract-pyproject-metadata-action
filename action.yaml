@@ -45,7 +45,7 @@ runs:
         EXTRA_VALUES: ${{ inputs.extra-values }}
       run: |
         set -euo pipefail
-        python3 -c "import tomllib" 2>/dev/null || pip install --quiet --disable-pip-version-check tomli
+        python3 -c "import tomllib" 2>/dev/null || python3 -c "import tomli" 2>/dev/null || pip install --quiet --disable-pip-version-check tomli
         metadata=$(python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" "$PYPROJECT_PATH" "$EXTRA_VALUES")
 
         name=$(jq -r '.name' <<< "$metadata")
