@@ -1,0 +1,80 @@
+# Composite action shared by every workflow that needs package metadata from
+# pyproject.toml (build.yaml, test-package-extras.yaml, nightly-package.yaml,
+# test-deps.yaml). Reads the project name, version, and the optional-extras
+# names directly from pyproject.toml's [project] and
+# [project.optional-dependencies] tables instead of a hardcoded/duplicated
+# list, so it can never drift from what `pip install "coola[extra]"` actually
+# installs. Requires the repository to already be checked out and a Python
+# >= 3.11 interpreter (for tomllib) to be available on PATH.
+
+name: Extract pyproject metadata
+description: Read the project name, version, and optional-dependency extra names from pyproject.toml
+
+inputs:
+  pyproject-path:
+    description: Path to pyproject.toml
+    required: false
+    default: pyproject.toml
+  extra-values:
+    description: >
+      JSON array of additional values to prepend to the extras read from
+      pyproject.toml, for callers that need a non-package value in the list
+      too (e.g. '[""]' for a "no extra" baseline, or '["all"]').
+    required: false
+    default: "[]"
+
+outputs:
+  name:
+    description: Project name, as declared in [project].name
+    value: ${{ steps.metadata.outputs.name }}
+  version:
+    description: Project version, as declared in [project].version
+    value: ${{ steps.metadata.outputs.version }}
+  extras:
+    description: JSON array of extra names
+    value: ${{ steps.metadata.outputs.extras }}
+
+runs:
+  using: composite
+  steps:
+    - id: metadata
+      shell: bash
+      env:
+        PYPROJECT_PATH: ${{ inputs.pyproject-path }}
+        EXTRA_VALUES: ${{ inputs.extra-values }}
+      run: |
+        set -euo pipefail
+        metadata=$(python3 - "$PYPROJECT_PATH" "$EXTRA_VALUES" <<'PYEOF'
+        import json
+        import sys
+        import tomllib
+
+        pyproject_path, extra_values = sys.argv[1], sys.argv[2]
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+
+        project = data.get("project", {})
+        try:
+            name = project["name"]
+            version = project["version"]
+        except KeyError as exc:
+            sys.exit(f"pyproject.toml is missing required key [project].{exc.args[0]}")
+
+        extras = sorted(project.get("optional-dependencies", {}).keys())
+
+        print(json.dumps({
+            "name": name,
+            "version": version,
+            "extras": json.loads(extra_values) + extras,
+        }))
+        PYEOF
+        )
+
+        name=$(jq -r '.name' <<< "$metadata")
+        version=$(jq -r '.version' <<< "$metadata")
+        extras=$(jq -c '.extras' <<< "$metadata")
+
+        echo "📦 name=$name version=$version extras=$extras"
+        echo "name=$name" >> "$GITHUB_OUTPUT"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "extras=$extras" >> "$GITHUB_OUTPUT"
