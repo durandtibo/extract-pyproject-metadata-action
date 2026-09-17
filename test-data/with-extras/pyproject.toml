@@ -1,0 +1,7 @@
+[project]
+name = "coola"
+version = "1.2.3"
+
+[project.optional-dependencies]
+pandas = ["pandas"]
+numpy = ["numpy"]
