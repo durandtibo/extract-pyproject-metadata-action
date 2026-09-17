@@ -127,6 +127,34 @@ def test_extract_metadata_invalid_toml(tmp_path: Path) -> None:
         extract_metadata(str(path), "[]")
 
 
+def test_extract_metadata_invalid_extra_values_json(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "coola"
+        version = "1.2.3"
+        """,
+    )
+
+    with pytest.raises(MetadataError, match="not valid JSON"):
+        extract_metadata(str(path), "not json")
+
+
+def test_extract_metadata_extra_values_not_a_list(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "coola"
+        version = "1.2.3"
+        """,
+    )
+
+    with pytest.raises(MetadataError, match="must be a JSON array"):
+        extract_metadata(str(path), '{"not": "a list"}')
+
+
 def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
