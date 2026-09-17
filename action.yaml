@@ -4,8 +4,9 @@
 # names directly from pyproject.toml's [project] and
 # [project.optional-dependencies] tables instead of a hardcoded/duplicated
 # list, so it can never drift from what `pip install "coola[extra]"` actually
-# installs. Requires the repository to already be checked out and a Python
-# >= 3.11 interpreter (for tomllib) to be available on PATH.
+# installs. Requires the repository to already be checked out and a Python 3
+# interpreter to be available on PATH; on Python < 3.11 (no stdlib tomllib)
+# it installs the "tomli" backport on the fly.
 
 name: Extract pyproject metadata
 description: Read the project name, version, and optional-dependency extra names from pyproject.toml
@@ -44,6 +45,7 @@ runs:
         EXTRA_VALUES: ${{ inputs.extra-values }}
       run: |
         set -euo pipefail
+        python3 -c "import tomllib" 2>/dev/null || pip install --quiet --disable-pip-version-check tomli
         metadata=$(python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" "$PYPROJECT_PATH" "$EXTRA_VALUES")
 
         name=$(jq -r '.name' <<< "$metadata")
