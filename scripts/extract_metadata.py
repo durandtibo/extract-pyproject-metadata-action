@@ -59,7 +59,16 @@ def extract_metadata(pyproject_path: str, extra_values_json: str) -> dict:
         raise MetadataError(msg) from exc
 
     extras = sorted(project.get("optional-dependencies", {}).keys())
-    extra_values = json.loads(extra_values_json)
+
+    try:
+        extra_values = json.loads(extra_values_json)
+    except json.JSONDecodeError as exc:
+        msg = f"extra-values is not valid JSON: {extra_values_json!r}"
+        raise MetadataError(msg) from exc
+
+    if not isinstance(extra_values, list):
+        msg = f"extra-values must be a JSON array, got: {extra_values_json!r}"
+        raise MetadataError(msg)
 
     return {"name": name, "version": version, "extras": extra_values + extras}
 

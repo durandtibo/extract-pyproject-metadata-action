@@ -107,3 +107,23 @@ jobs:
             exit 1
           fi
           print_success "missing file correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 6: invalid extra-values JSON should fail the step
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test invalid extra-values (should fail)
+        id: test-invalid-extra-values
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          extra-values: "not json"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid extra-values fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-extra-values.outcome }}" = "success" ]; then
+            print_error "Invalid extra-values should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid extra-values correctly failed"
