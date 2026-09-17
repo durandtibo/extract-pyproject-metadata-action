@@ -1,0 +1,74 @@
+name: Test Stable Action
+
+on:
+  workflow_call:
+  workflow_dispatch: # to trigger manually
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 2
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # -----------------------------------------------------------------------
+      # Test 1: minimal pyproject.toml (no extras)
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test minimal pyproject.toml
+        id: test-minimal
+        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify minimal pyproject.toml
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-minimal.outputs.name }}"
+          assert_equal "version" "0.1.0" "${{ steps.test-minimal.outputs.version }}"
+          assert_equal "extras" "[]" '${{ steps.test-minimal.outputs.extras }}'
+          print_success "minimal pyproject.toml test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 2: pyproject.toml with optional-dependencies
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test pyproject.toml with extras
+        id: test-extras
+        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+        with:
+          pyproject-path: test-data/with-extras/pyproject.toml
+
+      - name: ✓ Verify extras
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "coola" "${{ steps.test-extras.outputs.name }}"
+          assert_equal "version" "1.2.3" "${{ steps.test-extras.outputs.version }}"
+          assert_equal "extras" '["numpy","pandas"]' '${{ steps.test-extras.outputs.extras }}'
+          print_success "extras test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 3: missing required key should fail the step
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test missing version (should fail)
+        id: test-missing-version
+        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+        with:
+          pyproject-path: test-data/missing-version/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify missing version fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-missing-version.outcome }}" = "success" ]; then
+            print_error "Missing version should cause the step to fail"
+            exit 1
+          fi
+          print_success "missing version correctly failed"
