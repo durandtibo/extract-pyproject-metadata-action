@@ -6,8 +6,9 @@ these values straight from `[project]` and `[project.optional-dependencies]`
 keeps downstream workflows (build, test matrices, publish steps, ...) from
 drifting out of sync with what `pip install` actually installs.
 
-Requires the repository to already be checked out and a Python >= 3.11
-interpreter (for `tomllib`) available on `PATH`.
+Requires the repository to already be checked out and a Python 3 interpreter
+available on `PATH`. On Python < 3.11 (no stdlib `tomllib`), the action
+installs the `tomli` backport on the fly.
 
 ## Usage
 
