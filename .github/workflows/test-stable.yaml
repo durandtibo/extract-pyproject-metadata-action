@@ -45,7 +45,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: 🧪 Test minimal pyproject.toml
         id: test-minimal
-        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+        uses: durandtibo/extract-pyproject-metadata-action@v0.2
         with:
           pyproject-path: test-data/minimal/pyproject.toml
 
@@ -62,7 +62,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: 🧪 Test pyproject.toml with extras
         id: test-extras
-        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+        uses: durandtibo/extract-pyproject-metadata-action@v0.2
         with:
           pyproject-path: test-data/with-extras/pyproject.toml
 
@@ -79,7 +79,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: 🧪 Test missing version (should fail)
         id: test-missing-version
-        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+        uses: durandtibo/extract-pyproject-metadata-action@v0.2
         with:
           pyproject-path: test-data/missing-version/pyproject.toml
         continue-on-error: true
