@@ -68,7 +68,7 @@ fixtures used by the integration workflows.
 - Cover typical inputs, edge cases (empty, duplicates, missing keys), and error
   conditions. Assert whole outputs against a literal (`assert result == {...}`).
 - The integration workflows (`.github/workflows/test-local.yaml` with `uses:
-  ./`, and `test-stable.yaml` with the last release) check only the wiring,
+./`, and `test-stable.yaml` with the last release) check only the wiring,
   using `scripts/test-helper.sh` and the fixtures in `test-data/`. Keep the two
   files identical except for the name and the `uses:` line, and add a job for
   every new input or output. A job that tests something added after the latest
