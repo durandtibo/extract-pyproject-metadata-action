@@ -5,14 +5,15 @@ Usage:
         <extra-values-json> [<dependencies-json>]
 
 Without ``--github-output``, prints a single JSON object to stdout:
-    {"name": ..., "version": ..., "extras": [...], "dependency_specifiers": {...},
-     "warnings": [...]}
+    {"name": ..., "normalized_name": ..., "version": ..., "extras": [...],
+     "dependency_specifiers": {...}, "warnings": [...]}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``version``, ``extras`` and ``dependency-specifiers`` to
+outputs ``name``, ``normalized-name``, ``version``, ``extras`` and
+``dependency-specifiers`` to
 FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that values may
 contain line breaks) and prints to stdout one ``::warning file=<path>::``
 workflow command per warning, where ``<path>`` is the pyproject path, so that
@@ -90,7 +91,8 @@ def extract_metadata(
             when the version is dynamic).
 
     Returns:
-        A dict with keys ``name``, ``version``, and ``extras``. ``version`` is
+        A dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
+        ``version``, and ``extras``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``extras``
         lists the ``extra_values`` first, then the extras sorted by normalized
@@ -176,6 +178,7 @@ def extract_metadata(
         unique_extras.setdefault(canonicalize_name(extra), extra)
     return {
         "name": name,
+        "normalized_name": canonicalize_name(name),
         "version": version,
         "extras": list(unique_extras.values()),
     }
@@ -427,8 +430,9 @@ def format_outputs(metadata: dict) -> dict[str, str]:
     """Convert the metadata dict into the string outputs of the action.
 
     Args:
-        metadata: The dict built by ``main``, with keys ``name``, ``version``,
-            ``extras`` and ``dependency_specifiers``.
+        metadata: The dict built by ``main``, with keys ``name``,
+            ``normalized_name``, ``version``, ``extras`` and
+            ``dependency_specifiers``.
 
     Returns:
         A dict mapping each output name of ``action.yaml`` to its value, with
@@ -436,6 +440,7 @@ def format_outputs(metadata: dict) -> dict[str, str]:
     """
     return {
         "name": metadata["name"],
+        "normalized-name": metadata["normalized_name"],
         "version": metadata["version"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "dependency-specifiers": json.dumps(
