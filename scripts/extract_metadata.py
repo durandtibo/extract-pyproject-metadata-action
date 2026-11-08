@@ -622,16 +622,44 @@ def parse_python_candidates(raw: str) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
+def _patch_releases(specifier: SpecifierSet, candidate: str) -> set[int]:
+    """Return the patch numbers of ``candidate`` that are worth testing against ``specifier``.
+
+    The first release (``0``) and a very late one (``9999``) are always tested.
+    A patch number that a specifier names for the same "major.minor" (as in
+    ``==3.12.3``, ``>3.12.5`` or ``~=3.12.3``) is tested too, with the previous
+    and the next one, so that the bounds of the allowed range are found
+    whichever operator is used.
+
+    Args:
+        specifier: The parsed ``requires-python``.
+        candidate: A "major.minor" version, such as ``"3.12"``.
+
+    Returns:
+        The patch numbers to test.
+    """
+    patches = {0, 9999}
+    major, minor = (int(part) for part in candidate.split("."))
+    for item in specifier:
+        try:
+            release = Version(item.version).release
+        except InvalidVersion:  # a wildcard such as "3.12.*" has no bound to find
+            continue
+        if len(release) >= 3 and release[:2] == (major, minor):
+            patches.update({max(release[2] - 1, 0), release[2], release[2] + 1})
+    return patches
+
+
 def compatible_python_versions(
     requires_python: str, candidates: list[str], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
     """Select the candidate Python versions that ``requires-python`` allows.
 
     A "major.minor" candidate is allowed when some release of it can satisfy the
-    specifier. This is checked on the first release (``X.Y.0``) and on a very
-    late one (``X.Y.9999``), so ``>=3.10.2`` and ``<3.12.5`` allow ``3.10`` and
-    ``3.12``. A specifier that only some other patch releases satisfy (such as
-    ``==3.12.3``) is not detected.
+    specifier. This is checked on the first release (``X.Y.0``), on a very late
+    one (``X.Y.9999``) and around each patch number that the specifier names
+    for the candidate (see ``_patch_releases``), so ``>=3.10.2`` and ``<3.12.5``
+    allow ``3.10`` and ``3.12``, and ``==3.12.3`` allows ``3.12`` only.
 
     Args:
         requires_python: ``[project].requires-python`` as written, or an empty
@@ -659,7 +687,10 @@ def compatible_python_versions(
     versions = [
         candidate
         for candidate in candidates
-        if any(specifier.contains(f"{candidate}.{patch}") for patch in (0, 9999))
+        if any(
+            specifier.contains(f"{candidate}.{patch}")
+            for patch in sorted(_patch_releases(specifier, candidate))
+        )
     ]
     return versions, []
 

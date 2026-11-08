@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from packaging.specifiers import SpecifierSet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -2024,10 +2025,36 @@ CANDIDATES = ["3.9", "3.10", "3.11", "3.12", "3.13"]
         ("!=3.12.*", ["3.9", "3.10", "3.11", "3.13"]),
         (">=3.14", []),
         (">=3", CANDIDATES),
+        ("==3.12.3", ["3.12"]),
+        ("===3.12.3", ["3.12"]),
+        ("==3.12.3,!=3.12.0", ["3.12"]),
+        ("~=3.12.3", ["3.12"]),
+        (">3.12.5,<3.12.7", ["3.12"]),
+        (">3.12.5,<3.12.6", []),
+        (">=3.11.4,<=3.11.4", ["3.11"]),
+        ("<3.9.0", []),
+        ("==3.12.*,!=3.12.3", ["3.12"]),
     ],
 )
 def test_compatible_python_versions(requires_python: str, expected: list[str]) -> None:
     assert compatible_python_versions(requires_python, CANDIDATES) == (expected, [])
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "candidate", "expected"),
+    [
+        (">=3.10", "3.10", {0, 9999}),
+        ("==3.12.3", "3.12", {0, 2, 3, 4, 9999}),
+        ("==3.12.3", "3.11", {0, 9999}),
+        (">3.12.0,<3.12.2", "3.12", {0, 1, 2, 3, 9999}),
+        ("==3.12.*", "3.12", {0, 9999}),
+        ("==3.12", "3.12", {0, 9999}),
+        ("===3.12.3", "3.12", {0, 2, 3, 4, 9999}),
+        ("==3.120.3", "3.12", {0, 9999}),
+    ],
+)
+def test_patch_releases(requires_python: str, candidate: str, expected: set[int]) -> None:
+    assert extract_metadata_module._patch_releases(SpecifierSet(requires_python), candidate) == expected
 
 
 def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
