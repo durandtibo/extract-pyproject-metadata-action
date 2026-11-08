@@ -43,8 +43,7 @@ inputs:
   fail-on-missing:
     description: >
       Set to "true" to fail when a package listed in dependencies is not found,
-      instead of reporting it as null in dependency-specifiers ("true" or
-      "false"; the case and surrounding spaces are ignored)
+      instead of reporting it as null in dependency-specifiers ("true" or "false")
     default: "false"
 
   python-candidates:
@@ -56,15 +55,13 @@ inputs:
   fail-on-dynamic-version:
     description: >
       Set to "true" to fail when the version is listed in [project].dynamic,
-      instead of reporting an empty version with a warning ("true" or "false";
-      the case and surrounding spaces are ignored)
+      instead of reporting an empty version with a warning ("true" or "false")
     default: "false"
 
   strict:
     description: >
       Set to "true" to fail when there is any warning, instead of only
-      reporting it ("true" or "false"; the case and surrounding spaces are
-      ignored)
+      reporting it ("true" or "false")
     default: "false"
 
   python-executable:
@@ -77,8 +74,7 @@ inputs:
   step-summary:
     description: >
       Set to "true" to also write the outputs and the warnings to the job
-      summary of the workflow run ("true" or "false"; the case and surrounding
-      spaces are ignored)
+      summary of the workflow run ("true" or "false")
     default: "false"
 
 outputs:
