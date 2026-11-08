@@ -256,3 +256,25 @@ jobs:
           assert_equal "requires-python" ">=3.10,<4" '${{ steps.test-requires-python.outputs.requires-python }}'
           assert_equal "requires-python" "" '${{ steps.test-no-requires-python.outputs.requires-python }}'
           print_success "requires-python test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 13: groups output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test groups output
+        id: test-groups
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+
+      - name: 🧪 Test groups output without dependency groups
+        id: test-no-groups
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify groups
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "groups" '["base","dev"]' '${{ steps.test-groups.outputs.groups }}'
+          assert_equal "groups" '[]' '${{ steps.test-no-groups.outputs.groups }}'
+          print_success "groups test passed"

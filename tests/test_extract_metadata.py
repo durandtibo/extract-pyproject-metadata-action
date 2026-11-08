@@ -83,7 +83,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
 
     metadata = extract(path)
 
-    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "1.2.3", "requires_python": "", "extras": []}
+    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "1.2.3", "requires_python": "", "extras": [], "groups": []}
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -221,14 +221,14 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
 
     metadata = extract_metadata(load_pyproject(str(path)), "[]", str(path), warnings)
 
-    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": []}
+    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
 
 def test_extract_metadata_dynamic_version_without_warnings_list(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
 
-    assert extract(path) == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": []}
+    assert extract(path) == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
 
 
 def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> None:
@@ -275,6 +275,7 @@ def test_main_dynamic_version_warning_in_json(
         "version": "",
         "requires_python": "",
         "extras": [],
+        "groups": [],
         "dependency_specifiers": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
     }
@@ -385,6 +386,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "version": "1.2.3",
         "requires_python": "",
         "extras": [],
+        "groups": [],
         "dependency_specifiers": {},
         "warnings": [],
     }
@@ -453,6 +455,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "version": "1.2.3",
         "requires_python": "",
         "extras": ["", "numpy"],
+        "groups": [],
         "dependency_specifiers": {},
         "warnings": [],
     }
@@ -609,6 +612,7 @@ METADATA = {
     "version": "1.2.3",
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
+    "groups": ["dev", "test"],
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "warnings": [],
 }
@@ -621,6 +625,7 @@ def test_format_outputs() -> None:
         "version": "1.2.3",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
+        "groups": '["dev","test"]',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
     }
 
@@ -739,6 +744,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "version": "1",
         "requires-python": "",
         "extras": '["","a"]',
+        "groups": '["base","dev","other"]',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
@@ -812,6 +818,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "version": "1.2.3",
         "requires-python": "",
         "extras": '["","numpy"]',
+        "groups": "[]",
         "dependency-specifiers": "{}",
     }
     assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'
@@ -836,6 +843,7 @@ def test_main_github_output_multiline_name_cannot_inject_outputs_or_commands(
         "version": "1",
         "requires-python": "",
         "extras": "[]",
+        "groups": "[]",
         "dependency-specifiers": "{}",
     }
     assert captured.out == '📦 name=evil\\n::error::boom\\nversion=hacked version=1 extras=[]\n'
@@ -1031,6 +1039,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "version": "1.2.3",
         "requires_python": "",
         "extras": [],
+        "groups": [],
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
     }
@@ -1651,3 +1660,100 @@ def test_main_json_requires_python(tmp_path: Path, capsys: pytest.CaptureFixture
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["requires_python"] == ">=3.10"
+
+
+GROUPS_TOML = """
+[project]
+name = "p"
+version = "1"
+
+[dependency-groups]
+test = ["pytest"]
+Dev = ["ruff"]
+docs = []
+"""
+
+
+def test_extract_metadata_groups_are_sorted(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, GROUPS_TOML)
+
+    assert extract(path)["groups"] == ["Dev", "docs", "test"]
+
+
+def test_extract_metadata_groups_default_to_empty(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "1"\n')
+
+    assert extract(path)["groups"] == []
+
+
+def test_extract_metadata_groups_empty_table(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\n')
+
+    assert extract(path)["groups"] == []
+
+
+@pytest.mark.parametrize(
+    ("groups", "expected"),
+    [
+        ('Foo_Bar = []\n"foo-bar" = []', ["Foo_Bar"]),
+        ('"foo-bar" = []\nFoo_Bar = []', ["foo-bar"]),
+        ('b = []\nA = []\nc = []', ["A", "b", "c"]),
+    ],
+)
+def test_extract_metadata_groups_are_deduplicated_per_pep_503(
+    tmp_path: Path, groups: str, expected: list[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, f'[project]\nname = "p"\nversion = "1"\n[dependency-groups]\n{groups}\n'
+    )
+
+    assert extract(path)["groups"] == expected
+
+
+def test_extract_metadata_groups_are_not_mixed_with_extras(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "p"
+        version = "1"
+
+        [project.optional-dependencies]
+        numpy = []
+
+        [dependency-groups]
+        dev = []
+        """,
+    )
+
+    metadata = extract(path, '["all"]')
+
+    assert metadata["extras"] == ["all", "numpy"]
+    assert metadata["groups"] == ["dev"]
+
+
+@pytest.mark.parametrize("value", ["[]", '["dev"]', '"dev"', "1"])
+def test_extract_metadata_groups_must_be_a_table(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(
+        tmp_path, f'dependency-groups = {value}\n[project]\nname = "p"\nversion = "1"\n'
+    )
+
+    with pytest.raises(MetadataError, match=r"\[dependency-groups\] must be a table, got: "):
+        extract(path)
+
+
+def test_main_github_output_groups(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, GROUPS_TOML)
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+
+    assert exit_code == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["groups"] == '["Dev","docs","test"]'
+
+
+def test_main_json_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, GROUPS_TOML)
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["groups"] == ["Dev", "docs", "test"]
