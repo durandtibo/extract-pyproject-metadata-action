@@ -133,15 +133,6 @@ UTF8_BOM = b"\xef\xbb\xbf"
 _MAX_INCLUDE_DEPTH = 100
 _MAX_GROUP_EXPANSIONS = 10_000
 
-# The UTF-8 byte order mark that some editors write at the start of a file.
-UTF8_BOM = b"\xef\xbb\xbf"
-
-# Limits that turn a pathological dependency-groups table into an error instead of a Python
-# traceback (include-group chain deeper than the recursion limit) or a run that never ends
-# (a group that includes the same group twice, 25 levels deep, expands to 2**25 entries).
-_MAX_INCLUDE_DEPTH = 100
-_MAX_GROUP_EXPANSIONS = 10_000
-
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
 
