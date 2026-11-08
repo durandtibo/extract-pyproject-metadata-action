@@ -464,6 +464,47 @@ def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
     assert captured.err == ""
 
 
+INVALID_TOML = """
+[project]
+name = "p"
+version = "1"
+dependencies = ["good>=1", "bad requirement!!"]
+
+[project.optional-dependencies]
+a = ["also bad>>"]
+
+[dependency-groups]
+dev = ["oops==", "dev-pkg>=2"]
+"""
+
+
+def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, INVALID_TOML)
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(
+        load_pyproject(str(path)), '["good", "dev-pkg", "missing"]', str(path), warnings
+    )
+
+    assert result == {"good": ">=1", "dev-pkg": ">=2", "missing": None}
+    assert len(warnings) == 3
+    assert warnings[0].startswith(f"Ignoring invalid requirement 'bad requirement!!' in {path}: ")
+    assert warnings[1].startswith(f"Ignoring invalid requirement 'also bad>>' in {path}: ")
+    assert warnings[2].startswith(f"Ignoring invalid requirement 'oops==' in {path}: ")
+
+
+def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(tmp_path, INVALID_TOML)
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
+
+    assert result == {}
+    assert warnings == []
+
+
 @pytest.mark.parametrize("value", ["nope", '{"a": 1}', "[1]"])
 def test_dependency_invalid_input(tmp_path: Path, value: str) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)

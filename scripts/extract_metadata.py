@@ -186,7 +186,10 @@ def extract_dependency_specifiers(
         pyproject_path: Path of the file ``data`` was read from, used only in
             warning messages.
         warnings: List to which warning messages are appended (for example
-            when a package has different specifiers in several places).
+            when a package has different specifiers in several places, or a
+            requirement string cannot be parsed and is ignored). Invalid
+            requirements are only reported when ``dependencies_json`` is not
+            empty.
 
     Returns:
         A dict mapping each requested package name to its specifier, ``""`` if
@@ -200,7 +203,11 @@ def extract_dependency_specifiers(
     for raw in _candidate_requirements(data):
         try:
             req = Requirement(raw)
-        except InvalidRequirement:
+        except InvalidRequirement as exc:
+            # Only worth a warning when the caller looks something up: it may
+            # be the very entry that was meant to be found.
+            if deps and warnings is not None:
+                warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
             continue
         found.setdefault(canonicalize_name(req.name), []).append(str(req.specifier))
 
