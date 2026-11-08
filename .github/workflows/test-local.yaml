@@ -278,3 +278,55 @@ jobs:
           assert_equal "groups" '["base","dev"]' '${{ steps.test-groups.outputs.groups }}'
           assert_equal "groups" '[]' '${{ steps.test-no-groups.outputs.groups }}'
           print_success "groups test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 14: fail-on-missing input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test fail-on-missing with all dependencies found
+        id: test-fail-on-missing-found
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["invoke-tasklib","nospec"]'
+          fail-on-missing: "true"
+
+      - name: ✓ Verify fail-on-missing succeeds when all dependencies are found
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "dependency-specifiers" '{"invoke-tasklib":"<1.0.0,>=0.0.8","nospec":""}' '${{ steps.test-fail-on-missing-found.outputs.dependency-specifiers }}'
+          print_success "fail-on-missing (all found) test passed"
+
+      - name: 🧪 Test fail-on-missing with a missing dependency (should fail)
+        id: test-fail-on-missing
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["invoke-tasklib","missing"]'
+          fail-on-missing: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify fail-on-missing fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-fail-on-missing.outcome }}" = "success" ]; then
+            print_error "A missing dependency with fail-on-missing should cause the step to fail"
+            exit 1
+          fi
+          print_success "fail-on-missing correctly failed"
+
+      - name: 🧪 Test invalid fail-on-missing (should fail)
+        id: test-invalid-fail-on-missing
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          fail-on-missing: "maybe"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid fail-on-missing fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-fail-on-missing.outcome }}" = "success" ]; then
+            print_error "Invalid fail-on-missing should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid fail-on-missing correctly failed"
