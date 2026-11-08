@@ -4,7 +4,8 @@
 
 This repository is a GitHub composite action (`action.yaml`) that reads the
 project name, version, extra names and dependency specifiers from a
-`pyproject.toml`. The logic lives in `scripts/extract_metadata.py`; the action
+`pyproject.toml`. The logic lives in the package `src/extract_pyproject_metadata/`, started by
+`scripts/run.sh` through the launcher `scripts/extract_metadata.py`; the action
 only wires its inputs and outputs. `test-data/` holds the `pyproject.toml`
 fixtures used by the integration workflows.
 
@@ -12,7 +13,7 @@ fixtures used by the integration workflows.
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
   `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
-  `.venv/bin/pytest`, `.venv/bin/ruff check scripts tests` (must pass),
+  `.venv/bin/pytest`, `.venv/bin/ruff check src scripts tests` (must pass),
   `.venv/bin/mypy` (strict, must pass).
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
@@ -45,7 +46,7 @@ fixtures used by the integration workflows.
 - Every `run:` step sets `shell: bash` (required in composite actions).
 - Pin every third-party action to a commit SHA or the major tag already used in
   the repository's workflows; do not use a branch.
-- Keep the logic in `scripts/extract_metadata.py` and `scripts/run.sh` (which
+- Keep the logic in `src/extract_pyproject_metadata/` and `scripts/run.sh` (which
   installs the requirements if needed and starts the script), not inline in
   `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
 
@@ -67,8 +68,8 @@ fixtures used by the integration workflows.
   `README.md` agree with the script). Put a new test in the module of its area.
   Write one for every new or changed function, including private ones, and for
   every bug fixed (check that it fails without the fix).
-- Shared builders and constants are in `tests/helpers.py`, fixtures and the
-  import path of `scripts/` in `tests/conftest.py`.
+- Shared builders and constants are in `tests/helpers.py`, fixtures in `tests/conftest.py`. The import path of `src/` is the `pythonpath` of
+  `pyproject.toml`.
 - Build `pyproject.toml` contents with `tmp_path` and `write_pyproject`; no
   network, no sleeps.
 - One behaviour per test, with `pytest.mark.parametrize` for the same check on

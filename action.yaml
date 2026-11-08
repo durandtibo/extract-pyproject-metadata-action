@@ -5,7 +5,7 @@
 # matrices, publish steps, ...) from drifting out of sync with what
 # `pip install` actually installs.
 #
-# The logic lives in scripts/extract_metadata.py, started by scripts/run.sh
+# The logic lives in the package src/extract_pyproject_metadata, started by scripts/run.sh
 # (which installs its requirements if needed); this file only wires the inputs
 # to the scripts and their output to the action outputs. Requires the
 # repository to already be checked out and a Python 3.11+ interpreter to be

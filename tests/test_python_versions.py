@@ -5,7 +5,10 @@
 from pathlib import Path
 
 import pytest
-from extract_metadata import (
+from helpers import CANDIDATES, README_PATH, extract, write_pyproject
+from packaging.specifiers import SpecifierSet
+
+from extract_pyproject_metadata.cli import (
     DEFAULT_PYTHON_CANDIDATES,
     MetadataError,
     compatible_python_versions,
@@ -13,8 +16,6 @@ from extract_metadata import (
     lowest_python_version,
     parse_python_candidates,
 )
-from helpers import CANDIDATES, README_PATH, extract, write_pyproject
-from packaging.specifiers import SpecifierSet
 
 
 @pytest.mark.parametrize("requires_python", [">=3.10", ">=3.10,<4", "~=3.9", "==3.*", ">= 3.10", ""])

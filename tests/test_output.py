@@ -5,9 +5,20 @@
 import json
 from pathlib import Path
 
-import extract_metadata as extract_metadata_module
 import pytest
-from extract_metadata import (
+from helpers import (
+    ACTION_PATH,
+    DEPS_TOML,
+    METADATA,
+    README_PATH,
+    _action_section_keys,
+    parse_args,
+    parse_github_output,
+    write_pyproject,
+)
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
     MetadataError,
     Report,
     build_report,
@@ -20,16 +31,6 @@ from extract_metadata import (
     main,
     write_github_output,
     write_step_summary,
-)
-from helpers import (
-    ACTION_PATH,
-    DEPS_TOML,
-    METADATA,
-    README_PATH,
-    _action_section_keys,
-    parse_args,
-    parse_github_output,
-    write_pyproject,
 )
 
 

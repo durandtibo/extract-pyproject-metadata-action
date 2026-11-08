@@ -8,16 +8,12 @@ from __future__ import annotations
 
 import json
 import re
-import sys
-from pathlib import Path
 
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from extract_metadata import (
+from extract_pyproject_metadata.cli import (
     MetadataError,
     compatible_python_versions,
     escape_annotation,

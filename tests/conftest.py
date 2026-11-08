@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-import extract_metadata as extract_metadata_module
+import extract_pyproject_metadata.cli as extract_metadata_module
 
 
 @pytest.fixture
