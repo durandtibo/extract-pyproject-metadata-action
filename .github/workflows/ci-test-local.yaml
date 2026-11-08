@@ -626,6 +626,16 @@ jobs:
           assert_equal "authors" '[]' '${{ steps.test-no-project-fields.outputs.authors }}'
           print_success "authors test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 24: urls output
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify urls
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "urls" '{"Homepage":"https://example.com","Source Code":"https://example.com/src"}' '${{ steps.test-project-fields.outputs.urls }}'
+          assert_equal "urls" '{}' '${{ steps.test-no-project-fields.outputs.urls }}'
+          print_success "urls test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

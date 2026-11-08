@@ -109,6 +109,11 @@ outputs:
       JSON array of the authors of [project].authors, each an object with the
       name and the email it has ("[]" if none)
     value: ${{ steps.metadata.outputs.authors }}
+  urls:
+    description: >
+      JSON object mapping each label of [project.urls] to its URL ("{}" if
+      none)
+    value: ${{ steps.metadata.outputs.urls }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty

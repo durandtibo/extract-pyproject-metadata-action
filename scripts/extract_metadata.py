@@ -14,7 +14,7 @@ Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
      "description": ..., "readme": ..., "license": ...,
-     "authors": [...],
+     "authors": [...], "urls": {...},
      "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
@@ -24,7 +24,7 @@ characters are kept as they are, as in the action outputs):
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``license``, ``authors``, ``requires-python``,
+outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires-python``,
 ``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
@@ -115,6 +115,7 @@ class Metadata(TypedDict):
     readme: str
     license: str
     authors: list[dict[str, str]]
+    urls: dict[str, str]
     requires_python: str
     extras: list[str]
     groups: list[str]
@@ -187,7 +188,7 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``authors``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value (so is ``normalized_version``,
         the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
@@ -199,7 +200,8 @@ def extract_metadata(
         SPDX expression of ``[project].license`` or the ``text`` of its table, or an empty
         string if there is none or the license is a ``file``. ``authors`` is the list of
         the authors of ``[project].authors`` (``name`` and ``email`` only), empty if
-        there is none. ``extras`` lists the ``extra_values`` first, then the
+        there is none. ``urls`` maps the labels of ``[project.urls]`` to their URLs, in
+        the order of the file, and is empty if there is none. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
@@ -216,7 +218,7 @@ def extract_metadata(
             ``description`` or ``requires-python`` that is not a string, a ``readme`` that
             is neither a string nor a table with a string ``file``, a ``license`` that
             is neither a string nor a table with a string ``text`` and ``file``, an
-            ``authors`` that is not an array of tables with string ``name`` and ``email``, an
+            ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` that is not a table of strings, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
@@ -289,6 +291,7 @@ def extract_metadata(
     readme = _readme_path(project.get("readme", ""), pyproject_path)
     license_ = _license_text(project.get("license", ""), pyproject_path)
     authors = _authors(project.get("authors", []), pyproject_path)
+    urls = _urls(project, pyproject_path)
 
     requires_python = project.get("requires-python", "")
     if not isinstance(requires_python, str):
@@ -325,6 +328,7 @@ def extract_metadata(
         readme=readme,
         license=license_,
         authors=authors,
+        urls=urls,
         requires_python=requires_python,
         extras=list(unique_extras.values()),
         groups=groups,
@@ -424,6 +428,29 @@ def _authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
             entry[key] = author[key]
         result.append(entry)
     return result
+
+
+def _urls(project: dict[str, Any], pyproject_path: str) -> dict[str, str]:
+    """Return the project URLs of ``[project.urls]``.
+
+    Args:
+        project: The ``[project]`` table.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        The label of each URL and the URL, as written and in the order of the
+        file. Empty if there is no ``[project.urls]``.
+
+    Raises:
+        MetadataError: If ``[project.urls]`` is not a table or a URL is not a
+            string.
+    """
+    urls = _get_table(project, "urls", "[project.urls]", pyproject_path)
+    for label, url in urls.items():
+        if not isinstance(url, str):
+            msg = f"{pyproject_path}: [project.urls].{label} must be a string, got: {url!r}"
+            raise MetadataError(msg)
+    return dict(urls)
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -1066,6 +1093,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "readme": metadata["readme"],
         "license": metadata["license"],
         "authors": json.dumps(metadata["authors"], separators=(",", ":"), ensure_ascii=False),
+        "urls": json.dumps(metadata["urls"], separators=(",", ":"), ensure_ascii=False),
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),
