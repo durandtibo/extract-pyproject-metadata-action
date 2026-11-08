@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import runpy
 import subprocess
 import sys
 import types
@@ -2432,3 +2433,38 @@ def test_tomllib_is_preferred_over_tomli_when_available(monkeypatch: pytest.Monk
     module = _load_script_as("extract_metadata_with_tomllib")
 
     assert module.tomllib is fake_tomllib
+
+
+def test_running_the_script_as_main_exits_with_the_code_of_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    output = tmp_path / "github_output"
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
+
+    assert exc_info.value.code == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["name"] == "coola"
+    assert capsys.readouterr().out.startswith("📦 name=coola version=1.2.3 ")
+
+
+def test_running_the_script_as_main_exits_with_one_on_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py", str(tmp_path / "missing.toml"), "[]"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
+
+    assert exc_info.value.code == 1
+    assert "missing.toml" in capsys.readouterr().err
+
+
+def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])  # would exit with usage if main() ran
+
+    module = _load_script_as("extract_metadata_imported")
+
+    assert module.__name__ == "extract_metadata_imported"
