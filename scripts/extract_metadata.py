@@ -120,8 +120,12 @@ from packaging.version import InvalidVersion, Version
 try:
     from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 except ImportError:  # packaging before 24.2 cannot validate license expressions
-    InvalidLicenseExpression = None
-    canonicalize_license_expression = None
+    # Only the None checks of ``_license_warnings`` use these names without the import.
+    InvalidLicenseExpression = None  # type: ignore[assignment,misc]
+    canonicalize_license_expression = None  # type: ignore[assignment]
+
+# The UTF-8 byte order mark that some editors write at the start of a file.
+UTF8_BOM = b"\xef\xbb\xbf"
 
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
@@ -202,7 +206,8 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         pyproject_path: Path to the pyproject.toml file.
 
     Returns:
-        The parsed TOML document.
+        The parsed TOML document. A UTF-8 byte order mark at the start of the
+        file is ignored.
 
     Raises:
         MetadataError: If the file is missing, cannot be read (for example for
@@ -214,7 +219,9 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         raise MetadataError(msg)
     try:
         with path.open("rb") as f:
-            return tomllib.load(f)
+            content = f.read()
+        # Some editors (on Windows) start a UTF-8 file with a byte order mark, which TOML rejects.
+        return tomllib.loads(content.removeprefix(UTF8_BOM).decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
         msg = f"{pyproject_path} is not valid TOML: {exc}"
         raise MetadataError(msg) from exc
@@ -481,7 +488,7 @@ def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tup
         MetadataError: If ``version`` is not a string, or a static version is
             not a valid PEP 440 version.
     """
-    _check_str(version, "[project].version", pyproject_path)
+    version = _check_str(version, "[project].version", pyproject_path)
     if not is_static:
         return version, ""
     try:

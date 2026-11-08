@@ -301,7 +301,8 @@ The action's step fails (non-zero exit) when:
   or older than `23.0` and cannot be installed (for example, no access to a package index).
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
-  permission).
+  permission). A UTF-8 byte order mark at the start of the file is accepted and ignored
+  (it used to fail with `Invalid statement (at line 1, column 1)`).
 - The outputs (`$GITHUB_OUTPUT`) or, with `step-summary`, the job summary
   (`$GITHUB_STEP_SUMMARY`) cannot be written. These used to end with a Python
   traceback, like the unreadable file.
