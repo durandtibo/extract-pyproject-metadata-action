@@ -113,6 +113,11 @@ DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
 # also match before a trailing line break.
 _MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
 
+# The patch numbers that ``compatible_python_versions`` tries for each "major.minor" candidate: every
+# real release (CPython patch numbers stay below 100) and a very late one, for the specifiers that
+# have no upper bound.
+_PATCH_RELEASES = (*range(100), 9999)
+
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit. Always used with ``fullmatch``.
 _VALID_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
@@ -933,53 +938,18 @@ def parse_python_candidates(raw: str) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
-def _patch_releases(specifier: SpecifierSet, candidate: str) -> set[int]:
-    """Return the patch numbers of ``candidate`` that are worth testing against ``specifier``.
-
-    The first release (``0``) and a very late one (``9999``) are always tested.
-    A patch number that a specifier names for the same "major.minor" (as in
-    ``==3.12.3``, ``>3.12.5`` or ``~=3.12.3``) is tested too, with the previous
-    and the next one, so that the bounds of the allowed range are found
-    whichever operator is used.
-
-    Why this is enough: a specifier is a conjunction of clauses, and each clause
-    only changes at the patch numbers it names (``>``, ``>=``, ``<``, ``<=``,
-    ``==``, ``!=``, ``~=``, ``===``), so the set of allowed patch numbers is a
-    union of intervals whose ends are a named number or one next to it. If it
-    is not empty, it contains one of ``0``, ``9999``, a named number or its
-    neighbours. The only blind spots are wildcards (``!=3.12.*``), which have
-    no patch number and exclude the whole minor version, and releases of more
-    than three numbers (``3.12.1.5``), which no Python has.
-
-    Args:
-        specifier: The parsed ``requires-python``.
-        candidate: A "major.minor" version, such as ``"3.12"``.
-
-    Returns:
-        The patch numbers to test.
-    """
-    patches = {0, 9999}
-    major, minor = (int(part) for part in candidate.split("."))
-    for item in specifier:
-        try:
-            release = Version(item.version).release
-        except InvalidVersion:  # a wildcard such as "3.12.*" has no bound to find
-            continue
-        if len(release) >= 3 and release[:2] == (major, minor):
-            patches.update({max(release[2] - 1, 0), release[2], release[2] + 1})
-    return patches
-
-
 def compatible_python_versions(
     requires_python: str, candidates: list[str], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
     """Select the candidate Python versions that ``requires-python`` allows.
 
     A "major.minor" candidate is allowed when some release of it can satisfy the
-    specifier. This is checked on the first release (``X.Y.0``), on a very late
-    one (``X.Y.9999``) and around each patch number that the specifier names
-    for the candidate (see ``_patch_releases``), so ``>=3.10.2`` and ``<3.12.5``
-    allow ``3.10`` and ``3.12``, and ``==3.12.3`` allows ``3.12`` only.
+    specifier. This is checked on each ``X.Y.0`` to ``X.Y.99`` (CPython patch
+    numbers stay below 100) and on a very late one (``X.Y.9999``), so
+    ``>=3.10.2`` and ``<3.12.5`` allow ``3.10`` and ``3.12``, and ``==3.12.3``
+    allows ``3.12`` only. A patch number of 100 or more that a specifier names
+    exactly (``==3.12.150``) matches no release, so the candidate is not
+    allowed; ``>=3.12.150`` is, as it has no upper bound.
 
     Args:
         requires_python: ``[project].requires-python`` as written, or an empty
@@ -1009,7 +979,7 @@ def compatible_python_versions(
         for candidate in candidates
         if any(
             specifier.contains(f"{candidate}.{patch}")
-            for patch in sorted(_patch_releases(specifier, candidate))
+            for patch in _PATCH_RELEASES
         )
     ]
     return versions, []
