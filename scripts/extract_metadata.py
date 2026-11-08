@@ -58,7 +58,7 @@ import tomllib
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -101,7 +101,7 @@ class Report(Metadata):
     warnings: list[str]
 
 
-def load_pyproject(pyproject_path: str) -> dict:
+def load_pyproject(pyproject_path: str) -> dict[str, Any]:
     """Read and parse a pyproject.toml file.
 
     Args:
@@ -126,7 +126,7 @@ def load_pyproject(pyproject_path: str) -> dict:
 
 
 def extract_metadata(
-    data: dict,
+    data: dict[str, Any],
     extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
     fail_on_dynamic_version: bool = False,
@@ -276,7 +276,7 @@ def parse_string_array(raw: str, input_name: str) -> list[str]:
     return values
 
 
-def _check_array(value: object, label: str, pyproject_path: str) -> list:
+def _check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
     """Return ``value`` if it is an array, and raise ``MetadataError`` otherwise."""
     if not isinstance(value, list):
         msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
@@ -294,7 +294,9 @@ def _check_requirements(value: object, label: str, pyproject_path: str) -> list[
     return entries
 
 
-def _get_table(container: dict, key: str, label: str, pyproject_path: str) -> dict:
+def _get_table(
+    container: dict[str, Any], key: str, label: str, pyproject_path: str
+) -> dict[str, Any]:
     """Return ``container[key]`` (an empty table if absent), checking that it is a table.
 
     Args:
@@ -329,7 +331,7 @@ def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
 
 
 def _flatten_group(
-    groups: dict,
+    groups: dict[str, Any],
     name: str,
     seen: tuple[str, ...] = (),
     pyproject_path: str = "pyproject.toml",
@@ -390,7 +392,7 @@ def _dynamic_message(field: str, pyproject_path: str) -> str:
     )
 
 
-def _dynamic_dependency_fields(data: dict) -> list[str]:
+def _dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
     """Return the dependency fields that only the build backend can provide.
 
     A field is returned when it is listed in ``[project].dynamic`` and has no
@@ -411,7 +413,7 @@ def _dynamic_dependency_fields(data: dict) -> list[str]:
 
 
 def _candidate_requirements(
-    data: dict, pyproject_path: str = "pyproject.toml"
+    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
     """All requirement strings, in search order.
 
@@ -507,7 +509,7 @@ def _index_requirements(
 
 
 def extract_project_dependencies(
-    data: dict, pyproject_path: str = "pyproject.toml"
+    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
 ) -> tuple[dict[str, str], list[str]]:
     """Map each package of ``[project].dependencies`` to its specifier.
 
@@ -548,7 +550,7 @@ def extract_project_dependencies(
 
 
 def extract_dependency_specifiers(
-    data: dict,
+    data: dict[str, Any],
     dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
 ) -> tuple[dict[str, str | None], list[str]]:
@@ -850,7 +852,9 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
 
 def _build_parser(prog: str) -> argparse.ArgumentParser:
     """Build the command line parser."""
-    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
+    # ``__doc__`` is None when Python runs with -OO, which strips docstrings.
+    description = (__doc__ or "").split("\n", 1)[0]
+    parser = argparse.ArgumentParser(prog=prog, description=description)
     parser.add_argument(
         "--github-output",
         metavar="FILE",
