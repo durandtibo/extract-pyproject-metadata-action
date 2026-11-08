@@ -127,14 +127,14 @@ def test_load_pyproject_bom_only_at_the_start(tmp_path: Path) -> None:
     path = tmp_path / "pyproject.toml"
     path.write_bytes(b'[project]\n\xef\xbb\xbfname = "coola"\n')
 
-    with pytest.raises(MetadataError, match="pyproject.toml is not valid TOML"):
+    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid TOML"):
         load_pyproject(str(path))
 
 
 def test_load_pyproject_nested_too_deeply(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, "[project]\nx = " + "[" * 5000 + "]" * 5000 + "\n")
 
-    with pytest.raises(MetadataError, match="pyproject.toml is nested too deeply to be parsed"):
+    with pytest.raises(MetadataError, match=r"pyproject.toml is nested too deeply to be parsed"):
         load_pyproject(str(path))
 
 
