@@ -48,11 +48,14 @@ jobs:
           PYTHON_VERSIONS_STANDARD: ${{ steps.cfg.outputs.python_versions_standard }}
           OS_UNIX: ${{ steps.cfg.outputs.os_unix }}
         run: |
+          # The action requires Python 3.11 or later: keep only those versions
+          # (the shared config also lists older ones, e.g. "3.10").
           test_matrix=$(jq -nc \
             --argjson python_versions "$PYTHON_VERSIONS" \
             --argjson python_versions_standard "$PYTHON_VERSIONS_STANDARD" \
             --argjson os_matrix "$OS_UNIX" \
-            '{python_versions: $python_versions, python_versions_standard: $python_versions_standard, os_matrix: $os_matrix}')
+            'def supported: map(select(capture("^3\\.(?<minor>[0-9]+)").minor | tonumber >= 11));
+             {python_versions: ($python_versions | supported), python_versions_standard: ($python_versions_standard | supported), os_matrix: $os_matrix}')
           echo "test_matrix=$test_matrix" >> "$GITHUB_OUTPUT"
 
       - name: Display test matrix

@@ -8,9 +8,9 @@
 # The logic lives in scripts/extract_metadata.py, started by scripts/run.sh
 # (which installs its requirements if needed); this file only wires the inputs
 # to the scripts and their output to the action outputs. Requires the
-# repository to already be checked out and a Python 3 interpreter to be
-# available on PATH. If "packaging" (or "tomli" on Python < 3.11) is missing,
-# it is installed in a private virtual environment.
+# repository to already be checked out and a Python 3.11+ interpreter to be
+# available on PATH. If "packaging" is missing, it is installed in a private
+# virtual environment.
 #
 # Only Linux and macOS runners are supported. Windows runners are not: the
 # integration tests do not run on them, and the step expects python3 and a
