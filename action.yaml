@@ -58,6 +58,9 @@ outputs:
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}
+  groups:
+    description: JSON array of dependency group names, from [dependency-groups]
+    value: ${{ steps.metadata.outputs.groups }}
   dependency-specifiers:
     description: >
       JSON object mapping each requested package to its specifier (null if

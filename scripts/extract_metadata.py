@@ -6,14 +6,15 @@ Usage:
 
 Without ``--github-output``, prints a single JSON object to stdout:
     {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
-     "extras": [...], "dependency_specifiers": {...}, "warnings": [...]}
+     "extras": [...], "groups": [...], "dependency_specifiers": {...},
+     "warnings": [...]}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
-``extras`` and ``dependency-specifiers`` to FILE (the format of
+``extras``, ``groups`` and ``dependency-specifiers`` to FILE (the format of
 ``$GITHUB_OUTPUT``, with a delimiter so that values may contain line breaks)
 and prints to stdout one ``::warning file=<path>::`` workflow command per
 warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
@@ -92,14 +93,16 @@ def extract_metadata(
 
     Returns:
         A dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``requires_python`` and ``extras``. ``version`` is
+        ``version``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``requires_python``
         is ``[project].requires-python`` as written, or an empty string if it is
         not declared. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
-        first one is kept.
+        first one is kept. ``groups`` lists the names of ``[dependency-groups]``
+        the same way (sorted by normalized name, without duplicates), and is
+        empty if there is no such table.
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
@@ -107,7 +110,8 @@ def extract_metadata(
             is not an array, a ``name`` that is not a non-empty string, a
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``requires-python`` that is not a string, an
-            ``optional-dependencies`` that is not a table, or
+            ``optional-dependencies`` or ``dependency-groups`` that is not a
+            table, or
             ``extra_values_json`` is not a JSON array of strings.
     """
     project = data.get("project", {})
@@ -187,12 +191,23 @@ def extract_metadata(
     unique_extras: dict[str, str] = {}
     for extra in extra_values + extras:
         unique_extras.setdefault(canonicalize_name(extra), extra)
+
+    dependency_groups = data.get("dependency-groups", {})
+    if not isinstance(dependency_groups, dict):
+        msg = f"{pyproject_path}: [dependency-groups] must be a table, got: {dependency_groups!r}"
+        raise MetadataError(msg)
+    # Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
+    unique_groups: dict[str, str] = {}
+    for group in sorted(dependency_groups, key=canonicalize_name):
+        unique_groups.setdefault(canonicalize_name(group), group)
+    groups = list(unique_groups.values())
     return {
         "name": name,
         "normalized_name": canonicalize_name(name),
         "version": version,
         "requires_python": requires_python,
         "extras": list(unique_extras.values()),
+        "groups": groups,
     }
 
 
@@ -443,8 +458,8 @@ def format_outputs(metadata: dict) -> dict[str, str]:
 
     Args:
         metadata: The dict built by ``main``, with keys ``name``,
-            ``normalized_name``, ``version``, ``requires_python``, ``extras``
-            and ``dependency_specifiers``.
+            ``normalized_name``, ``version``, ``requires_python``, ``extras``,
+            ``groups`` and ``dependency_specifiers``.
 
     Returns:
         A dict mapping each output name of ``action.yaml`` to its value, with
@@ -456,6 +471,7 @@ def format_outputs(metadata: dict) -> dict[str, str]:
         "version": metadata["version"],
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
+        "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),
         "dependency-specifiers": json.dumps(
             metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
         ),

@@ -110,6 +110,7 @@ jobs:
 | `version`               | Project version, as declared in `[project].version`. Empty if `version` is listed in `[project].dynamic` (a warning is emitted).                                                                                                                                                                                                                                                                                                                     |
 | `requires-python`       | Python version specifier, as declared in `[project].requires-python` (e.g. `>=3.10,<4`), as written. Empty if it is not declared (also if it is listed in `[project].dynamic`).                                                                                                                                                                                                                                                                      |
 | `extras`                | JSON array of extra names, sorted by normalized name, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept); names are compared per PEP 685, so `Foo_Bar` and `foo-bar` are the same extra.                                                                                                                                                                                                                           |
+| `groups`                | JSON array of the group names of `[dependency-groups]` (PEP 735), sorted by normalized name, without duplicates. `[]` if there is none.                                                                                                                                                                                                                                                                                                              |
 | `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found, `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, or if an `include-group` names a group that does not exist. |
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
@@ -131,6 +132,7 @@ The action's step fails (non-zero exit) when:
   [PEP 440](https://peps.python.org/pep-0440/) version (for example `latest`).
 - `[project].requires-python` is not a string.
 - `[project.optional-dependencies]` is not a table.
+- `[dependency-groups]` is not a table.
 - `[project].dependencies` or a value of `[project.optional-dependencies]` or
   `[dependency-groups]` is not an array, `[dependency-groups]` is not a table,
   or an `include-group` value is not a string.
