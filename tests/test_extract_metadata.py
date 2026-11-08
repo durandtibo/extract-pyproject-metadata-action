@@ -129,6 +129,35 @@ def test_extract_metadata_extra_values_are_prepended(tmp_path: Path) -> None:
     assert metadata["extras"] == ["", "numpy"]
 
 
+@pytest.mark.parametrize(
+    ("extra_values_json", "expected"),
+    [
+        ('["numpy"]', ["numpy", "pandas"]),
+        ('["pandas", "numpy"]', ["pandas", "numpy"]),
+        ('["all", "all"]', ["all", "numpy", "pandas"]),
+        ('["", ""]', ["", "numpy", "pandas"]),
+        ('["all", "numpy", "all"]', ["all", "numpy", "pandas"]),
+    ],
+)
+def test_extract_metadata_extras_are_deduplicated(
+    tmp_path: Path, extra_values_json: str, expected: list[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "coola"
+        version = "1.2.3"
+
+        [project.optional-dependencies]
+        pandas = ["pandas"]
+        numpy = ["numpy"]
+        """,
+    )
+
+    assert extract(path, extra_values_json)["extras"] == expected
+
+
 def test_extract_metadata_missing_name(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
