@@ -369,16 +369,16 @@ jobs:
       - name: ✓ Verify python-versions
         run: |
           source scripts/test-helper.sh
-          assert_equal "python-versions" '["3.10","3.11","3.12","3.13","3.14"]' '${{ steps.test-python-versions.outputs.python-versions }}'
+          assert_equal "python-versions" '["3.11","3.12","3.13","3.14","3.15"]' '${{ steps.test-python-versions.outputs.python-versions }}'
           assert_equal "python-versions" '["3.10","3.12"]' '${{ steps.test-python-candidates.outputs.python-versions }}'
           assert_equal "python-versions" '["3.9","3.12"]' '${{ steps.test-python-versions-undeclared.outputs.python-versions }}'
-          assert_equal "python-min" "3.10" "${{ steps.test-python-versions.outputs.python-min }}"
+          assert_equal "python-min" "3.11" "${{ steps.test-python-versions.outputs.python-min }}"
           assert_equal "python-min" "3.10" "${{ steps.test-python-candidates.outputs.python-min }}"
           assert_equal "python-min" "3.9" "${{ steps.test-python-versions-undeclared.outputs.python-min }}"
-          assert_equal "python-max" "3.14" "${{ steps.test-python-versions.outputs.python-max }}"
+          assert_equal "python-max" "3.15" "${{ steps.test-python-versions.outputs.python-max }}"
           assert_equal "python-max" "3.12" "${{ steps.test-python-candidates.outputs.python-max }}"
           assert_equal "python-max" "3.12" "${{ steps.test-python-versions-undeclared.outputs.python-max }}"
-          assert_equal "python-matrix" '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}' '${{ steps.test-python-versions.outputs.python-matrix }}'
+          assert_equal "python-matrix" '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}' '${{ steps.test-python-versions.outputs.python-matrix }}'
           assert_equal "python-matrix" '{"python-version":["3.10","3.12"]}' '${{ steps.test-python-candidates.outputs.python-matrix }}'
           print_success "python-versions test passed"
 
@@ -676,6 +676,31 @@ jobs:
           assert_equal "name" "minimal-pkg" "${{ steps.test-python-executable.outputs.name }}"
           assert_equal "outcome" "failure" "${{ steps.test-missing-python-executable.outcome }}"
           print_success "python-executable test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 29: dependencies with a scope
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test dependencies with a scope
+        id: test-dependency-scopes
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["grp-pkg@group:base","grp-pkg@group:dev","grp-pkg@project","numpy@extra:numpy","numpy@group:dev"]'
+
+      - name: 🧪 Test an invalid dependency scope (should fail)
+        id: test-invalid-dependency-scope
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["numpy@numpy"]'
+        continue-on-error: true
+
+      - name: ✓ Verify the dependency scopes
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "dependency-specifiers" '{"grp-pkg@group:base":">=1.5","grp-pkg@group:dev":">=1.5","grp-pkg@project":null,"numpy@extra:numpy":"~=2.0","numpy@group:dev":null}' '${{ steps.test-dependency-scopes.outputs.dependency-specifiers }}'
+          assert_equal "outcome" "failure" "${{ steps.test-invalid-dependency-scope.outcome }}"
+          print_success "dependency scopes test passed"
 
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:

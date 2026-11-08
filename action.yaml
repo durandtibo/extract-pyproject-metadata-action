@@ -10,7 +10,8 @@
 # to the scripts and their output to the action outputs. Requires the
 # repository to already be checked out and a Python 3.11+ interpreter to be
 # available on PATH (python3, or the python-executable input). If "packaging"
-# is missing, it is installed in a private virtual environment.
+# is missing or too old (see scripts/requirements.txt), it is installed in a
+# private virtual environment.
 #
 # Only Linux and macOS runners are supported. On a Windows runner the step
 # fails with an explicit error (the step expects python3 and a POSIX bash).
@@ -34,7 +35,9 @@ inputs:
     description: >
       JSON array of package names whose version specifier is looked up in
       [project].dependencies, [project.optional-dependencies] and
-      [dependency-groups] (e.g. '["invoke-tasklib"]').
+      [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@"
+      and "project", "extra:<name>" or "group:<name>" is looked up there only
+      (e.g. '["pytest@group:dev"]').
     default: "[]"
 
   fail-on-missing:
@@ -48,7 +51,7 @@ inputs:
     description: >
       JSON array of "major.minor" Python versions to choose from for the
       python-versions output (e.g. '["3.11","3.12"]')
-    default: '["3.10","3.11","3.12","3.13","3.14"]'
+    default: '["3.11","3.12","3.13","3.14","3.15"]'
 
   fail-on-dynamic-version:
     description: >
