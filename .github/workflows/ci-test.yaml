@@ -38,4 +38,4 @@ jobs:
         run: pip install -r requirements-test.txt
 
       - name: Run unit tests
-        run: python -m pytest -v
+        run: python -m pytest -v --cov --cov-report=term-missing
