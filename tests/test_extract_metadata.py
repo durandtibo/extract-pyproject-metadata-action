@@ -22,6 +22,7 @@ from extract_metadata import (  # noqa: E402
     extract_dependency_specifiers,
     _candidate_requirements,
     _check_array,
+    _check_requirements,
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
@@ -934,12 +935,51 @@ def test_candidate_requirements_empty() -> None:
     assert _candidate_requirements({}) == ([], [])
 
 
-def test_candidate_requirements_ignores_non_string_entries() -> None:
-    data = {
-        "project": {"dependencies": ["a", 1, None], "optional-dependencies": {"x": [{"b": 1}, "c"]}}
-    }
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        (
+            {"project": {"dependencies": ["a", 1]}},
+            r"p\.toml: \[project\]\.dependencies must contain only strings, got: 1",
+        ),
+        (
+            {"project": {"dependencies": [None]}},
+            r"\[project\]\.dependencies must contain only strings, got: None",
+        ),
+        (
+            {"project": {"optional-dependencies": {"x": ["c", {"b": 1}]}}},
+            r"\[project\.optional-dependencies\]\.x must contain only strings, got: \{'b': 1\}",
+        ),
+    ],
+)
+def test_candidate_requirements_non_string_entries(data: dict, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _candidate_requirements(data, "p.toml")
 
-    assert _candidate_requirements(data)[0] == ["a", "c"]
+
+def test_candidate_requirements_does_not_modify_the_data() -> None:
+    data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
+
+    assert _candidate_requirements(data)[0] == ["a", "b"]
+    assert data == {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
+
+
+@pytest.mark.parametrize("value", [[], ["a"], ["a", "B_c>=1"]])
+def test_check_requirements_returns_the_strings(value: list[str]) -> None:
+    assert _check_requirements(value, "[x]", "p.toml") == value
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ("a", r"^p\.toml: \[x\] must be an array, got: 'a'"),
+        (["a", 2], r"^p\.toml: \[x\] must contain only strings, got: 2$"),
+        ([["a"]], r"^p\.toml: \[x\] must contain only strings, got: \['a'\]$"),
+    ],
+)
+def test_check_requirements_wrong_types(value: object, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _check_requirements(value, "[x]", "p.toml")
 
 
 @pytest.mark.parametrize(
@@ -2205,11 +2245,22 @@ def test_extract_project_dependencies_keeps_the_first_spelling_of_the_name() -> 
     ]
 
 
-def test_extract_project_dependencies_ignores_non_string_entries() -> None:
-    assert extract_project_dependencies({"project": {"dependencies": ["a", 1, None, {"b": 1}]}}) == (
-        {"a": ""},
-        [],
+def test_extract_project_dependencies_non_string_entry() -> None:
+    with pytest.raises(
+        MetadataError, match=r"p\.toml: \[project\]\.dependencies must contain only strings, got: 1"
+    ):
+        extract_project_dependencies({"project": {"dependencies": ["a", 1]}}, "p.toml")
+
+
+def test_main_non_string_requirement_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1"\ndependencies = ["a", 1]\n'
     )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "[project].dependencies must contain only strings, got: 1" in capsys.readouterr().err
 
 
 def test_extract_project_dependencies_invalid_requirement_warns() -> None:

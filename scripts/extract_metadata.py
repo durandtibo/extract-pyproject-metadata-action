@@ -285,6 +285,16 @@ def _check_array(value: object, label: str, pyproject_path: str) -> list:
     return value
 
 
+def _check_requirements(value: object, label: str, pyproject_path: str) -> list[str]:
+    """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise."""
+    entries = _check_array(value, label, pyproject_path)
+    for entry in entries:
+        if not isinstance(entry, str):
+            msg = f"{pyproject_path}: {label} must contain only strings, got: {entry!r}"
+            raise MetadataError(msg)
+    return entries
+
+
 def _get_table(container: dict, key: str, label: str, pyproject_path: str) -> dict:
     """Return ``container[key]`` (an empty table if absent), checking that it is a table.
 
@@ -415,20 +425,22 @@ def _candidate_requirements(
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
             ``[project.optional-dependencies]``, ``[dependency-groups]`` or one
-            of their values has the wrong type.
+            of their values has the wrong type, or if a requirement of
+            ``[project].dependencies`` or of an extra is not a string.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    dependencies = _check_array(
-        project.get("dependencies", []), "[project].dependencies", pyproject_path
+    # A copy: the lists below are extended, and the parsed document must stay as it is.
+    reqs = list(
+        _check_requirements(
+            project.get("dependencies", []), "[project].dependencies", pyproject_path
+        )
     )
-    reqs = [r for r in dependencies if isinstance(r, str)]
     optional_dependencies = _get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
-        extra_reqs = _check_array(extra_reqs, label, pyproject_path)
-        reqs.extend(r for r in extra_reqs if isinstance(r, str))
+        reqs.extend(_check_requirements(extra_reqs, label, pyproject_path))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
         _dynamic_message(field, pyproject_path)
@@ -497,16 +509,14 @@ def extract_project_dependencies(
         a ``dynamic`` ``dependencies``.
 
     Raises:
-        MetadataError: If ``[project]`` is not a table or
-            ``[project].dependencies`` is not an array.
+        MetadataError: If ``[project]`` is not a table, or
+            ``[project].dependencies`` is not an array of strings.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    entries = _check_array(
+    entries = _check_requirements(
         project.get("dependencies", []), "[project].dependencies", pyproject_path
     )
-    found, names, warnings = _index_requirements(
-        [entry for entry in entries if isinstance(entry, str)], pyproject_path
-    )
+    found, names, warnings = _index_requirements(entries, pyproject_path)
     if "dependencies" in _dynamic_dependency_fields(data):
         warnings.append(_dynamic_message("dependencies", pyproject_path))
     dependencies: dict[str, str] = {}
@@ -545,7 +555,8 @@ def extract_dependency_specifiers(
     Raises:
         MetadataError: If ``[project].dependencies``, ``[project.optional-dependencies]``
             or ``[dependency-groups]`` (or one of their values) has the wrong
-            type.
+            type, or a requirement of ``[project].dependencies`` or of an extra
+            is not a string.
     """
     deps = dependencies
     # Like invalid requirements below, structure warnings are only worth
