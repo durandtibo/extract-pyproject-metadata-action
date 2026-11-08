@@ -24,7 +24,6 @@ from helpers import (
 from packaging.requirements import InvalidRequirement, Requirement
 
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
-from extract_pyproject_metadata.cli import _extra_names, _group_names, load_pyproject
 from extract_pyproject_metadata.dependencies.groups import flatten_group
 from extract_pyproject_metadata.dependencies.lookup import (
     _lookup_key,
@@ -44,6 +43,8 @@ from extract_pyproject_metadata.dependencies.requirements import (
     index_dependencies,
 )
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.fields import read_extra_names, read_group_names
+from extract_pyproject_metadata.pyproject import load_pyproject
 
 
 def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None:
@@ -789,31 +790,31 @@ def test_extract_metadata_groups_must_be_a_table(tmp_path: Path, value: str) -> 
 
 
 def test_extra_names_without_optional_dependencies() -> None:
-    assert _extra_names({}, ["all"], "p.toml") == ["all"]
+    assert read_extra_names({}, ["all"], "p.toml") == ["all"]
 
 
 
 def test_extra_names_optional_dependencies_must_be_a_table() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"):
-        _extra_names({"optional-dependencies": []}, [], "p.toml")
+        read_extra_names({"optional-dependencies": []}, [], "p.toml")
 
 
 
 def test_group_names() -> None:
     data = {"dependency-groups": {"test": [], "Dev_Tools": [], "dev-tools": [], "docs": []}}
 
-    assert _group_names(data, "p.toml") == ["Dev_Tools", "docs", "test"]
+    assert read_group_names(data, "p.toml") == ["Dev_Tools", "docs", "test"]
 
 
 
 def test_group_names_without_groups() -> None:
-    assert _group_names({}, "p.toml") == []
+    assert read_group_names({}, "p.toml") == []
 
 
 
 def test_group_names_must_be_a_table() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[dependency-groups\] must be a table"):
-        _group_names({"dependency-groups": []}, "p.toml")
+        read_group_names({"dependency-groups": []}, "p.toml")
 
 
 

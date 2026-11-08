@@ -25,12 +25,13 @@ from helpers import (
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
-from extract_pyproject_metadata.cli import build_report, load_pyproject, main
+from extract_pyproject_metadata.cli import build_report, main
 from extract_pyproject_metadata.dependencies.lookup import check_no_missing_dependency
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import Options, parse_bool, parse_options
 from extract_pyproject_metadata.output.github import format_error
 from extract_pyproject_metadata.output.summary import format_error_summary, resolve_step_summary
+from extract_pyproject_metadata.pyproject import load_pyproject
 
 
 def test_main_returns_one_for_an_invalid_utf8_file(
@@ -198,7 +199,7 @@ def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPa
     # packaging before 24.2 has no ``packaging.licenses``: importing it raises ImportError.
     monkeypatch.setitem(sys.modules, "packaging.licenses", None)
 
-    spec = importlib.util.spec_from_file_location("cli_without_licenses", PACKAGE_PATH / "cli.py")
+    spec = importlib.util.spec_from_file_location("license_without_licenses", PACKAGE_PATH / "license.py")
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -206,7 +207,7 @@ def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPa
     spec.loader.exec_module(module)
 
     assert module.canonicalize_license_expression is None
-    assert module._license_warnings("MIT License", "p.toml") == []
+    assert module.license_warnings("MIT License", "p.toml") == []
 
 
 
