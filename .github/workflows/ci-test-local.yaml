@@ -701,6 +701,24 @@ jobs:
           assert_equal "outcome" "failure" "${{ steps.test-missing-python-executable.outcome }}"
           print_success "python-executable test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 28: build-backend and build-requires outputs
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test build-backend and build-requires outputs
+        id: test-build-system
+        uses: ./
+        with:
+          pyproject-path: test-data/build-system/pyproject.toml
+
+      - name: ✓ Verify build-backend and build-requires
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "build-backend" "hatchling.build" "${{ steps.test-build-system.outputs.build-backend }}"
+          assert_equal "build-requires" '["hatchling","hatch-vcs>=0.4"]' '${{ steps.test-build-system.outputs.build-requires }}'
+          assert_equal "build-backend" "" "${{ steps.test-no-project-fields.outputs.build-backend }}"
+          assert_equal "build-requires" '[]' '${{ steps.test-no-project-fields.outputs.build-requires }}'
+          print_success "build-system test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

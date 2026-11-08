@@ -171,6 +171,15 @@ outputs:
   groups:
     description: JSON array of dependency group names, from [dependency-groups]
     value: ${{ steps.metadata.outputs.groups }}
+  build-backend:
+    description: >
+      Build backend, from [build-system].build-backend (empty if not declared)
+    value: ${{ steps.metadata.outputs.build-backend }}
+  build-requires:
+    description: >
+      JSON array of the requirements of [build-system].requires, as written
+      ("[]" if none)
+    value: ${{ steps.metadata.outputs.build-requires }}
   project-dependencies:
     description: >
       JSON object mapping each package of [project].dependencies to its

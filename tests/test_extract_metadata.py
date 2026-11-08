@@ -28,6 +28,7 @@ from extract_metadata import (  # noqa: E402
     extract_dependency_requirements,
     extract_dependency_specifiers,
     _candidate_requirements,
+    _build_system,
     _check_array,
     _check_str,
     _check_string_array,
@@ -227,6 +228,8 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "build_backend": "",
+        "build_requires": [],
     }
 
 
@@ -456,6 +459,98 @@ def test_main_keywords_classifiers_and_scripts_in_json_and_github_output(
     )
 
 
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({}, ("", [])),
+        ({"build-system": {}}, ("", [])),
+        ({"build-system": {"requires": ["setuptools>=61", "wheel"]}}, ("", ["setuptools>=61", "wheel"])),
+        ({"build-system": {"build-backend": "hatchling.build"}}, ("hatchling.build", [])),
+        (
+            {"build-system": {"requires": ["a", "a"], "build-backend": "a.b:c", "backend-path": ["."]}},
+            ("a.b:c", ["a", "a"]),
+        ),
+    ],
+)
+def test_build_system(data: dict, expected: tuple[str, list[str]]) -> None:
+    assert _build_system(data, "p.toml") == expected
+
+
+def test_build_system_returns_a_copy_of_requires() -> None:
+    data = {"build-system": {"requires": ["a"]}}
+
+    _build_system(data, "p.toml")[1].append("b")
+
+    assert data == {"build-system": {"requires": ["a"]}}
+
+
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        ({"build-system": "x"}, r"^p.toml: \[build-system\] must be a table, got: 'x'$"),
+        ({"build-system": {"build-backend": 1}}, r"^p.toml: \[build-system\].build-backend must be a string, got: 1$"),
+        ({"build-system": {"requires": "a"}}, r"^p.toml: \[build-system\].requires must be an array, got: 'a'$"),
+        ({"build-system": {"requires": ["a", 1]}}, r"^p.toml: \[build-system\].requires must contain only strings, got: 1$"),
+    ],
+)
+def test_build_system_wrong_type(data: dict, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _build_system(data, "p.toml")
+
+
+def test_extract_metadata_build_system(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n\n'
+        '[project]\nname = "a"\nversion = "1"\n',
+    )
+
+    metadata = extract(path)
+
+    assert (metadata["build_backend"], metadata["build_requires"]) == ("hatchling.build", ["hatchling"])
+
+
+def test_extract_metadata_without_build_system(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    metadata = extract(path)
+
+    assert (metadata["build_backend"], metadata["build_requires"]) == ("", [])
+
+
+def test_main_build_system_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[build-system]\nrequires = ["hatchling", "hatch-vcs>=0.4"]\nbuild-backend = "hatchling.build"\n\n'
+        '[project]\nname = "a"\nversion = "1"\n',
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (report["build_backend"], report["build_requires"]) == (
+        "hatchling.build",
+        ["hatchling", "hatch-vcs>=0.4"],
+    )
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    values = parse_github_output(output.read_text(encoding="utf-8"))
+    assert (values["build-backend"], values["build-requires"]) == (
+        "hatchling.build",
+        '["hatchling","hatch-vcs>=0.4"]',
+    )
+
+
+def test_main_returns_one_for_an_invalid_build_system(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[build-system]\nrequires = "x"\n\n[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert f"{path}: [build-system].requires must be an array, got: 'x'" in capsys.readouterr().err
+
+
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -624,6 +719,8 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "build_backend": "",
+        "build_requires": [],
     }
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
@@ -737,6 +834,8 @@ def test_main_dynamic_version_warning_in_json(
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "build_backend": "",
+        "build_requires": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
     "python_max": "3.14",
@@ -865,6 +964,8 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "build_backend": "",
+        "build_requires": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
     "python_max": "3.14",
@@ -951,6 +1052,8 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
+        "build_backend": "",
+        "build_requires": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
     "python_max": "3.14",
@@ -1109,6 +1212,8 @@ METADATA = {
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
+    "build_backend": "",
+    "build_requires": [],
     "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "python_min": "3.10",
     "python_max": "3.14",
@@ -1141,6 +1246,8 @@ def test_format_outputs() -> None:
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
+        "build-backend": "",
+        "build-requires": '[]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
         "python-max": "3.14",
@@ -1291,6 +1398,8 @@ def test_main_github_output_writes_outputs_and_annotations(
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
+        "build-backend": "",
+        "build-requires": '[]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
         "python-max": "3.14",
@@ -1340,6 +1449,8 @@ def test_build_report(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
+        "build_backend": "",
+        "build_requires": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
     "python_max": "3.14",
@@ -1489,6 +1600,8 @@ def test_format_step_summary_without_warnings() -> None:
         requires_python="",
         extras=["", "a"],
         groups=[],
+        build_backend="",
+        build_requires=[],
         python_versions=["3.12"],
         python_min="3.12",
         python_max="3.12",
@@ -1519,6 +1632,8 @@ def test_format_step_summary_without_warnings() -> None:
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
+        "| `build-backend` |  |\n"
+        "| `build-requires` | <code>&#91;&#93;</code> |\n"
         "| `python-versions` | <code>&#91;&#34;3&#46;12&#34;&#93;</code> |\n"
         "| `python-min` | <code>3&#46;12</code> |\n"
         "| `python-max` | <code>3&#46;12</code> |\n"
@@ -1547,6 +1662,8 @@ def test_format_step_summary_lists_the_warnings() -> None:
         requires_python="",
         extras=[],
         groups=[],
+        build_backend="",
+        build_requires=[],
         python_versions=[],
         python_min="",
         python_max="",
@@ -1929,6 +2046,8 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
+        "build-backend": "",
+        "build-requires": "[]",
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
         "python-max": "3.14",
@@ -2196,6 +2315,8 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "build_backend": "",
+        "build_requires": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
     "python_max": "3.14",
@@ -3500,6 +3621,8 @@ def test_format_outputs_python_matrix() -> None:
         requires_python="",
         extras=[],
         groups=[],
+        build_backend="",
+        build_requires=[],
         python_versions=["3.11", "3.12"],
         python_min="3.11",
         python_max="3.12",
@@ -3530,6 +3653,8 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         requires_python=">=4",
         extras=[],
         groups=[],
+        build_backend="",
+        build_requires=[],
         python_versions=[],
         python_min="",
         python_max="",
@@ -3612,6 +3737,8 @@ def test_format_outputs_normalized_version() -> None:
         requires_python="",
         extras=[],
         groups=[],
+        build_backend="",
+        build_requires=[],
         python_versions=[],
         python_min="",
         python_max="",
@@ -4148,6 +4275,8 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "keywords",
         "classifiers",
         "scripts",
+        "build-backend",
+        "build-requires",
         "python-matrix",
         "dependency-requirements",
     }
