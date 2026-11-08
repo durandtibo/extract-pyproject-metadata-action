@@ -13,6 +13,10 @@ Usage:
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
+A name of ``<dependencies-json>`` may be followed by ``@project``, ``@extra:<name>`` or
+``@group:<name>`` to look it up in ``[project].dependencies``, one extra or one dependency
+group only (``numpy@extra:fast``); the key of the result is the entry as written.
+
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
@@ -78,7 +82,8 @@ is missing the required "name"/"version" keys, a dependency table
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
 expected shape, a Python candidate is not a "major.minor" string,
 ``--fail-on-dynamic-version true`` is given and the version is dynamic,
-``--strict true`` is given and there is a warning, or ``--fail-on-missing true``
+``--strict true`` is given and there is a warning, a requested dependency has a scope that
+is not ``project``, ``extra:<name>`` or ``group:<name>``, or ``--fail-on-missing true``
 is given and a requested dependency is not found.
 """
 
@@ -117,6 +122,9 @@ _MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
 # real release (CPython patch numbers stay below 100) and a very late one, for the specifiers that
 # have no upper bound.
 _PATCH_RELEASES = (*range(100), 9999)
+
+# The scope of the requirements of ``[project].dependencies`` (see ``_scoped_requirements``).
+_PROJECT_SCOPE = "project"
 
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit. Always used with ``fullmatch``.
@@ -673,19 +681,40 @@ def _candidate_requirements(
             of their values has the wrong type, or if a requirement of
             ``[project].dependencies`` or of an extra is not a string.
     """
+    scoped, warnings = _scoped_requirements(data, pyproject_path)
+    return [raw for _, raw in scoped], warnings
+
+
+def _scoped_requirements(
+    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """All requirement strings with the place they are declared in, in search order.
+
+    Returns:
+        A tuple ``(requirements, warnings)``, as for ``_candidate_requirements``.
+        Each requirement is a tuple ``(scope, requirement)``. ``scope`` is
+        ``"project"`` for ``[project].dependencies``, ``"extra:<name>"`` for an extra
+        and ``"group:<name>"`` for a dependency group (the requirements that its
+        ``include-group`` entries add included), with the name normalized per PEP 503.
+        Spellings of the same name share one scope.
+
+    Raises:
+        MetadataError: Under the same conditions as ``_candidate_requirements``.
+    """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    # A copy: the lists below are extended, and the parsed document must stay as it is.
-    reqs = list(
-        _check_string_array(
+    reqs = [
+        (_PROJECT_SCOPE, raw)
+        for raw in _check_string_array(
             project.get("dependencies", []), "[project].dependencies", pyproject_path
         )
-    )
+    ]
     optional_dependencies = _get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
-        reqs.extend(_check_string_array(extra_reqs, label, pyproject_path))
+        scope = f"extra:{canonicalize_name(extra)}"
+        reqs.extend((scope, raw) for raw in _check_string_array(extra_reqs, label, pyproject_path))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
         _dynamic_message(field, pyproject_path)
@@ -698,9 +727,59 @@ def _candidate_requirements(
         first_spellings.setdefault(canonicalize_name(group), group)
     for gname in first_spellings.values():
         group_reqs, group_warnings = _flatten_group(groups, gname, pyproject_path=pyproject_path)
-        reqs.extend(group_reqs)
+        scope = f"group:{canonicalize_name(gname)}"
+        reqs.extend((scope, raw) for raw in group_reqs)
         warnings.extend(group_warnings)
     return reqs, list(dict.fromkeys(warnings))
+
+
+def parse_dependencies(raw: str) -> list[str]:
+    """Parse the ``dependencies`` input: a JSON array of package names with an optional scope.
+
+    A name may be followed by ``@`` and the only place to look it up in:
+    ``name@project`` (``[project].dependencies``), ``name@extra:<extra>``
+    (``[project.optional-dependencies]``) or ``name@group:<group>``
+    (``[dependency-groups]``, ``include-group`` expanded). Without a scope, every place is
+    searched. A package name cannot contain ``@``, so the scope is unambiguous.
+
+    Args:
+        raw: The value of the input.
+
+    Returns:
+        The entries as written, in order, duplicates included.
+
+    Raises:
+        MetadataError: If ``raw`` is not a JSON array of strings, or an entry has a scope that is
+            not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name).
+    """
+    entries = parse_string_array(raw, "dependencies")
+    for entry in entries:
+        _, separator, scope = entry.partition("@")
+        kind, _, name = scope.partition(":")
+        if separator and scope != _PROJECT_SCOPE and (kind not in {"extra", "group"} or not name):
+            msg = (
+                f"dependencies entry {entry!r} has an invalid scope: it must be 'project', "
+                "'extra:<name>' or 'group:<name>' (for example 'pytest@group:dev')"
+            )
+            raise MetadataError(msg)
+    return entries
+
+
+def _lookup_key(dependency: str) -> str:
+    """Return the key of the index of the requirements for an entry of ``dependencies``.
+
+    Args:
+        dependency: An entry, as returned by ``parse_dependencies``.
+
+    Returns:
+        The normalized package name (PEP 503), followed by ``@`` and the normalized scope for
+        an entry with a scope, as ``_index_dependencies`` stores them.
+    """
+    name, separator, scope = dependency.partition("@")
+    if not separator:
+        return canonicalize_name(name)
+    kind, colon, scope_name = scope.partition(":")
+    return f"{canonicalize_name(name)}@{kind}{colon}{canonicalize_name(scope_name)}"
 
 
 @functools.lru_cache(maxsize=None)
@@ -808,7 +887,8 @@ def extract_dependency_specifiers(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies: Package names to look up, as returned by
-            ``parse_string_array``.
+            ``parse_dependencies``: a name may be followed by ``@`` and a scope that limits
+            the lookup to ``[project].dependencies``, one extra or one group.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
 
@@ -845,15 +925,24 @@ def _index_dependencies(
 
     Returns:
         A tuple ``(found, warnings)``. ``found`` is the first result of
-        ``_index_requirements`` on the requirements of ``_candidate_requirements``
-        (in search order). ``warnings`` lists the warnings of both: dynamic
-        dependency fields, include-group problems and invalid requirements.
+        ``_index_requirements`` on the requirements of ``_scoped_requirements``
+        (in search order), keyed by normalized package name. It also has, for each
+        place that declares requirements, the same index of the requirements of that
+        place only under the key ``"<name>@<scope>"`` (for example ``"numpy@extra:x"``,
+        see ``_lookup_key``), for the entries of ``dependencies`` that have a scope.
+        ``warnings`` lists the warnings of both: dynamic dependency fields,
+        include-group problems and invalid requirements.
 
     Raises:
-        MetadataError: Under the same conditions as ``_candidate_requirements``.
+        MetadataError: Under the same conditions as ``_scoped_requirements``.
     """
-    candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
-    found, _, invalid_warnings = _index_requirements(candidates, pyproject_path)
+    scoped, structure_warnings = _scoped_requirements(data, pyproject_path)
+    found, _, invalid_warnings = _index_requirements([raw for _, raw in scoped], pyproject_path)
+    for scope in dict.fromkeys(scope for scope, _ in scoped):
+        in_scope, _, _ = _index_requirements(
+            [raw for other, raw in scoped if other == scope], pyproject_path
+        )
+        found.update({f"{key}@{scope}": matches for key, matches in in_scope.items()})
     return found, [*structure_warnings, *invalid_warnings]
 
 
@@ -870,7 +959,7 @@ def _specifiers_from_index(
         index_warnings: The warnings returned with the index. They are only
             worth reporting when ``dependencies`` is not empty: an invalid
             requirement may be the very entry that was meant to be found.
-        dependencies: Package names to look up.
+        dependencies: Package names to look up, with their optional scope.
         pyproject_path: Path of the file, used in the warning messages.
 
     Returns:
@@ -881,7 +970,7 @@ def _specifiers_from_index(
 
     result: dict[str, str | None] = {}
     for dep in dependencies:
-        matches = found.get(canonicalize_name(dep))
+        matches = found.get(_lookup_key(dep))
         if not matches:
             result[dep] = None
             continue
@@ -905,7 +994,8 @@ def extract_dependency_requirements(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies: Package names to look up, as returned by
-            ``parse_string_array``.
+            ``parse_dependencies``: a name may be followed by ``@`` and a scope that limits
+            the lookup to ``[project].dependencies``, one extra or one group.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error messages.
 
@@ -931,7 +1021,7 @@ def _requirements_from_index(
 
     Args:
         found: The index, as returned by ``_index_dependencies``.
-        dependencies: Package names to look up.
+        dependencies: Package names to look up, with their optional scope.
 
     Returns:
         The mapping returned by ``extract_dependency_requirements``.
@@ -939,7 +1029,7 @@ def _requirements_from_index(
     return {
         dep: [
             {"specifier": specifier, "marker": marker or ""}
-            for specifier, marker in found.get(canonicalize_name(dep), [])
+            for specifier, marker in found.get(_lookup_key(dep), [])
         ]
         for dep in dependencies
     }
@@ -1451,7 +1541,7 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         options = parse_options(args)
     data = load_pyproject(args.pyproject_path)
     extra_values = parse_string_array(args.extra_values, "extra-values")
-    dependencies = parse_string_array(args.dependencies, "dependencies")
+    dependencies = parse_dependencies(args.dependencies)
     python_candidates = parse_python_candidates(args.python_candidates)
     metadata, warnings = extract_metadata(
         data, extra_values, args.pyproject_path, options.fail_on_dynamic_version

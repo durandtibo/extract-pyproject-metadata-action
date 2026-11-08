@@ -110,7 +110,7 @@ jobs:
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------- |
 | `pyproject-path`          | Path to `pyproject.toml`.                                                                                                                                                                                                                                                                              | No       | `pyproject.toml`                       |
 | `extra-values`            | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`).                                                                                                              | No       | `[]`                                   |
-| `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503.  | No       | `[]`                                   |
+| `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503. A name followed by `@project`, `@extra:<name>` or `@group:<name>` is looked up in `[project].dependencies`, that extra or that group only (see [Looking up a dependency in one place](#looking-up-a-dependency-in-one-place)).  | No       | `[]`                                   |
 | `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version. Must be `true` or `false` (case and surrounding spaces are ignored).                                         | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                         | No       | `["3.10","3.11","3.12","3.13","3.14"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`. Must be `true` or `false` (case and surrounding spaces are ignored).                                                                                                | No       | `false`                                |
@@ -213,6 +213,35 @@ test:
         python-version: ${{ matrix.python-version }}
 ```
 
+## Looking up a dependency in one place
+
+By default a package is searched in `[project].dependencies`, then in every extra, then
+in every dependency group, and the first requirement wins. To read the requirement of one place
+only, follow the name with `@` and the place: `@project` for `[project].dependencies`,
+`@extra:<name>` for an extra of `[project.optional-dependencies]` or `@group:<name>` for a
+dependency group (the requirements it adds with `include-group` are included). Package
+names, extra names and group names are compared per PEP 503, and a package name cannot contain `@`,
+so the entry is not ambiguous. An extra and a group can have the same name, which is why the kind is
+part of the scope.
+
+```toml
+[project]
+dependencies = ["numpy>=1.20"]
+
+[project.optional-dependencies]
+fast = ["numpy>=2"]
+
+[dependency-groups]
+dev = ["numpy>=1.26", "pytest"]
+```
+
+With `dependencies: '["numpy", "numpy@extra:fast", "pytest@group:dev", "pytest@project"]'`,
+`dependency-specifiers` is
+`{"numpy":">=1.20","numpy@extra:fast":">=2","pytest@group:dev":"","pytest@project":null}`:
+the keys of `dependency-specifiers` and `dependency-requirements` are the entries as
+written. A package that the place does not declare, or a place that does not exist, gives `null`
+(and an empty array in `dependency-requirements`), and fails the step with `fail-on-missing`.
+
 ## Environment markers
 
 The action never evaluates environment markers: the runner's Python and
@@ -299,7 +328,8 @@ The action's step fails (non-zero exit) when:
   extra is not a string (for example `dependencies = ["numpy", 1]`). It used to be
   ignored silently.
 - `extra-values` is not valid JSON, or is not a JSON array of strings.
-- `dependencies` is not a JSON array of strings.
+- `dependencies` is not a JSON array of strings, or an entry has a scope other than `project`,
+  `extra:<name>` and `group:<name>` (for example `numpy@dev`).
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and
   `version` is listed in `[project].dynamic`.
 - `strict` is not `true` or `false`, or is `true` and there is a warning (the
