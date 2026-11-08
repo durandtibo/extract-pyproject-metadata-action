@@ -9,6 +9,7 @@ import pytest
 from helpers import extract, requires_licenses, write_pyproject
 
 import extract_pyproject_metadata.cli as extract_metadata_module
+import extract_pyproject_metadata.output.github as output_github_module
 from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
 from extract_pyproject_metadata.cli import (
     _build_system,
@@ -749,7 +750,7 @@ def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
     ],
 )
 def test_compact_json(value: object, expected: str) -> None:
-    assert extract_metadata_module._compact_json(value) == expected
+    assert output_github_module._compact_json(value) == expected
 
 
 

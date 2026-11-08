@@ -27,14 +27,13 @@ import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.cli import (
     build_report,
     check_no_missing_dependency,
-    format_error,
-    format_error_summary,
     load_pyproject,
     main,
-    resolve_step_summary,
 )
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import Options, parse_bool, parse_options
+from extract_pyproject_metadata.output.github import format_error
+from extract_pyproject_metadata.output.summary import format_error_summary, resolve_step_summary
 
 
 def test_main_returns_one_for_an_invalid_utf8_file(
