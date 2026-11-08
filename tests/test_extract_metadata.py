@@ -41,6 +41,8 @@ from extract_metadata import (  # noqa: E402
 )
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
+RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
+REQUIREMENTS_PATH = Path(__file__).resolve().parents[1] / "scripts" / "requirements.txt"
 
 
 def write_pyproject(tmp_path: Path, content: str) -> Path:
@@ -2400,3 +2402,134 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
     assert not any(line.startswith("::error") for line in captured.out.splitlines())
     assert len(captured.out.splitlines()) == 2  # the warning for the invalid specifier, then the summary
     assert "requires-python=x\\n::error::boom\\nversion=hacked " in captured.out
+
+
+# --- scripts/run.sh -----------------------------------------------------------------------------
+#
+# run.sh is tested with stand-ins for ``python3`` (on PATH) and for the ``python`` of the private
+# virtual environment. They only record their arguments in ``$STUB_LOG`` (one line per call, the
+# arguments separated by \x1f) and exit with the status set in the environment, so no package is
+# installed and no network is used.
+
+STUB_SYSTEM_PYTHON = """#!/usr/bin/env bash
+case "$1" in
+  -c) printf '%s\\037' python3 probe >> "$STUB_LOG"; echo >> "$STUB_LOG"; exit "${STUB_PROBE_STATUS:-0}" ;;
+  -m)
+    printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
+    [ "${STUB_VENV_STATUS:-0}" = 0 ] || exit "$STUB_VENV_STATUS"
+    venv="${@: -1}"
+    mkdir -p "$venv/bin"
+    cp "$STUB_VENV_PYTHON" "$venv/bin/python"
+    chmod +x "$venv/bin/python"
+    exit 0 ;;
+  *) printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"; exit "${STUB_SCRIPT_STATUS:-0}" ;;
+esac
+"""
+
+STUB_VENV_PYTHON = """#!/usr/bin/env bash
+printf '%s\\037' venv-python "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
+if [ "$1" = "-m" ] && [ "$2" = "pip" ]; then exit "${STUB_PIP_STATUS:-0}"; fi
+exit "${STUB_SCRIPT_STATUS:-0}"
+"""
+
+
+class RunResult:
+    """Outcome of ``run.sh``: the process, the calls to the stubs and the directory of the venvs."""
+
+    def __init__(self, process: subprocess.CompletedProcess[str], log: Path, temp: Path) -> None:
+        self.process = process
+        self.calls = [line.split("\x1f")[:-1] for line in log.read_text().splitlines()] if log.exists() else []
+        self.venvs = sorted(temp.glob("extract-pyproject-metadata-venv.*"))
+
+
+def run_run_sh(tmp_path: Path, args: list[str], **env: str) -> RunResult:
+    """Run ``run.sh`` with the stubs and the status codes in ``env``."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "python3").write_text(STUB_SYSTEM_PYTHON)
+    (bin_dir / "python3").chmod(0o755)
+    venv_python = tmp_path / "venv-python"
+    venv_python.write_text(STUB_VENV_PYTHON)
+    temp = tmp_path / "runner-temp"
+    temp.mkdir(exist_ok=True)
+    log = tmp_path / "calls.log"
+    process = subprocess.run(  # noqa: S603
+        ["/bin/bash", str(RUN_PATH), *args],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "RUNNER_TEMP": str(temp),
+            "STUB_LOG": str(log),
+            "STUB_VENV_PYTHON": str(venv_python),
+            **env,
+        },
+    )
+    return RunResult(process, log, temp)
+
+
+def test_run_sh_uses_the_python_on_path_when_the_requirements_are_available(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["--flag", "a b", "", "[]"])
+
+    assert result.process.returncode == 0
+    assert result.calls == [
+        ["python3", "probe"],
+        ["python3", str(SCRIPT_PATH), "--flag", "a b", "", "[]"],
+    ]
+    assert result.venvs == []
+
+
+def test_run_sh_installs_the_requirements_in_a_private_venv_when_they_are_missing(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["--flag", "a b", "[]"], STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 0
+    assert len(result.venvs) == 1
+    venv_python = str(result.venvs[0] / "bin" / "python")
+    assert result.calls == [
+        ["python3", "probe"],
+        ["python3", "-m", "venv", "--system-site-packages", str(result.venvs[0])],
+        ["venv-python", "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", str(REQUIREMENTS_PATH)],
+        ["venv-python", str(SCRIPT_PATH), "--flag", "a b", "[]"],
+    ]
+    assert Path(venv_python).exists()
+
+
+@pytest.mark.parametrize("probe_status", ["0", "1"])
+@pytest.mark.parametrize("status", [1, 2, 3])
+def test_run_sh_exits_with_the_status_of_the_script(tmp_path: Path, probe_status: str, status: int) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS=probe_status, STUB_SCRIPT_STATUS=str(status))
+
+    assert result.process.returncode == status
+
+
+def test_run_sh_uses_a_new_venv_on_every_run(tmp_path: Path) -> None:
+    run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+
+    assert len(result.venvs) == 2
+
+
+def test_run_sh_fails_with_a_clear_message_when_the_venv_cannot_be_created(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_VENV_STATUS="1")
+
+    assert result.process.returncode == 1
+    assert re.search(r"^::error::Could not install the 'packaging' and 'tomli' Python packages\.", result.process.stderr)
+    assert [call[0] for call in result.calls] == ["python3", "python3"]
+    assert all(str(SCRIPT_PATH) not in call for call in result.calls)
+
+
+def test_run_sh_fails_with_a_clear_message_when_the_requirements_cannot_be_installed(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_PIP_STATUS="1")
+
+    assert result.process.returncode == 1
+    assert "::error::Could not install the 'packaging' and 'tomli' Python packages." in result.process.stderr
+    assert all(str(SCRIPT_PATH) not in call for call in result.calls)
+
+
+def test_run_sh_fails_when_the_temporary_directory_cannot_be_created(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", RUNNER_TEMP=str(tmp_path / "does-not-exist"))
+
+    assert result.process.returncode == 1
+    assert "::error::Could not install" in result.process.stderr
+    assert result.calls == [["python3", "probe"]]

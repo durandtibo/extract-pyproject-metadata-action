@@ -44,8 +44,9 @@ fixtures used by the integration workflows.
 - Every `run:` step sets `shell: bash` (required in composite actions).
 - Pin every third-party action to a commit SHA or the major tag already used in
   the repository's workflows; do not use a branch.
-- Keep the logic in `scripts/extract_metadata.py`, not inline in `action.yaml`.
-  Invalid input must fail with a clear message on stderr and a non-zero exit.
+- Keep the logic in `scripts/extract_metadata.py` and `scripts/run.sh` (which
+  installs the requirements if needed and starts the script), not inline in
+  `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
 
 ## Python script
 

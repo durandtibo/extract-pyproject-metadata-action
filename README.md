@@ -217,8 +217,9 @@ The action's step fails (non-zero exit) when:
 
 ## Development
 
-The logic is in `scripts/extract_metadata.py`; `action.yaml` only wires inputs
-and outputs. Use a virtual environment:
+The logic is in `scripts/extract_metadata.py`, started by `scripts/run.sh`
+(which installs the requirements in a private virtual environment when the
+`python3` on `PATH` lacks them); `action.yaml` only wires inputs and outputs. Use a virtual environment:
 
 ```bash
 python -m venv .venv
