@@ -11,16 +11,17 @@ Usage:
 Without ``--github-output``, prints a single JSON object to stdout:
     {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...],
-     "dependency_specifiers": {...}, "warnings": [...]}
+     "project_dependencies": {...}, "dependency_specifiers": {...},
+     "warnings": [...]}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
-``extras``, ``groups``, ``python-versions`` and ``dependency-specifiers`` to FILE
-(the format of ``$GITHUB_OUTPUT``, with a delimiter so that values may contain
-line breaks)
+``extras``, ``groups``, ``python-versions``, ``project-dependencies`` and
+``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
+delimiter so that values may contain line breaks)
 and prints to stdout one ``::warning file=<path>::`` workflow command per
 warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
 annotation to the file, followed by a one-line summary. Warnings are printed
@@ -93,6 +94,7 @@ class Report(Metadata):
     """The metadata, Python versions, dependency specifiers and warnings built by ``main``."""
 
     python_versions: list[str]
+    project_dependencies: dict[str, str]
     dependency_specifiers: dict[str, str | None]
     warnings: list[str]
 
@@ -359,6 +361,14 @@ def _flatten_group(
     return out, list(dict.fromkeys(warnings))
 
 
+def _dynamic_message(field: str, pyproject_path: str) -> str:
+    """Describe a dependency field that is dynamic, so cannot be read."""
+    return (
+        f"{pyproject_path}: [project].{field} is dynamic, it cannot be read, so no "
+        "requirement is found in it"
+    )
+
+
 def _dynamic_dependency_fields(data: dict) -> list[str]:
     """Return the dependency fields that only the build backend can provide.
 
@@ -409,8 +419,7 @@ def _candidate_requirements(
         reqs.extend(r for r in extra_reqs if isinstance(r, str))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
-        f"{pyproject_path}: [project].{field} is dynamic, it cannot be read, so no "
-        "requirement is found in it"
+        _dynamic_message(field, pyproject_path)
         for field in _dynamic_dependency_fields(data)
     ]
     for gname in groups:
@@ -418,6 +427,82 @@ def _candidate_requirements(
         reqs.extend(group_reqs)
         warnings.extend(group_warnings)
     return reqs, list(dict.fromkeys(warnings))
+
+
+def _index_requirements(
+    raws: list[str], pyproject_path: str
+) -> tuple[dict[str, list[tuple[str, str | None]]], dict[str, str], list[str]]:
+    """Parse requirement strings and group them by package.
+
+    Args:
+        raws: The requirement strings, in search order.
+        pyproject_path: Path of the file, used in the warning messages.
+
+    Returns:
+        A tuple ``(found, names, warnings)``. ``found`` maps the normalized
+        name of each package to the ``(specifier, marker)`` of each of its
+        requirements, in order (``marker`` is ``None`` when there is none).
+        ``names`` maps it to the name as written in its first requirement.
+        ``warnings`` has one message per requirement that cannot be parsed,
+        which is ignored.
+    """
+    found: dict[str, list[tuple[str, str | None]]] = {}
+    names: dict[str, str] = {}
+    warnings: list[str] = []
+    for raw in raws:
+        try:
+            req = Requirement(raw)
+        except InvalidRequirement as exc:
+            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
+            continue
+        key = canonicalize_name(req.name)
+        marker = None if req.marker is None else str(req.marker)
+        found.setdefault(key, []).append((str(req.specifier), marker))
+        names.setdefault(key, req.name)
+    return found, names, warnings
+
+
+def extract_project_dependencies(
+    data: dict, pyproject_path: str = "pyproject.toml"
+) -> tuple[dict[str, str], list[str]]:
+    """Map each package of ``[project].dependencies`` to its specifier.
+
+    Only the requirements of ``[project].dependencies`` are read, not the
+    extras or the dependency groups. Like ``extract_dependency_specifiers``, the
+    first requirement of a package wins, whatever its environment marker.
+
+    Args:
+        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
+        pyproject_path: Path of the file ``data`` was read from, used only in
+            error and warning messages.
+
+    Returns:
+        A tuple ``(dependencies, warnings)``. ``dependencies`` maps the name of
+        each package, as written in its first requirement and in the order of
+        the file, to its specifier (``""`` if it has none). ``warnings`` lists
+        the requirements that cannot be parsed and are ignored, the packages
+        that have different specifiers (with the same environment marker), and
+        a ``dynamic`` ``dependencies``.
+
+    Raises:
+        MetadataError: If ``[project]`` is not a table or
+            ``[project].dependencies`` is not an array.
+    """
+    project = _get_table(data, "project", "[project]", pyproject_path)
+    entries = _check_array(
+        project.get("dependencies", []), "[project].dependencies", pyproject_path
+    )
+    found, names, warnings = _index_requirements(
+        [entry for entry in entries if isinstance(entry, str)], pyproject_path
+    )
+    if "dependencies" in _dynamic_dependency_fields(data):
+        warnings.append(_dynamic_message("dependencies", pyproject_path))
+    dependencies: dict[str, str] = {}
+    for key, matches in found.items():
+        specifier = matches[0][0]
+        dependencies[names[key]] = specifier
+        warnings.extend(_conflict_warnings(names[key], matches, specifier, pyproject_path))
+    return dependencies, warnings
 
 
 def extract_dependency_specifiers(
@@ -454,19 +539,10 @@ def extract_dependency_specifiers(
     # Like invalid requirements below, structure warnings are only worth
     # reporting when the caller looks something up.
     candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
-    warnings = structure_warnings if deps else []
-    found: dict[str, list[tuple[str, str | None]]] = {}
-    for raw in candidates:
-        try:
-            req = Requirement(raw)
-        except InvalidRequirement as exc:
-            # Only worth a warning when the caller looks something up: it may
-            # be the very entry that was meant to be found.
-            if deps:
-                warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
-            continue
-        marker = None if req.marker is None else str(req.marker)
-        found.setdefault(canonicalize_name(req.name), []).append((str(req.specifier), marker))
+    found, _, invalid_warnings = _index_requirements(candidates, pyproject_path)
+    # An invalid requirement is only worth a warning when the caller looks
+    # something up: it may be the very entry that was meant to be found.
+    warnings = [*structure_warnings, *invalid_warnings] if deps else []
 
     result: dict[str, str | None] = {}
     for dep in deps:
@@ -662,6 +738,9 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "python-versions": json.dumps(
             metadata["python_versions"], separators=(",", ":"), ensure_ascii=False
         ),
+        "project-dependencies": json.dumps(
+            metadata["project_dependencies"], separators=(",", ":"), ensure_ascii=False
+        ),
         "dependency-specifiers": json.dumps(
             metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
         ),
@@ -749,8 +828,13 @@ def main(argv: list[str]) -> int:
         python_versions, python_warnings = compatible_python_versions(
             metadata["requires_python"], python_candidates, args.pyproject_path
         )
+        project_dependencies, project_warnings = extract_project_dependencies(
+            data, args.pyproject_path
+        )
         warnings.extend(python_warnings)
+        warnings.extend(project_warnings)
         warnings.extend(specifier_warnings)
+        warnings = list(dict.fromkeys(warnings))
         if fail_on_missing:
             check_no_missing_dependency(
                 specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
@@ -758,6 +842,7 @@ def main(argv: list[str]) -> int:
         report = Report(
             **metadata,
             python_versions=python_versions,
+            project_dependencies=project_dependencies,
             dependency_specifiers=specifiers,
             warnings=warnings,
         )
