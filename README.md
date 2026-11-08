@@ -106,6 +106,7 @@ jobs:
 | `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version. Must be `true` or `false`.                                                                                  | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                        | No       | `["3.10","3.11","3.12","3.13","3.14"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`. Must be `true` or `false`.                                                                                                                                         | No       | `false`                                |
+| `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input. Must be `true` or `false`.                                                                                                            | No       | `false`                                |
 | `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output). Must be `true` or `false`.                                                                                                                                                | No       | `false`                                |
 
 ## Outputs
@@ -225,6 +226,8 @@ The action's step fails (non-zero exit) when:
 - `dependencies` is not a JSON array of strings.
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and
   `version` is listed in `[project].dynamic`.
+- `strict` is not `true` or `false`, or is `true` and there is a warning (the
+  error lists them; no output is written).
 - `step-summary` is not `true` or `false`.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
   `dependencies` is not found (the error says when `[project].dependencies` or

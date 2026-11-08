@@ -473,6 +473,62 @@ jobs:
           fi
           print_success "invalid step-summary correctly failed"
 
+      # -----------------------------------------------------------------------
+      # Test 19: strict input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test strict without warnings
+        id: test-strict-ok
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "true"
+
+      - name: ✓ Verify strict succeeds without warnings
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-strict-ok.outputs.name }}"
+          print_success "strict (no warning) test passed"
+
+      - name: 🧪 Test strict with a warning (should fail)
+        id: test-strict-warning
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify strict fails the step on a warning
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-strict-warning.outcome }}"
+          print_success "strict correctly failed"
+
+      - name: 🧪 Test the same file without strict
+        id: test-not-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+
+      - name: ✓ Verify a warning does not fail the step without strict
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "dynamic-pkg" "${{ steps.test-not-strict.outputs.name }}"
+          print_success "warning without strict test passed"
+
+      - name: 🧪 Test invalid strict (should fail)
+        id: test-invalid-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "maybe"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid strict fails the step
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-invalid-strict.outcome }}"
+          print_success "invalid strict correctly failed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

@@ -6,6 +6,7 @@ extras and dependency groups.
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
         [--fail-on-dynamic-version true|false] [--step-summary true|false]
+        [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
@@ -31,6 +32,9 @@ because GitHub only parses workflow commands there.
 With ``--step-summary true``, also appends a Markdown table of the outputs
 and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
 environment variable (the job summary of GitHub), whichever the other options.
+
+With ``--strict true``, any warning is an error instead: the outputs are not
+written and the message lists the warnings.
 
 With ``--fail-on-missing true``, a requested dependency that is not found
 is an error instead of a ``null`` specifier.
@@ -950,6 +954,12 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
         help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
     )
     parser.add_argument(
+        "--strict",
+        metavar="BOOL",
+        default="false",
+        help="'true' to fail when there is a warning (default: false)",
+    )
+    parser.add_argument(
         "--step-summary",
         metavar="BOOL",
         default="false",
@@ -984,11 +994,13 @@ def build_report(args: argparse.Namespace) -> Report:
 
     Raises:
         MetadataError: If an input or the pyproject.toml is invalid, the version
-            is dynamic with ``--fail-on-dynamic-version true``, or a dependency
-            is not found with ``--fail-on-missing true``.
+            is dynamic with ``--fail-on-dynamic-version true``, a dependency
+            is not found with ``--fail-on-missing true``, or there is a
+            warning with ``--strict true``.
     """
     fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
     fail_on_dynamic_version = parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version")
+    strict = parse_bool(args.strict, "strict")
     data = load_pyproject(args.pyproject_path)
     extra_values = parse_string_array(args.extra_values, "extra-values")
     dependencies = parse_string_array(args.dependencies, "dependencies")
@@ -1012,12 +1024,17 @@ def build_report(args: argparse.Namespace) -> Report:
         check_no_missing_dependency(
             specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
         )
+    warnings = list(dict.fromkeys(warnings))
+    if strict and warnings:
+        listed = "".join(f"\n- {warning}" for warning in warnings)
+        msg = f"strict is 'true' and there are {len(warnings)} warning(s):{listed}"
+        raise MetadataError(msg)
     return Report(
         **metadata,
         python_versions=python_versions,
         project_dependencies=project_dependencies,
         dependency_specifiers=specifiers,
-        warnings=list(dict.fromkeys(warnings)),
+        warnings=warnings,
     )
 
 
