@@ -652,6 +652,31 @@ jobs:
           assert_equal "dependency-requirements" '{"numpy":[{"specifier":">=1.20","marker":"python_version < \"3.12\""},{"specifier":">=1.26","marker":"python_version >= \"3.12\""}],"plain":[{"specifier":"","marker":""}],"missing":[]}' '${{ steps.test-dependency-requirements.outputs.dependency-requirements }}'
           print_success "dependency-requirements test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 26: python-executable input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test python-executable input
+        id: test-python-executable
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          python-executable: python3
+
+      - name: 🧪 Test python-executable that does not exist (should fail)
+        id: test-missing-python-executable
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          python-executable: python-does-not-exist
+        continue-on-error: true
+
+      - name: ✓ Verify python-executable
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-python-executable.outputs.name }}"
+          assert_equal "outcome" "failure" "${{ steps.test-missing-python-executable.outcome }}"
+          print_success "python-executable test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

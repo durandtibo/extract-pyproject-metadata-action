@@ -9,8 +9,8 @@
 # (which installs its requirements if needed); this file only wires the inputs
 # to the scripts and their output to the action outputs. Requires the
 # repository to already be checked out and a Python 3.11+ interpreter to be
-# available on PATH. If "packaging" is missing, it is installed in a private
-# virtual environment.
+# available on PATH (python3, or the python-executable input). If "packaging"
+# is missing, it is installed in a private virtual environment.
 #
 # Only Linux and macOS runners are supported. On a Windows runner the step
 # fails with an explicit error (the step expects python3 and a POSIX bash).
@@ -67,6 +67,13 @@ inputs:
       ignored)
     required: false
     default: "false"
+  python-executable:
+    description: >
+      Python interpreter that runs the action, a command found on PATH or a
+      path (it must be Python 3.11 or later), for runners where python3 is not
+      the interpreter to use
+    required: false
+    default: python3
   step-summary:
     description: >
       Set to "true" to also write the outputs and the warnings to the job
@@ -180,6 +187,7 @@ runs:
         FAIL_ON_DYNAMIC_VERSION: ${{ inputs.fail-on-dynamic-version }}
         STRICT: ${{ inputs.strict }}
         STEP_SUMMARY: ${{ inputs.step-summary }}
+        PYTHON_EXECUTABLE: ${{ inputs.python-executable }}
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
           --github-output "$GITHUB_OUTPUT" \
