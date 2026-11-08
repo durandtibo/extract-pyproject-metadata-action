@@ -1,4 +1,4 @@
-"""The Markdown job summary (GITHUB_STEP_SUMMARY)."""
+"""The Markdown job summary (``GITHUB_STEP_SUMMARY``)."""
 
 from __future__ import annotations
 

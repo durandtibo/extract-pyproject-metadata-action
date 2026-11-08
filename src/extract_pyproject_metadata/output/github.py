@@ -1,4 +1,4 @@
-"""The action outputs (GITHUB_OUTPUT), the workflow commands and the one-line summary."""
+"""The action outputs (``GITHUB_OUTPUT``), the workflow commands and the one-line summary."""
 
 from __future__ import annotations
 
