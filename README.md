@@ -230,5 +230,5 @@ Formatting and linting of the non-Python files (YAML, Markdown, shell, TOML,
 Makefiles) go through the `Makefile`; run `make help` to list the targets, for
 example `make format` and `make lint`.
 
-The integration workflows (`.github/workflows/test-local.yaml` and
-`test-stable.yaml`) can only run on GitHub.
+The integration workflows (`.github/workflows/ci-test-local.yaml` and
+`nightly-test-stable.yaml`) can only run on GitHub.
