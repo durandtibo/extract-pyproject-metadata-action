@@ -109,6 +109,11 @@ outputs:
       Highest of the python-versions, compared as numbers (empty if there is
       none)
     value: ${{ steps.metadata.outputs.python-max }}
+  python-matrix:
+    description: >
+      JSON object {"python-version": python-versions}, to use as a job matrix
+      with fromJSON
+    value: ${{ steps.metadata.outputs.python-matrix }}
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}

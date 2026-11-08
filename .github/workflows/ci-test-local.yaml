@@ -355,6 +355,8 @@ jobs:
           assert_equal "python-max" "3.14" "${{ steps.test-python-versions.outputs.python-max }}"
           assert_equal "python-max" "3.12" "${{ steps.test-python-candidates.outputs.python-max }}"
           assert_equal "python-max" "3.12" "${{ steps.test-python-versions-undeclared.outputs.python-max }}"
+          assert_equal "python-matrix" '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}' '${{ steps.test-python-versions.outputs.python-matrix }}'
+          assert_equal "python-matrix" '{"python-version":["3.10","3.12"]}' '${{ steps.test-python-candidates.outputs.python-matrix }}'
           print_success "python-versions test passed"
 
       - name: 🧪 Test invalid python-candidates (should fail)

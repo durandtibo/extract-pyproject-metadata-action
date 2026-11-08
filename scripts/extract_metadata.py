@@ -23,7 +23,7 @@ input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``description``, ``requires-python``,
-``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``project-dependencies`` and
+``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
@@ -51,6 +51,9 @@ instead of a warning.
 "major.minor" strings) that ``[project].requires-python`` allows, and
 ``python_min`` is the lowest of them and ``python_max`` the highest (each an
 empty string if there is none).
+The ``python-matrix`` output (not in the JSON) is
+``{"python-version": python_versions}``, an object that ``fromJSON`` can give
+to ``strategy.matrix`` as it is.
 
 Exits non-zero with a message on stderr (with ``--github-output FILE``, an
 ``::error file=<path>::`` workflow command, so that GitHub shows an error
@@ -948,6 +951,9 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         ),
         "python-min": metadata["python_min"],
         "python-max": metadata["python_max"],
+        "python-matrix": json.dumps(
+            {"python-version": metadata["python_versions"]}, separators=(",", ":"), ensure_ascii=False
+        ),
         "project-dependencies": json.dumps(
             metadata["project_dependencies"], separators=(",", ":"), ensure_ascii=False
         ),
