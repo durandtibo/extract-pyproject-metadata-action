@@ -29,7 +29,7 @@ from extract_metadata import (  # noqa: E402
     extract_dependency_specifiers,
     _candidate_requirements,
     _check_array,
-    _check_requirements,
+    _check_string_array,
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
@@ -1833,8 +1833,8 @@ def test_candidate_requirements_does_not_modify_the_data() -> None:
 
 
 @pytest.mark.parametrize("value", [[], ["a"], ["a", "B_c>=1"]])
-def test_check_requirements_returns_the_strings(value: list[str]) -> None:
-    assert _check_requirements(value, "[x]", "p.toml") == value
+def test_check_string_array_returns_the_strings(value: list[str]) -> None:
+    assert _check_string_array(value, "[x]", "p.toml") == value
 
 
 @pytest.mark.parametrize(
@@ -1845,9 +1845,9 @@ def test_check_requirements_returns_the_strings(value: list[str]) -> None:
         ([["a"]], r"^p\.toml: \[x\] must contain only strings, got: \['a'\]$"),
     ],
 )
-def test_check_requirements_wrong_types(value: object, match: str) -> None:
+def test_check_string_array_wrong_types(value: object, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        _check_requirements(value, "[x]", "p.toml")
+        _check_string_array(value, "[x]", "p.toml")
 
 
 @pytest.mark.parametrize(
