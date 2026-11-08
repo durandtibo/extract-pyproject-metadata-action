@@ -5,20 +5,22 @@ extras and dependency groups.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--] <pyproject-path> <extra-values-json> [<dependencies-json>]
+        [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
+        [<dependencies-json>]
 
 Without ``--github-output``, prints a single JSON object to stdout:
     {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
-     "extras": [...], "groups": [...], "dependency_specifiers": {...},
-     "warnings": [...]}
+     "extras": [...], "groups": [...], "python_versions": [...],
+     "dependency_specifiers": {...}, "warnings": [...]}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
-``extras``, ``groups`` and ``dependency-specifiers`` to FILE (the format of
-``$GITHUB_OUTPUT``, with a delimiter so that values may contain line breaks)
+``extras``, ``groups``, ``python-versions`` and ``dependency-specifiers`` to FILE
+(the format of ``$GITHUB_OUTPUT``, with a delimiter so that values may contain
+line breaks)
 and prints to stdout one ``::warning file=<path>::`` workflow command per
 warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
 annotation to the file, followed by a one-line summary. Warnings are printed
@@ -27,11 +29,15 @@ on stdout because GitHub only parses workflow commands there.
 With ``--fail-on-missing true``, a requested dependency that is not found
 is an error instead of a ``null`` specifier.
 
+``python_versions`` lists the ``--python-candidates`` (a JSON array of
+"major.minor" strings) that ``[project].requires-python`` allows.
+
 Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, a
 dependency table ([project].dependencies, [project.optional-dependencies] or
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
-expected shape, or ``--fail-on-missing true`` is given and a requested
+expected shape, a Python candidate is not a "major.minor" string, or
+``--fail-on-missing true`` is given and a requested
 dependency is not found.
 """
 
@@ -47,6 +53,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
@@ -55,6 +62,12 @@ try:
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
+
+# The Python versions that ``python-candidates`` defaults to (and the default of the input).
+DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
+
+# A "major.minor" Python version, such as "3.12".
+_MINOR_VERSION = re.compile(r"^[0-9]+\.[0-9]+$")
 
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit.
@@ -77,8 +90,9 @@ class Metadata(TypedDict):
 
 
 class Report(Metadata):
-    """The metadata, the dependency specifiers and the warnings built by ``main``."""
+    """The metadata, Python versions, dependency specifiers and warnings built by ``main``."""
 
+    python_versions: list[str]
     dependency_specifiers: dict[str, str | None]
     warnings: list[str]
 
@@ -499,6 +513,69 @@ def _conflict_warnings(
     return messages
 
 
+def parse_python_candidates(raw: str) -> list[str]:
+    """Parse the ``python-candidates`` input.
+
+    Args:
+        raw: The value of the input, a JSON array of "major.minor" strings.
+
+    Returns:
+        The versions, in order, without duplicates.
+
+    Raises:
+        MetadataError: If ``raw`` is not a JSON array of strings, or a string
+            is not of the form "major.minor" (such as ``"3.12"``).
+    """
+    candidates = parse_string_array(raw, "python-candidates")
+    for candidate in candidates:
+        if not _MINOR_VERSION.match(candidate):
+            msg = f"python-candidates must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
+            raise MetadataError(msg)
+    return list(dict.fromkeys(candidates))
+
+
+def compatible_python_versions(
+    requires_python: str, candidates: list[str], pyproject_path: str = "pyproject.toml"
+) -> tuple[list[str], list[str]]:
+    """Select the candidate Python versions that ``requires-python`` allows.
+
+    A "major.minor" candidate is allowed when some release of it can satisfy the
+    specifier. This is checked on the first release (``X.Y.0``) and on a very
+    late one (``X.Y.9999``), so ``>=3.10.2`` and ``<3.12.5`` allow ``3.10`` and
+    ``3.12``. A specifier that only some other patch releases satisfy (such as
+    ``==3.12.3``) is not detected.
+
+    Args:
+        requires_python: ``[project].requires-python`` as written, or an empty
+            string if it is not declared.
+        candidates: The "major.minor" versions to choose from, as returned by
+            ``parse_python_candidates``.
+        pyproject_path: Path of the file, used in the warning message.
+
+    Returns:
+        A tuple ``(versions, warnings)``. ``versions`` are the allowed
+        candidates, in the order of ``candidates``: all of them when
+        ``requires_python`` is empty, none of them (with a warning) when it is
+        not a valid specifier.
+    """
+    if not requires_python.strip():
+        return list(candidates), []
+    try:
+        specifier = SpecifierSet(requires_python)
+    except InvalidSpecifier as exc:
+        warning = (
+            f"{pyproject_path}: [project].requires-python is not a valid version specifier, "
+            f"the python-versions output is empty: {exc}"
+        )
+        return [], [warning]
+    versions = [
+        candidate
+        for candidate in candidates
+        if any(specifier.contains(f"{candidate}.{patch}") for patch in (0, 9999))
+    ]
+    return versions, []
+
+
 def parse_bool(value: str, name: str) -> bool:
     """Parse the ``"true"`` / ``"false"`` string of a boolean input.
 
@@ -582,6 +659,9 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),
+        "python-versions": json.dumps(
+            metadata["python_versions"], separators=(",", ":"), ensure_ascii=False
+        ),
         "dependency-specifiers": json.dumps(
             metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
         ),
@@ -632,6 +712,15 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
         default="false",
         help="'true' to fail when a requested dependency is not found (default: false)",
     )
+    parser.add_argument(
+        "--python-candidates",
+        metavar="JSON",
+        default=DEFAULT_PYTHON_CANDIDATES,
+        help=(
+            "JSON array of 'major.minor' Python versions to select from, using requires-python "
+            f"(default: {DEFAULT_PYTHON_CANDIDATES})"
+        ),
+    )
     parser.add_argument("pyproject_path", help="path to pyproject.toml")
     parser.add_argument("extra_values", help="JSON array of extra values to prepend")
     parser.add_argument(
@@ -652,16 +741,26 @@ def main(argv: list[str]) -> int:
         data = load_pyproject(args.pyproject_path)
         extra_values = parse_string_array(args.extra_values, "extra-values")
         dependencies = parse_string_array(args.dependencies, "dependencies")
+        python_candidates = parse_python_candidates(args.python_candidates)
         metadata, warnings = extract_metadata(data, extra_values, args.pyproject_path)
         specifiers, specifier_warnings = extract_dependency_specifiers(
             data, dependencies, args.pyproject_path
         )
+        python_versions, python_warnings = compatible_python_versions(
+            metadata["requires_python"], python_candidates, args.pyproject_path
+        )
+        warnings.extend(python_warnings)
         warnings.extend(specifier_warnings)
         if fail_on_missing:
             check_no_missing_dependency(
                 specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
             )
-        report = Report(**metadata, dependency_specifiers=specifiers, warnings=warnings)
+        report = Report(
+            **metadata,
+            python_versions=python_versions,
+            dependency_specifiers=specifiers,
+            warnings=warnings,
+        )
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)
         return 1

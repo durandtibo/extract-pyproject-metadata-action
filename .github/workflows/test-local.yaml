@@ -330,3 +330,51 @@ jobs:
             exit 1
           fi
           print_success "invalid fail-on-missing correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 15: python-versions output and python-candidates input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test python-versions output with the default candidates
+        id: test-python-versions
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+
+      - name: 🧪 Test python-versions output with custom candidates
+        id: test-python-candidates
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9","3.10","3.12"]'
+
+      - name: 🧪 Test python-versions output when requires-python is not declared
+        id: test-python-versions-undeclared
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          python-candidates: '["3.9","3.12"]'
+
+      - name: ✓ Verify python-versions
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "python-versions" '["3.10","3.11","3.12","3.13","3.14"]' '${{ steps.test-python-versions.outputs.python-versions }}'
+          assert_equal "python-versions" '["3.10","3.12"]' '${{ steps.test-python-candidates.outputs.python-versions }}'
+          assert_equal "python-versions" '["3.9","3.12"]' '${{ steps.test-python-versions-undeclared.outputs.python-versions }}'
+          print_success "python-versions test passed"
+
+      - name: 🧪 Test invalid python-candidates (should fail)
+        id: test-invalid-python-candidates
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.12.1"]'
+        continue-on-error: true
+
+      - name: ✓ Verify invalid python-candidates fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-python-candidates.outcome }}" = "success" ]; then
+            print_error "Invalid python-candidates should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid python-candidates correctly failed"
