@@ -440,6 +440,39 @@ jobs:
           fi
           print_success "invalid fail-on-dynamic-version correctly failed"
 
+      # -----------------------------------------------------------------------
+      # Test 18: step-summary input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test step-summary
+        id: test-step-summary
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          step-summary: "true"
+
+      - name: ✓ Verify step-summary does not change the outputs
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "deps-pkg" "${{ steps.test-step-summary.outputs.name }}"
+          print_success "step-summary test passed"
+
+      - name: 🧪 Test invalid step-summary (should fail)
+        id: test-invalid-step-summary
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          step-summary: "maybe"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid step-summary fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-step-summary.outcome }}" = "success" ]; then
+            print_error "Invalid step-summary should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid step-summary correctly failed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

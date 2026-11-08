@@ -106,6 +106,7 @@ jobs:
 | `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version. Must be `true` or `false`.                                                                                  | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                        | No       | `["3.10","3.11","3.12","3.13","3.14"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`. Must be `true` or `false`.                                                                                                                                         | No       | `false`                                |
+| `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output). Must be `true` or `false`.                                                                                                                                                | No       | `false`                                |
 
 ## Outputs
 
@@ -128,7 +129,10 @@ same way, as `::error file=<pyproject-path>::<message>`, so they show as an
 annotation of the run and not only in the log of the step.
 
 The step also prints a one-line `📦` summary of the outputs in the log, with line
-breaks in the values escaped, to help debugging a workflow.
+breaks in the values escaped, to help debugging a workflow. With
+`step-summary: "true"`, the outputs and the warnings are also written to the job
+summary of the run as a Markdown table (values are escaped, so a value from
+`pyproject.toml` cannot add Markdown or HTML to the page).
 
 ### Python version matrix
 
@@ -221,6 +225,7 @@ The action's step fails (non-zero exit) when:
 - `dependencies` is not a JSON array of strings.
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and
   `version` is listed in `[project].dynamic`.
+- `step-summary` is not `true` or `false`.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
   `dependencies` is not found (the error says when `[project].dependencies` or
   `[project].optional-dependencies` is dynamic and so cannot be read).

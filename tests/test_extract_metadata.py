@@ -39,13 +39,16 @@ from extract_metadata import (  # noqa: E402
     extract_metadata,
     extract_project_dependencies,
     format_outputs,
+    format_step_summary,
     format_summary,
     load_pyproject,
     main,
     parse_bool,
     parse_python_candidates,
     parse_string_array,
+    resolve_step_summary,
     write_github_output,
+    write_step_summary,
 )
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
@@ -828,6 +831,189 @@ def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert out_lines[1].startswith("📦 name=p version=1 ")
     assert len(out_lines) == 2
     assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("coola", "<code>coola</code>"),
+        ("", ""),
+        ("a b", "<code>a b</code>"),
+        ("a|b", "<code>a&#124;b</code>"),
+        ("<b>x</b>", "<code>&#60;b&#62;x&#60;&#47;b&#62;</code>"),
+        ("snake_case*", "<code>snake&#95;case&#42;</code>"),
+        ("a\nb", "<code>a&#92;nb</code>"),
+        ("`x`", "<code>&#96;x&#96;</code>"),
+    ],
+)
+def test_html_cell(value: str, expected: str) -> None:
+    assert extract_metadata_module._html_cell(value) == expected
+
+
+def test_format_step_summary_without_warnings() -> None:
+    report = Report(
+        name="coola",
+        normalized_name="coola",
+        version="1.2.3",
+        requires_python="",
+        extras=["", "a"],
+        groups=[],
+        python_versions=["3.12"],
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=[],
+    )
+
+    assert format_step_summary(report, format_outputs(report)) == (
+        "### 📦 Project metadata\n"
+        "\n"
+        "| Output | Value |\n"
+        "| --- | --- |\n"
+        "| `name` | <code>coola</code> |\n"
+        "| `normalized-name` | <code>coola</code> |\n"
+        "| `version` | <code>1&#46;2&#46;3</code> |\n"
+        "| `requires-python` |  |\n"
+        "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
+        "| `groups` | <code>&#91;&#93;</code> |\n"
+        "| `python-versions` | <code>&#91;&#34;3&#46;12&#34;&#93;</code> |\n"
+        "| `project-dependencies` | <code>&#123;&#125;</code> |\n"
+        "| `dependency-specifiers` | <code>&#123;&#125;</code> |\n"
+    )
+
+
+def test_format_step_summary_lists_the_warnings() -> None:
+    report = Report(
+        name="a",
+        normalized_name="a",
+        version="1",
+        requires_python="",
+        extras=[],
+        groups=[],
+        python_versions=[],
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=["first | one", "second"],
+    )
+
+    summary = format_step_summary(report, format_outputs(report))
+
+    assert summary.endswith(
+        "\n#### ⚠️ Warnings\n\n- <code>first &#124; one</code>\n- <code>second</code>\n"
+    )
+
+
+def test_write_step_summary_appends(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.md"
+    summary.write_text("before\n")
+
+    write_step_summary(str(summary), "# Title\n")
+    write_step_summary(str(summary), "again\n")
+
+    assert summary.read_text() == "before\n# Title\n\nagain\n\n"
+
+
+@pytest.mark.parametrize(
+    ("value", "environ", "expected"),
+    [
+        ("false", {}, None),
+        ("false", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, None),
+        ("true", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
+        (" TRUE ", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
+    ],
+)
+def test_resolve_step_summary(value: str, environ: dict[str, str], expected: str | None) -> None:
+    assert resolve_step_summary(value, environ) == expected
+
+
+@pytest.mark.parametrize("environ", [{}, {"GITHUB_STEP_SUMMARY": ""}])
+def test_resolve_step_summary_without_the_environment_variable(environ: dict[str, str]) -> None:
+    with pytest.raises(MetadataError, match=r"step-summary is 'true' but .*GITHUB_STEP_SUMMARY"):
+        resolve_step_summary("true", environ)
+
+
+def test_resolve_step_summary_invalid_value() -> None:
+    with pytest.raises(MetadataError, match=r"step-summary must be 'true' or 'false', got: 'maybe'"):
+        resolve_step_summary("maybe", {})
+
+
+def test_main_step_summary_writes_the_job_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(tmp_path / "out"),
+            "--step-summary",
+            "true",
+            str(path),
+            "[]",
+            '["dup"]',
+        ]
+    )
+
+    assert exit_code == 0
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("### 📦 Project metadata\n")
+    assert "| `name` | <code>p</code> |" in text
+    assert "#### ⚠️ Warnings" in text
+    assert "<code>dup has different specifiers" in text
+    capsys.readouterr()
+
+
+def test_main_step_summary_is_off_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert not summary.exists()
+
+
+def test_main_step_summary_without_json_output_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    assert main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "p"
+    assert summary.read_text(encoding="utf-8").startswith("### 📦 Project metadata\n")
+
+
+@pytest.mark.parametrize(
+    ("step_summary", "has_variable", "message"),
+    [
+        ("maybe", True, "step-summary must be 'true' or 'false'"),
+        ("true", False, "GITHUB_STEP_SUMMARY is not set"),
+    ],
+)
+def test_main_step_summary_errors_return_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    step_summary: str,
+    has_variable: bool,
+    message: str,
+) -> None:
+    if has_variable:
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
+    else:
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(["extract_metadata.py", "--step-summary", step_summary, str(path), "[]"])
+
+    assert exit_code == 1
+    assert message in capsys.readouterr().err
+    assert not (tmp_path / "summary.md").exists()
 
 
 @pytest.mark.parametrize(
