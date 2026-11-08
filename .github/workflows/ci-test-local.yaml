@@ -369,16 +369,16 @@ jobs:
       - name: ✓ Verify python-versions
         run: |
           source scripts/test-helper.sh
-          assert_equal "python-versions" '["3.10","3.11","3.12","3.13","3.14"]' '${{ steps.test-python-versions.outputs.python-versions }}'
+          assert_equal "python-versions" '["3.10","3.11","3.12","3.13","3.14","3.15"]' '${{ steps.test-python-versions.outputs.python-versions }}'
           assert_equal "python-versions" '["3.10","3.12"]' '${{ steps.test-python-candidates.outputs.python-versions }}'
           assert_equal "python-versions" '["3.9","3.12"]' '${{ steps.test-python-versions-undeclared.outputs.python-versions }}'
           assert_equal "python-min" "3.10" "${{ steps.test-python-versions.outputs.python-min }}"
           assert_equal "python-min" "3.10" "${{ steps.test-python-candidates.outputs.python-min }}"
           assert_equal "python-min" "3.9" "${{ steps.test-python-versions-undeclared.outputs.python-min }}"
-          assert_equal "python-max" "3.14" "${{ steps.test-python-versions.outputs.python-max }}"
+          assert_equal "python-max" "3.15" "${{ steps.test-python-versions.outputs.python-max }}"
           assert_equal "python-max" "3.12" "${{ steps.test-python-candidates.outputs.python-max }}"
           assert_equal "python-max" "3.12" "${{ steps.test-python-versions-undeclared.outputs.python-max }}"
-          assert_equal "python-matrix" '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}' '${{ steps.test-python-versions.outputs.python-matrix }}'
+          assert_equal "python-matrix" '{"python-version":["3.10","3.11","3.12","3.13","3.14","3.15"]}' '${{ steps.test-python-versions.outputs.python-matrix }}'
           assert_equal "python-matrix" '{"python-version":["3.10","3.12"]}' '${{ steps.test-python-candidates.outputs.python-matrix }}'
           print_success "python-versions test passed"
 
