@@ -106,6 +106,8 @@ jobs:
 | `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version. Must be `true` or `false`.                                                                                  | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                        | No       | `["3.10","3.11","3.12","3.13","3.14"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`. Must be `true` or `false`.                                                                                                                                         | No       | `false`                                |
+| `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input. Must be `true` or `false`.                                                                                                            | No       | `false`                                |
+| `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output). Must be `true` or `false`.                                                                                                                                                | No       | `false`                                |
 
 ## Outputs
 
@@ -114,8 +116,10 @@ jobs:
 | `name`                  | Project name, as declared in `[project].name`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `normalized-name`       | Project name normalized per PEP 503: lowercase, with each run of `-`, `_` and `.` replaced by a single `-` (e.g. `My_Package.Name` gives `my-package-name`). Use it for the names of wheel/sdist files and of packages on an index.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `version`               | Project version, as declared in `[project].version`. Empty if `version` is listed in `[project].dynamic` (a warning is emitted).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `description`           | Project description, as declared in `[project].description`, as written. Empty if it is not declared (also if it is listed in `[project].dynamic`). It may contain line breaks: pass it to the shell through `env:`. It is not shown in the `📦` log line.                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `requires-python`       | Python version specifier, as declared in `[project].requires-python` (e.g. `>=3.10,<4`), as written. Empty if it is not declared (also if it is listed in `[project].dynamic`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `python-versions`       | JSON array of the `python-candidates` that `requires-python` allows, in the order of the candidates (e.g. `["3.10","3.11"]` for `>=3.10,<3.12`), to drive a job matrix. All the candidates if `requires-python` is not declared. A minor version is allowed if some release of it satisfies the specifier (checked on `X.Y.0`, on a very late patch release and around each patch number that the specifier names), so `>=3.10.2` allows `3.10` and `==3.12.3` allows `3.12` only. `[]` (with a warning) if `requires-python` is not a valid specifier.                                                                                                                                 |
+| `python-min`            | The lowest of the `python-versions`, compared as numbers (`3.9` is lower than `3.10`), e.g. `3.10` for `>=3.10,<3.12`. Empty if `python-versions` is empty. Use it for the jobs that need a single Python version (lint, build, docs).                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `extras`                | JSON array of extra names, sorted by normalized name, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept); names are compared per PEP 685, so `Foo_Bar` and `foo-bar` are the same extra.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `groups`                | JSON array of the group names of `[dependency-groups]` (PEP 735), sorted by normalized name, without duplicates. `[]` if there is none.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `project-dependencies`  | JSON object mapping each package of `[project].dependencies` to its specifier, with the name as written in its first requirement and in the order of the file (e.g. `{"numpy": "<3,>=1.20", "Foo_Bar": ""}`), without having to list the names in `dependencies`. Extras and dependency groups are not read. The first requirement of a package wins, whatever its environment marker, as for `dependency-specifiers`. `{}` if there is none. A warning is emitted if a requirement string is invalid and ignored, if a package has different specifiers for the same environment marker, or if `dependencies` is listed in `[project].dynamic` without a static value.                 |
@@ -123,10 +127,15 @@ jobs:
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
-used as given).
+used as given). Failures (see [Failure modes](#failure-modes)) are emitted the
+same way, as `::error file=<pyproject-path>::<message>`, so they show as an
+annotation of the run and not only in the log of the step.
 
 The step also prints a one-line `📦` summary of the outputs in the log, with line
-breaks in the values escaped, to help debugging a workflow.
+breaks in the values escaped, to help debugging a workflow. With
+`step-summary: "true"`, the outputs and the warnings are also written to the job
+summary of the run as a Markdown table (values are escaped, so a value from
+`pyproject.toml` cannot add Markdown or HTML to the page).
 
 ### Python version matrix
 
@@ -204,7 +213,7 @@ The action's step fails (non-zero exit) when:
   ([PEP 508](https://peps.python.org/pep-0508/#names)), for example `my pkg`.
 - `[project].version` is not a valid
   [PEP 440](https://peps.python.org/pep-0440/) version (for example `latest`).
-- `[project].requires-python` is not a string.
+- `[project].description` or `[project].requires-python` is not a string.
 - `python-candidates` is not valid JSON, is not a JSON array of strings, or
   contains a string that is not of the form `major.minor`.
 - `[project.optional-dependencies]` is not a table.
@@ -212,10 +221,16 @@ The action's step fails (non-zero exit) when:
 - `[project].dependencies` or a value of `[project.optional-dependencies]` or
   `[dependency-groups]` is not an array, `[dependency-groups]` is not a table,
   or an `include-group` value is not a string.
+- A requirement of `[project].dependencies` or of a `[project.optional-dependencies]`
+  extra is not a string (for example `dependencies = ["numpy", 1]`). It used to be
+  ignored silently.
 - `extra-values` is not valid JSON, or is not a JSON array of strings.
 - `dependencies` is not a JSON array of strings.
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and
   `version` is listed in `[project].dynamic`.
+- `strict` is not `true` or `false`, or is `true` and there is a warning (the
+  error lists them; no output is written).
+- `step-summary` is not `true` or `false`.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
   `dependencies` is not found (the error says when `[project].dependencies` or
   `[project].optional-dependencies` is dynamic and so cannot be read).
