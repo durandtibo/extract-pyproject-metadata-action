@@ -207,7 +207,8 @@ def _flatten_group(
     """Return requirement strings of a dependency group, expanding include-group.
 
     An ``include-group`` that leads back to a group being expanded is not
-    followed again; a warning is appended to ``warnings`` (once per cycle).
+    followed again; a warning is appended to ``warnings`` (once per cycle). An
+    ``include-group`` that names no group is skipped, with a warning.
 
     Raises:
         MetadataError: If a group is not an array or an ``include-group`` value
@@ -231,8 +232,20 @@ def _flatten_group(
             elif isinstance(entry, dict) and "include-group" in entry:
                 included = entry["include-group"]
                 if not isinstance(included, str):
-                    msg = f"{pyproject_path}: {label}: include-group must be a string, got: {included!r}"
+                    msg = (
+                        f"{pyproject_path}: {label}: include-group must be a string, "
+                        f"got: {included!r}"
+                    )
                     raise MetadataError(msg)
+                if warnings is not None and not any(
+                    canonicalize_name(group) == canonicalize_name(included) for group in groups
+                ):
+                    message = (
+                        f"{pyproject_path}: {label}: include-group {included!r} "
+                        "does not match any group"
+                    )
+                    if message not in warnings:
+                        warnings.append(message)
                 out.extend(
                     _flatten_group(groups, included, (*seen, key), pyproject_path, warnings)
                 )
@@ -244,7 +257,8 @@ def _candidate_requirements(
 ) -> list[str]:
     """All requirement strings, in search order.
 
-    ``warnings`` receives one message per include-group cycle.
+    ``warnings`` receives one message per include-group cycle and per
+    ``include-group`` that names no group.
 
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
@@ -268,7 +282,8 @@ def _candidate_requirements(
         raise MetadataError(msg)
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
-        reqs.extend(r for r in _check_array(extra_reqs, label, pyproject_path) if isinstance(r, str))
+        extra_reqs = _check_array(extra_reqs, label, pyproject_path)
+        reqs.extend(r for r in extra_reqs if isinstance(r, str))
     groups = data.get("dependency-groups", {})
     if not isinstance(groups, dict):
         msg = f"{pyproject_path}: [dependency-groups] must be a table, got: {groups!r}"
@@ -293,9 +308,11 @@ def extract_dependency_specifiers(
             error and warning messages.
         warnings: List to which warning messages are appended (for example
             when a package has different specifiers in several places, a
-            requirement string cannot be parsed and is ignored, or
-            ``include-group`` entries form a cycle). Invalid requirements and
-            cycles are only reported when ``dependencies_json`` is not empty.
+            requirement string cannot be parsed and is ignored,
+            ``include-group`` entries form a cycle, or an ``include-group``
+            names a group that does not exist). Invalid requirements and
+            include-group problems are only reported when ``dependencies_json``
+            is not empty.
 
     Returns:
         A dict mapping each requested package name to its specifier, ``""`` if

@@ -1217,3 +1217,63 @@ def test_main_include_group_cycle_warning_annotation(
     assert captured.out.splitlines()[0] == (
         f"::warning::{path}: [dependency-groups] has an include-group cycle: a -> a"
     )
+
+
+def test_flatten_group_missing_include_group_adds_a_warning() -> None:
+    warnings: list[str] = []
+
+    result = _flatten_group(
+        {"dev": [{"include-group": "tset"}, "x"]}, "dev", pyproject_path="p.toml", warnings=warnings
+    )
+
+    assert result == ["x"]
+    assert warnings == ["p.toml: [dependency-groups].dev: include-group 'tset' does not match any group"]
+
+
+def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warning() -> None:
+    warnings: list[str] = []
+
+    result = _flatten_group(
+        {"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a", warnings=warnings
+    )
+
+    assert result == ["y"]
+    assert warnings == []
+
+
+def test_flatten_group_missing_include_group_is_reported_once_per_group() -> None:
+    groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
+    warnings: list[str] = []
+
+    _candidate_requirements({"dependency-groups": groups}, "p.toml", warnings)
+
+    assert warnings == ["p.toml: [dependency-groups].a: include-group 'nope' does not match any group"]
+
+
+def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [dependency-groups]
+        dev = [{include-group = "tset"}, "x>=1"]
+        """,
+    )
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(load_pyproject(str(path)), '["x"]', str(path), warnings)
+
+    assert result == {"x": ">=1"}
+    assert warnings == [
+        f"{path}: [dependency-groups].dev: include-group 'tset' does not match any group"
+    ]
+
+
+def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requested(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(tmp_path, '[dependency-groups]\ndev = [{include-group = "tset"}]\n')
+    warnings: list[str] = []
+
+    extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
+
+    assert warnings == []
