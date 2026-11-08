@@ -111,7 +111,7 @@ class Metadata(TypedDict):
 
 
 class Report(Metadata):
-    """The metadata, Python versions, lowest Python version, dependency specifiers and warnings built by ``main``."""
+    """The metadata, Python versions, lowest Python version, dependency specifiers and warnings built by ``build_report``."""
 
     python_versions: list[str]
     python_min: str
@@ -519,7 +519,7 @@ def _candidate_requirements(
 def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
     """Parse a requirement string, once per distinct string.
 
-    ``main`` reads the requirements of ``[project].dependencies`` twice (for
+    ``build_report`` reads the requirements of ``[project].dependencies`` twice (for
     ``project-dependencies`` and for the lookup of ``dependencies``): the cache
     makes each string parsed only once.
 
@@ -897,7 +897,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
     """Convert the metadata dict into the string outputs of the action.
 
     Args:
-        metadata: The report built by ``main``.
+        metadata: The report built by ``build_report``.
 
     Returns:
         A dict mapping each output name of ``action.yaml`` to its value, with
