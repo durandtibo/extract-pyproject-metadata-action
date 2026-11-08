@@ -13,9 +13,12 @@ import extract_metadata as extract_metadata_module  # noqa: E402
 from extract_metadata import (  # noqa: E402
     MetadataError,
     extract_dependency_specifiers,
+    escape_annotation,
     extract_metadata,
+    format_outputs,
     load_pyproject,
     main,
+    write_github_output,
 )
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
@@ -580,3 +583,140 @@ def test_dependency_invalid_input(tmp_path: Path, value: str) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
     with pytest.raises(MetadataError):
         specifiers(path, value)
+
+
+METADATA = {
+    "name": "coola",
+    "version": "1.2.3",
+    "extras": ["", "numpy"],
+    "dependency_specifiers": {"numpy": ">=1", "missing": None},
+    "warnings": [],
+}
+
+
+def test_format_outputs() -> None:
+    assert format_outputs(METADATA) == {
+        "name": "coola",
+        "version": "1.2.3",
+        "extras": '["","numpy"]',
+        "dependency-specifiers": '{"numpy":">=1","missing":null}',
+    }
+
+
+def test_format_outputs_keeps_non_ascii_characters() -> None:
+    metadata = {**METADATA, "extras": ["é"], "dependency_specifiers": {}}
+
+    assert format_outputs(metadata)["extras"] == '["é"]'
+
+
+def test_write_github_output(tmp_path: Path) -> None:
+    output = tmp_path / "github_output"
+
+    write_github_output(str(output), {"name": "coola", "version": "", "extras": "[]"})
+
+    assert output.read_text(encoding="utf-8") == "name=coola\nversion=\nextras=[]\n"
+
+
+def test_write_github_output_appends(tmp_path: Path) -> None:
+    output = tmp_path / "github_output"
+    output.write_text("previous=step\n", encoding="utf-8")
+
+    write_github_output(str(output), {"name": "coola"})
+
+    assert output.read_text(encoding="utf-8") == "previous=step\nname=coola\n"
+
+
+def test_main_github_output_writes_outputs_and_annotations(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    output = tmp_path / "github_output"
+
+    exit_code = main(
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(output),
+            str(path),
+            '[""]',
+            '["dup", "nospec", "missing"]',
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert output.read_text(encoding="utf-8") == (
+        "name=p\n"
+        "version=1\n"
+        'extras=["","a"]\n'
+        'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
+    )
+    assert captured.out == (
+        f"::warning::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
+        '📦 name=p version=1 extras=["","a"]\n'
+    )
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("plain", "plain"),
+        ("", ""),
+        ("100%", "100%25"),
+        ("a\nb", "a%0Ab"),
+        ("a\r\nb", "a%0D%0Ab"),
+        ("%0A", "%250A"),
+    ],
+)
+def test_escape_annotation(message: str, expected: str) -> None:
+    assert escape_annotation(message) == expected
+
+
+def test_main_github_output_error_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "github_output"
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(output), str(tmp_path / "nope.toml"), "[]"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "not found" in captured.err
+    assert captured.out == ""
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["extract_metadata.py", "--github-output"],
+        ["extract_metadata.py", "--github-output", "out"],
+        ["extract_metadata.py", "--github-output", "out", "a", "[]", "[]", "extra"],
+        ["extract_metadata.py", "--unknown", "a", "[]"],
+    ],
+)
+def test_main_usage_errors_with_options(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(argv) == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n[project.optional-dependencies]\nnumpy = ["numpy"]\n'
+    )
+    output = tmp_path / "github_output"
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(SCRIPT_PATH), "--github-output", str(output), "--", str(path), '[""]'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert output.read_text(encoding="utf-8") == (
+        'name=coola\nversion=1.2.3\nextras=["","numpy"]\ndependency-specifiers={}\n'
+    )
+    assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'

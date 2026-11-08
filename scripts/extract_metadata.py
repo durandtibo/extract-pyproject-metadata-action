@@ -1,15 +1,22 @@
 r"""Extract project name, version, and optional-dependency extras from a pyproject.toml.
 
 Usage:
-    extract_metadata.py <pyproject-path> <extra-values-json> [<dependencies-json>]
+    extract_metadata.py [--github-output FILE] [--] <pyproject-path>
+        <extra-values-json> [<dependencies-json>]
 
-Prints a single JSON object to stdout:
+Without ``--github-output``, prints a single JSON object to stdout:
     {"name": ..., "version": ..., "extras": [...], "dependency_specifiers": {...},
      "warnings": [...]}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
-input. They are not printed to stderr here: the caller (action.yaml) turns
-them into ``::warning::`` annotations, which GitHub only parses on stdout.
+input.
+
+With ``--github-output FILE`` (used by action.yaml), appends the action
+outputs ``name``, ``version``, ``extras`` and ``dependency-specifiers`` to
+FILE as ``key=value`` lines (the format of ``$GITHUB_OUTPUT``) and prints to
+stdout one ``::warning::`` workflow command per warning, followed by a
+one-line summary. Warnings are printed on stdout because GitHub only parses
+workflow commands there.
 
 Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, or an
@@ -18,6 +25,7 @@ input is not valid JSON of the expected shape.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -250,28 +258,92 @@ def extract_dependency_specifiers(
     return result
 
 
+def escape_annotation(message: str) -> str:
+    """Escape a message for use in a ``::warning::`` workflow command.
+
+    Same escaping as ``@actions/core``: without it a newline would end the
+    command and the rest of the message would be parsed as another command.
+    """
+    return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def format_outputs(metadata: dict) -> dict[str, str]:
+    """Convert the metadata dict into the string outputs of the action.
+
+    Args:
+        metadata: The dict built by ``main``, with keys ``name``, ``version``,
+            ``extras`` and ``dependency_specifiers``.
+
+    Returns:
+        A dict mapping each output name of ``action.yaml`` to its value, with
+        JSON values in compact form.
+    """
+    return {
+        "name": metadata["name"],
+        "version": metadata["version"],
+        "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
+        "dependency-specifiers": json.dumps(
+            metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
+        ),
+    }
+
+
+def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
+    """Append ``key=value`` lines to a ``$GITHUB_OUTPUT`` file.
+
+    Args:
+        output_path: Path of the file, which is created if it does not exist.
+        outputs: Output names and values.
+    """
+    with Path(output_path).open("a", encoding="utf-8") as f:
+        for key, value in outputs.items():
+            f.write(f"{key}={value}\n")
+
+
+def _build_parser(prog: str) -> argparse.ArgumentParser:
+    """Build the command line parser."""
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--github-output",
+        metavar="FILE",
+        help="append the action outputs to FILE and print workflow commands instead of JSON",
+    )
+    parser.add_argument("pyproject_path", help="path to pyproject.toml")
+    parser.add_argument("extra_values", help="JSON array of extra values to prepend")
+    parser.add_argument(
+        "dependencies", nargs="?", default="[]", help="JSON array of package names to look up"
+    )
+    return parser
+
+
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit code."""
-    if len(argv) not in (3, 4):
-        print(
-            f"Usage: {argv[0]} <pyproject-path> <extra-values-json> [<dependencies-json>]",
-            file=sys.stderr,
-        )
-        return 2
+    try:
+        args = _build_parser(Path(argv[0]).name).parse_args(argv[1:])
+    except SystemExit as exc:  # argparse exits on bad arguments and on --help
+        return exc.code if isinstance(exc.code, int) else 2
 
     try:
-        data = load_pyproject(argv[1])
+        data = load_pyproject(args.pyproject_path)
         warnings: list[str] = []
-        metadata = extract_metadata(data, argv[2], argv[1], warnings)
+        metadata = extract_metadata(data, args.extra_values, args.pyproject_path, warnings)
         metadata["dependency_specifiers"] = extract_dependency_specifiers(
-            data, argv[3] if len(argv) == 4 else "[]", argv[1], warnings
+            data, args.dependencies, args.pyproject_path, warnings
         )
         metadata["warnings"] = warnings
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(json.dumps(metadata))
+    if args.github_output is None:
+        print(json.dumps(metadata))
+        return 0
+
+    outputs = format_outputs(metadata)
+    for warning in warnings:
+        print(f"::warning::{escape_annotation(warning)}")
+    print(f"📦 name={outputs['name']} version={outputs['version']} extras={outputs['extras']}")
+    write_github_output(args.github_output, outputs)
     return 0
 
 
