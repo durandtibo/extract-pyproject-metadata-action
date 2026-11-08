@@ -227,8 +227,10 @@ The logic is in `scripts/extract_metadata.py`, started by `scripts/run.sh`
 ```bash
 python -m venv .venv
 .venv/bin/pip install -r requirements-test.txt
-.venv/bin/pytest -q
+.venv/bin/pytest -q --cov
 ```
+
+CI fails if the unit tests do not cover 100% of `scripts/extract_metadata.py`.
 
 Formatting and linting of the non-Python files (YAML, Markdown, shell, TOML,
 Makefiles) go through the `Makefile`; run `make help` to list the targets, for
