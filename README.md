@@ -128,6 +128,7 @@ jobs:
 | `python-versions`       | JSON array of the `python-candidates` that `requires-python` allows, in the order of the candidates (e.g. `["3.10","3.11"]` for `>=3.10,<3.12`), to drive a job matrix. All the candidates if `requires-python` is not declared. A minor version is allowed if some release of it satisfies the specifier (checked on `X.Y.0`, on a very late patch release and around each patch number that the specifier names), so `>=3.10.2` allows `3.10` and `==3.12.3` allows `3.12` only. `[]` (with a warning) if `requires-python` is not a valid specifier.                                                                                                                                 |
 | `python-min`            | The lowest of the `python-versions`, compared as numbers (`3.9` is lower than `3.10`), e.g. `3.10` for `>=3.10,<3.12`. Empty if `python-versions` is empty. Use it for the jobs that need a single Python version (lint, build, docs).                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `python-max`            | The highest of the `python-versions`, compared as numbers (`3.10` is higher than `3.9`), e.g. `3.11` for `>=3.10,<3.12`. Empty if `python-versions` is empty. Use it for the jobs that need the newest supported Python (for example a type checker or a latest-Python job).                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `python-matrix`         | JSON object `{"python-version": [...]}` made of the `python-versions`, to use as a job matrix as it is with `fromJSON` (see [Python version matrix](#python-version-matrix)). `{"python-version":[]}` if `python-versions` is empty: GitHub fails a job whose matrix has no value, so a workflow may check `python-versions` first. Not in the `📦` log line.                                                                                                                                                                                                                                                                                                                           |
 | `extras`                | JSON array of extra names, sorted by normalized name, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept); names are compared per PEP 685, so `Foo_Bar` and `foo-bar` are the same extra.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `groups`                | JSON array of the group names of `[dependency-groups]` (PEP 735), sorted by normalized name, without duplicates. `[]` if there is none.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `project-dependencies`  | JSON object mapping each package of `[project].dependencies` to its specifier, with the name as written in its first requirement and in the order of the file (e.g. `{"numpy": "<3,>=1.20", "Foo_Bar": ""}`), without having to list the names in `dependencies`. Extras and dependency groups are not read. The first requirement of a package wins, whatever its environment marker, as for `dependency-specifiers`. `{}` if there is none. A warning is emitted if a requirement string is invalid and ignored, if a package has different specifiers for the same environment marker, or if `dependencies` is listed in `[project].dynamic` without a static value.                 |
@@ -186,6 +187,21 @@ jobs:
 
 The list of candidates is yours to maintain: the action does not know which
 Python versions exist.
+
+`python-matrix` is the same list as an object, so the matrix of the example can
+also be written without the `python-version` key of your own:
+
+```yaml
+test:
+  needs: metadata
+  runs-on: ubuntu-latest
+  strategy:
+    matrix: ${{ fromJSON(needs.metadata.outputs.python-matrix) }}
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+```
 
 ## Environment markers
 

@@ -811,6 +811,7 @@ def test_format_outputs() -> None:
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
         "python-max": "3.14",
+        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
         "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
     }
@@ -935,6 +936,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
         "python-max": "3.14",
+        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
         "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
@@ -1125,6 +1127,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `python-versions` | <code>&#91;&#34;3&#46;12&#34;&#93;</code> |\n"
         "| `python-min` | <code>3&#46;12</code> |\n"
         "| `python-max` | <code>3&#46;12</code> |\n"
+        "| `python-matrix` | <code>&#123;&#34;python&#45;version&#34;&#58;&#91;&#34;3&#46;12&#34;&#93;&#125;</code> |\n"
         "| `project-dependencies` | <code>&#123;&#125;</code> |\n"
         "| `dependency-specifiers` | <code>&#123;&#125;</code> |\n"
     )
@@ -1514,6 +1517,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
         "python-max": "3.14",
+        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
     }
@@ -2928,6 +2932,67 @@ def test_highest_python_version(versions: list[str], expected: str) -> None:
     assert highest_python_version(versions) == expected
 
 
+def test_format_outputs_python_matrix() -> None:
+    report = Report(
+        name="a",
+        normalized_name="a",
+        version="1",
+        description="",
+        requires_python="",
+        extras=[],
+        groups=[],
+        python_versions=["3.11", "3.12"],
+        python_min="3.11",
+        python_max="3.12",
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=[],
+    )
+
+    assert format_outputs(report)["python-matrix"] == '{"python-version":["3.11","3.12"]}'
+
+
+def test_format_outputs_python_matrix_without_allowed_version() -> None:
+    report = Report(
+        name="a",
+        normalized_name="a",
+        version="1",
+        description="",
+        requires_python=">=4",
+        extras=[],
+        groups=[],
+        python_versions=[],
+        python_min="",
+        python_max="",
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=[],
+    )
+
+    assert format_outputs(report)["python-matrix"] == '{"python-version":[]}'
+
+
+def test_main_github_output_python_matrix(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.12"\n'
+    )
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    values = parse_github_output(output.read_text(encoding="utf-8"))
+    assert values["python-matrix"] == '{"python-version":["3.12","3.13","3.14"]}'
+    assert json.loads(values["python-matrix"])["python-version"] == json.loads(
+        values["python-versions"]
+    )
+
+
+def test_main_json_has_no_python_matrix(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert "python_matrix" not in json.loads(capsys.readouterr().out)
+
+
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "<3.13"\n'
@@ -3134,10 +3199,10 @@ def test_readme_lists_the_outputs_of_the_log_line() -> None:
     assert f"The line shows {listed};" in readme
 
 
-def test_log_line_leaves_out_only_normalized_name_and_description() -> None:
+def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
     omitted = set(_action_section_keys("outputs")) - set(extract_metadata_module._SUMMARY_FIELDS)
 
-    assert omitted == {"normalized-name", "description"}
+    assert omitted == {"normalized-name", "description", "python-matrix"}
 
 
 def test_readme_default_of_python_candidates_matches_the_script() -> None:
