@@ -14,6 +14,7 @@ from extract_metadata import (  # noqa: E402
     MetadataError,
     extract_dependency_specifiers,
     _candidate_requirements,
+    _conflict_warnings,
     _flatten_group,
     _parse_dependencies,
     escape_annotation,
@@ -1277,3 +1278,108 @@ def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requeste
     extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
 
     assert warnings == []
+
+
+MARKERS_TOML = """
+[project]
+name = "p"
+version = "1"
+dependencies = [
+    "numpy>=1.20; python_version < '3.10'",
+    "numpy>=2; python_version >= '3.10'",
+    "same>=1; sys_platform == 'linux'",
+    "same>=2; sys_platform == 'linux'",
+    "mixed>=1",
+    "mixed>=2; python_version >= '3.10'",
+]
+"""
+
+
+def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, MARKERS_TOML)
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(
+        load_pyproject(str(path)), '["numpy"]', str(path), warnings
+    )
+
+    assert result == {"numpy": ">=1.20"}
+    assert warnings == []
+
+
+def test_dependency_same_marker_different_specifiers_warns_with_the_marker(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(tmp_path, MARKERS_TOML)
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(
+        load_pyproject(str(path)), '["same"]', str(path), warnings
+    )
+
+    assert result == {"same": ">=1"}
+    assert warnings == [
+        f"same has different specifiers for marker 'sys_platform == \"linux\"' in {path}: "
+        "['>=1', '>=2']; using '>=1'"
+    ]
+
+
+def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, MARKERS_TOML)
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(
+        load_pyproject(str(path)), '["mixed"]', str(path), warnings
+    )
+
+    assert result == {"mixed": ">=1"}
+    assert warnings == []
+
+
+def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\ndependencies = ["a>=1; os_name == \'nt\'", "a>=1; os_name == \'posix\'"]\n',
+    )
+    warnings: list[str] = []
+
+    extract_dependency_specifiers(load_pyproject(str(path)), '["a"]', str(path), warnings)
+
+    assert warnings == []
+
+
+def test_dependency_one_warning_per_conflicting_marker(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        dependencies = [
+            "a>=1; os_name == 'nt'", "a>=2; os_name == 'nt'",
+            "a>=3", "a>=4",
+        ]
+        """,
+    )
+    warnings: list[str] = []
+
+    extract_dependency_specifiers(load_pyproject(str(path)), '["a"]', str(path), warnings)
+
+    assert warnings == [
+        f"a has different specifiers for marker 'os_name == \"nt\"' in {path}: "
+        "['>=1', '>=2']; using '>=1'",
+        f"a has different specifiers in {path}: ['>=3', '>=4']; using '>=1'",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("matches", "expected"),
+    [
+        ([("==1", None)], []),
+        ([("==1", None), ("==1", None)], []),
+        ([("==1", "os_name == 'nt'"), ("==2", "os_name == 'posix'")], []),
+        ([("==1", None), ("==2", "os_name == 'nt'")], []),
+        ([("==1", None), ("==2", None)], ["a has different specifiers in p.toml: ['==1', '==2']; using '==1'"]),
+        ([("==2", None), ("==1", None), ("==2", None)], ["a has different specifiers in p.toml: ['==1', '==2']; using '==2'"]),
+    ],
+)
+def test_conflict_warnings(matches: list[tuple[str, str | None]], expected: list[str]) -> None:
+    assert _conflict_warnings("a", matches, matches[0][0], "p.toml") == expected
