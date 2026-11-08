@@ -41,7 +41,7 @@ inputs:
     description: >
       Set to "true" to fail when a package listed in dependencies is not found,
       instead of reporting it as null in dependency-specifiers ("true" or
-      "false")
+      "false"; the case and surrounding spaces are ignored)
     required: false
     default: "false"
 
@@ -55,20 +55,23 @@ inputs:
   fail-on-dynamic-version:
     description: >
       Set to "true" to fail when the version is listed in [project].dynamic,
-      instead of reporting an empty version with a warning ("true" or "false")
+      instead of reporting an empty version with a warning ("true" or "false";
+      the case and surrounding spaces are ignored)
     required: false
     default: "false"
 
   strict:
     description: >
       Set to "true" to fail when there is any warning, instead of only
-      reporting it ("true" or "false")
+      reporting it ("true" or "false"; the case and surrounding spaces are
+      ignored)
     required: false
     default: "false"
   step-summary:
     description: >
       Set to "true" to also write the outputs and the warnings to the job
-      summary of the workflow run ("true" or "false")
+      summary of the workflow run ("true" or "false"; the case and surrounding
+      spaces are ignored)
     required: false
     default: "false"
 
