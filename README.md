@@ -302,6 +302,12 @@ python -m venv .venv
 
 CI fails if the unit tests do not cover 100% of `scripts/extract_metadata.py`.
 
+Run on its own, without `--github-output`, the script prints one JSON object with
+the outputs (the names use `_` instead of `-`, and `python-matrix` is not in it)
+and the `warnings`. Its `schema_version` key (currently `1`) increases when a key
+is renamed, removed or changes type, not when a key is added, so that a tool that
+reads the object can check it.
+
 Formatting and linting of the non-Python files (YAML, Markdown, shell, TOML,
 Makefiles) go through the `Makefile`; run `make help` to list the targets, for
 example `make format` and `make lint`.
