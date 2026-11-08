@@ -1133,6 +1133,14 @@ def escape_annotation_property(value: str) -> str:
     return escape_annotation(value).replace(":", "%3A").replace(",", "%2C")
 
 
+def _compact_json(value: object) -> str:
+    """Serialize ``value`` as the compact JSON of an action output.
+
+    No space after ``,`` and ``:``, and non-ASCII characters are kept as they are.
+    """
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
 def format_outputs(metadata: Report) -> dict[str, str]:
     """Convert the metadata dict into the string outputs of the action.
 
@@ -1151,28 +1159,18 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "description": metadata["description"],
         "readme": metadata["readme"],
         "license": metadata["license"],
-        "authors": json.dumps(metadata["authors"], separators=(",", ":"), ensure_ascii=False),
-        "urls": json.dumps(metadata["urls"], separators=(",", ":"), ensure_ascii=False),
+        "authors": _compact_json(metadata["authors"]),
+        "urls": _compact_json(metadata["urls"]),
         "requires-python": metadata["requires_python"],
-        "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
-        "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),
-        "python-versions": json.dumps(
-            metadata["python_versions"], separators=(",", ":"), ensure_ascii=False
-        ),
+        "extras": _compact_json(metadata["extras"]),
+        "groups": _compact_json(metadata["groups"]),
+        "python-versions": _compact_json(metadata["python_versions"]),
         "python-min": metadata["python_min"],
         "python-max": metadata["python_max"],
-        "python-matrix": json.dumps(
-            {"python-version": metadata["python_versions"]}, separators=(",", ":"), ensure_ascii=False
-        ),
-        "project-dependencies": json.dumps(
-            metadata["project_dependencies"], separators=(",", ":"), ensure_ascii=False
-        ),
-        "dependency-specifiers": json.dumps(
-            metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
-        ),
-        "dependency-requirements": json.dumps(
-            metadata["dependency_requirements"], separators=(",", ":"), ensure_ascii=False
-        ),
+        "python-matrix": _compact_json({"python-version": metadata["python_versions"]}),
+        "project-dependencies": _compact_json(metadata["project_dependencies"]),
+        "dependency-specifiers": _compact_json(metadata["dependency_specifiers"]),
+        "dependency-requirements": _compact_json(metadata["dependency_requirements"]),
     }
 
 

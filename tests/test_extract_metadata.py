@@ -944,6 +944,21 @@ def test_format_outputs() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ([], "[]"),
+        ({}, "{}"),
+        (["a", "b"], '["a","b"]'),
+        ({"a": [1, None], "b": {"c": True}}, '{"a":[1,null],"b":{"c":true}}'),
+        (["é", "日本"], '["é","日本"]'),
+        (['say "hi"\n'], '["say \\"hi\\"\\n"]'),
+    ],
+)
+def test_compact_json(value: object, expected: str) -> None:
+    assert extract_metadata_module._compact_json(value) == expected
+
+
 def test_format_outputs_keeps_non_ascii_characters() -> None:
     metadata = {**METADATA, "extras": ["é"], "dependency_specifiers": {}}
 
