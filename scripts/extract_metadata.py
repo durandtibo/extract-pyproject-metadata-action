@@ -1456,18 +1456,20 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
     metadata, warnings = extract_metadata(
         data, extra_values, args.pyproject_path, options.fail_on_dynamic_version
     )
+    # Computed in the order of their warnings in the report: the metadata, the Python versions,
+    # the dependencies of the project, then the lookups of the requested dependencies.
+    python_versions, python_warnings = compatible_python_versions(
+        metadata["requires_python"], python_candidates, args.pyproject_path
+    )
+    project_dependencies, project_warnings = extract_project_dependencies(
+        data, args.pyproject_path
+    )
     # The requirements of the file are read and parsed once, for both lookups.
     found, index_warnings = _index_dependencies(data, args.pyproject_path)
     specifiers, specifier_warnings = _specifiers_from_index(
         found, index_warnings, dependencies, args.pyproject_path
     )
-    python_versions, python_warnings = compatible_python_versions(
-        metadata["requires_python"], python_candidates, args.pyproject_path
-    )
     requirements = _requirements_from_index(found, dependencies)
-    project_dependencies, project_warnings = extract_project_dependencies(
-        data, args.pyproject_path
-    )
     warnings.extend(python_warnings)
     warnings.extend(project_warnings)
     warnings.extend(specifier_warnings)

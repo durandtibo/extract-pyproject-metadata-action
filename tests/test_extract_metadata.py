@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -3818,6 +3818,13 @@ def test_parse_requirement_is_called_once_per_distinct_string() -> None:
     assert parse.cache_info().misses == 2
 
 
+def _specifier_error(raw: str) -> InvalidSpecifier:
+    """Return the error that ``packaging`` raises for the invalid specifier ``raw``."""
+    with pytest.raises(InvalidSpecifier) as exc_info:
+        SpecifierSet(raw)
+    return exc_info.value
+
+
 def _parse_error(raw: str) -> InvalidRequirement:
     """Return the error that ``packaging`` raises for the invalid requirement ``raw``."""
     with pytest.raises(InvalidRequirement) as exc_info:
@@ -3881,6 +3888,29 @@ def test_requirements_from_index() -> None:
         ],
         "other": [],
     }
+
+
+def test_main_warnings_are_in_the_order_of_the_sources(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\ndynamic = ["version"]\nrequires-python = "python3"\n'
+        'dependencies = ["x>=1", "x>=2"]\n\n[dependency-groups]\ndev = ["x>=3", "not valid!"]\n',
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 0
+    warnings = json.loads(capsys.readouterr().out)["warnings"]
+    assert len(warnings) == 5
+    # The metadata, the Python versions, the dependencies of the project, then the lookups.
+    assert warnings[:3] == [
+        f"{path}: [project].version is dynamic, the version output is empty",
+        f"{path}: [project].requires-python is not a valid version specifier, "
+        f"the python-versions output is empty: {_specifier_error('python3')}",
+        f"x has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
+    ]
+    assert warnings[3].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
+    assert warnings[4] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
 
 
 def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
