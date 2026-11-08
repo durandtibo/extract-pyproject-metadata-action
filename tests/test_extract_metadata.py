@@ -3782,6 +3782,20 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
     }
 
 
+def test_module_docstring_lists_the_outputs_of_action_yaml() -> None:
+    docstring = " ".join(extract_metadata_module.__doc__.split())
+    section = docstring.split("appends the action outputs", 1)[1].split("It also prints", 1)[0]
+
+    assert sorted(re.findall(r"``([a-z-]+)``", section)) == sorted(_action_section_keys("outputs"))
+
+
+def test_module_docstring_lists_the_keys_of_the_json() -> None:
+    docstring = extract_metadata_module.__doc__
+    section = docstring.split("prints a single JSON object", 1)[1].split("\n\n", 1)[0]
+
+    assert sorted(re.findall(r'"([a-z_]+)":', section)) == sorted(Report.__annotations__)
+
+
 def test_readme_default_of_python_candidates_matches_the_script() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
 

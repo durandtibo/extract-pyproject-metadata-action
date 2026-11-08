@@ -1,7 +1,10 @@
 r"""Extract project metadata and dependency specifiers from a pyproject.toml.
 
-The metadata is the project name, version, ``requires-python``, optional-dependency
-extras and dependency groups.
+The metadata is the project name and version (and their normalized forms), the
+description, readme, license, authors, URLs, ``requires-python``,
+optional-dependency extras and dependency groups. The script also selects the
+Python versions that ``requires-python`` allows, and lists the requirements of
+``[project].dependencies`` and of the packages that it is asked to look up.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
@@ -16,7 +19,8 @@ characters are kept as they are, as in the action outputs):
      "description": ..., "readme": ..., "license": ...,
      "authors": [...], "urls": {...},
      "requires_python": ...,
-     "extras": [...], "groups": [...], "python_versions": [...], "python_min": ..., "python_max": ...,
+     "extras": [...], "groups": [...],
+     "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
      "dependency_requirements": {...},
      "warnings": [...], "schema_version": 1}
@@ -29,10 +33,13 @@ renamed, removed or changes type, not when a key is added, so that a tool that
 reads the object can check it.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires-python``,
-``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies``, ``dependency-specifiers`` and
-``dependency-requirements`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
-delimiter so that values may contain line breaks) and prints to stdout one
+outputs to FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that
+values may contain line breaks). They are ``name``, ``normalized-name``,
+``version``, ``normalized-version``, ``description``, ``readme``, ``license``,
+``authors``, ``urls``, ``requires-python``, ``extras``, ``groups``,
+``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
+``project-dependencies``, ``dependency-specifiers`` and
+``dependency-requirements``. It also prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
 the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout
@@ -64,14 +71,15 @@ to ``strategy.matrix`` as it is.
 
 Exits non-zero with a message on stderr (with ``--github-output FILE``, an
 ``::error file=<path>::`` workflow command, so that GitHub shows an error
-annotation on the file) if the file is missing, is not
-valid TOML (or cannot be read, or is not UTF-8), the outputs or the job summary
-cannot be written, [project] is missing the required "name"/"version" keys, a
-dependency table ([project].dependencies, [project.optional-dependencies] or
+annotation on the file) if the file is missing, cannot be read, is not UTF-8 or
+is not valid TOML, the outputs or the job summary cannot be written, [project]
+is missing the required "name"/"version" keys, a dependency table
+([project].dependencies, [project.optional-dependencies] or
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
 expected shape, a Python candidate is not a "major.minor" string,
-``--fail-on-dynamic-version true`` is given and the version is dynamic, or
-``--fail-on-missing true`` is given and a requested dependency is not found.
+``--fail-on-dynamic-version true`` is given and the version is dynamic,
+``--strict true`` is given and there is a warning, or ``--fail-on-missing true``
+is given and a requested dependency is not found.
 """
 
 from __future__ import annotations
