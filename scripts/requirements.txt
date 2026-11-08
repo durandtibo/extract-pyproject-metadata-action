@@ -1,5 +1,5 @@
-# The Python packages that scripts/extract_metadata.py needs. action.yaml installs
+# The Python packages that scripts/extract_metadata.py needs, on top of the standard
+# library (it requires Python 3.11 or later, for tomllib). scripts/run.sh installs
 # them in a private virtual environment when the Python on PATH lacks them. The
 # lower bounds are the oldest versions the unit tests were run with.
 packaging>=23.0
-tomli>=2.0.1; python_version < "3.11"

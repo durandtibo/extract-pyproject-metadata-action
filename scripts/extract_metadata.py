@@ -54,6 +54,7 @@ import argparse
 import json
 import re
 import sys
+import tomllib
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -64,10 +65,6 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib  # type: ignore[no-redef]
 
 
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).

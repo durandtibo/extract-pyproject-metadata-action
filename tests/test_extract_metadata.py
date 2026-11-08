@@ -2352,7 +2352,7 @@ def test_script_requirements_list_the_dependencies_of_the_script() -> None:
     )
     lines = [line for line in requirements.splitlines() if line and not line.startswith("#")]
 
-    assert lines == ["packaging>=23.0", 'tomli>=2.0.1; python_version < "3.11"']
+    assert lines == ["packaging>=23.0"]
 
 
 def test_test_requirements_include_the_script_requirements() -> None:
@@ -2413,7 +2413,13 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
 
 STUB_SYSTEM_PYTHON = """#!/usr/bin/env bash
 case "$1" in
-  -c) printf '%s\\037' python3 probe >> "$STUB_LOG"; echo >> "$STUB_LOG"; exit "${STUB_PROBE_STATUS:-0}" ;;
+  -c)
+    case "$2" in
+      *version_info*) name=version; status="${STUB_VERSION_STATUS:-0}" ;;
+      *) name=probe; status="${STUB_PROBE_STATUS:-0}" ;;
+    esac
+    printf '%s\\037' python3 "$name" >> "$STUB_LOG"; echo >> "$STUB_LOG"
+    exit "$status" ;;
   -m)
     printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
     [ "${STUB_VENV_STATUS:-0}" = 0 ] || exit "$STUB_VENV_STATUS"
@@ -2474,6 +2480,7 @@ def test_run_sh_uses_the_python_on_path_when_the_requirements_are_available(tmp_
 
     assert result.process.returncode == 0
     assert result.calls == [
+        ["python3", "version"],
         ["python3", "probe"],
         ["python3", str(SCRIPT_PATH), "--flag", "a b", "", "[]"],
     ]
@@ -2487,6 +2494,7 @@ def test_run_sh_installs_the_requirements_in_a_private_venv_when_they_are_missin
     assert len(result.venvs) == 1
     venv_python = str(result.venvs[0] / "bin" / "python")
     assert result.calls == [
+        ["python3", "version"],
         ["python3", "probe"],
         ["python3", "-m", "venv", "--system-site-packages", str(result.venvs[0])],
         ["venv-python", "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", str(REQUIREMENTS_PATH)],
@@ -2514,8 +2522,12 @@ def test_run_sh_fails_with_a_clear_message_when_the_venv_cannot_be_created(tmp_p
     result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_VENV_STATUS="1")
 
     assert result.process.returncode == 1
-    assert re.search(r"^::error::Could not install the 'packaging' and 'tomli' Python packages\.", result.process.stderr)
-    assert [call[0] for call in result.calls] == ["python3", "python3"]
+    assert re.search(r"^::error::Could not install the 'packaging' Python package\.", result.process.stderr)
+    assert result.calls == [
+        ["python3", "version"],
+        ["python3", "probe"],
+        ["python3", "-m", "venv", "--system-site-packages", str(result.venvs[0])],
+    ]
     assert all(str(SCRIPT_PATH) not in call for call in result.calls)
 
 
@@ -2523,7 +2535,7 @@ def test_run_sh_fails_with_a_clear_message_when_the_requirements_cannot_be_insta
     result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_PIP_STATUS="1")
 
     assert result.process.returncode == 1
-    assert "::error::Could not install the 'packaging' and 'tomli' Python packages." in result.process.stderr
+    assert "::error::Could not install the 'packaging' Python package." in result.process.stderr
     assert all(str(SCRIPT_PATH) not in call for call in result.calls)
 
 
@@ -2532,4 +2544,34 @@ def test_run_sh_fails_when_the_temporary_directory_cannot_be_created(tmp_path: P
 
     assert result.process.returncode == 1
     assert "::error::Could not install" in result.process.stderr
-    assert result.calls == [["python3", "probe"]]
+    assert result.calls == [["python3", "version"], ["python3", "probe"]]
+
+
+def test_run_sh_fails_with_a_clear_message_when_python_is_older_than_3_11(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_VERSION_STATUS="1")
+
+    assert result.process.returncode == 1
+    assert result.process.stderr.startswith("::error::This action requires Python 3.11 or later")
+    assert result.calls == [["python3", "version"]]
+    assert result.venvs == []
+
+
+def test_run_sh_end_to_end_with_the_real_python(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" "$@"\n')
+    (bin_dir / "python3").chmod(0o755)
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    output = tmp_path / "github_output"
+
+    process = subprocess.run(  # noqa: S603
+        ["/bin/bash", str(RUN_PATH), "--github-output", str(output), "--", str(path), "[]"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path)},
+    )
+
+    assert process.returncode == 0, process.stderr
+    assert parse_github_output(output.read_text(encoding="utf-8"))["name"] == "coola"
+    assert list(tmp_path.glob("extract-pyproject-metadata-venv.*")) == []  # the Python had packaging
