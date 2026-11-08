@@ -242,7 +242,7 @@ def extract_metadata(
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    dynamic = _check_requirements(project.get("dynamic", []), "[project].dynamic", pyproject_path)
+    dynamic = _check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
     try:
         name = project["name"]
     except KeyError as exc:
@@ -504,10 +504,10 @@ def _check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
     return value
 
 
-def _check_requirements(value: object, label: str, pyproject_path: str) -> list[str]:
+def _check_string_array(value: object, label: str, pyproject_path: str) -> list[str]:
     """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise.
 
-    Despite its name it is not specific to requirements: ``[project].dynamic`` is checked with it too.
+    Used for the arrays of requirement strings and for ``[project].dynamic``.
     """
     entries = _check_array(value, label, pyproject_path)
     for entry in entries:
@@ -663,7 +663,7 @@ def _candidate_requirements(
     project = _get_table(data, "project", "[project]", pyproject_path)
     # A copy: the lists below are extended, and the parsed document must stay as it is.
     reqs = list(
-        _check_requirements(
+        _check_string_array(
             project.get("dependencies", []), "[project].dependencies", pyproject_path
         )
     )
@@ -672,7 +672,7 @@ def _candidate_requirements(
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
-        reqs.extend(_check_requirements(extra_reqs, label, pyproject_path))
+        reqs.extend(_check_string_array(extra_reqs, label, pyproject_path))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
         _dynamic_message(field, pyproject_path)
@@ -766,7 +766,7 @@ def extract_project_dependencies(
             ``[project].dependencies`` is not an array of strings.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    entries = _check_requirements(
+    entries = _check_string_array(
         project.get("dependencies", []), "[project].dependencies", pyproject_path
     )
     found, names, warnings = _index_requirements(entries, pyproject_path)
