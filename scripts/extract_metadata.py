@@ -120,8 +120,18 @@ from packaging.version import InvalidVersion, Version
 try:
     from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 except ImportError:  # packaging before 24.2 cannot validate license expressions
-    InvalidLicenseExpression = None
-    canonicalize_license_expression = None
+    # Only the None checks of ``_license_warnings`` use these names without the import.
+    InvalidLicenseExpression = None  # type: ignore[assignment,misc]
+    canonicalize_license_expression = None  # type: ignore[assignment]
+
+# The UTF-8 byte order mark that some editors write at the start of a file.
+UTF8_BOM = b"\xef\xbb\xbf"
+
+# Limits that turn a pathological dependency-groups table into an error instead of a Python
+# traceback (include-group chain deeper than the recursion limit) or a run that never ends
+# (a group that includes the same group twice, 25 levels deep, expands to 2**25 entries).
+_MAX_INCLUDE_DEPTH = 100
+_MAX_GROUP_EXPANSIONS = 10_000
 
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
@@ -497,7 +507,7 @@ def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tup
         MetadataError: If ``version`` is not a string, or a static version is
             not a valid PEP 440 version.
     """
-    _check_str(version, "[project].version", pyproject_path)
+    version = _check_str(version, "[project].version", pyproject_path)
     if not is_static:
         return version, ""
     try:

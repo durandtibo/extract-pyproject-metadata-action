@@ -27,3 +27,8 @@ ignore = [
   "S603", # the tests start the script and run.sh with fixed arguments
   "S607", # ... and a stand-in for python3 found on PATH
 ]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["scripts/extract_metadata.py"]
