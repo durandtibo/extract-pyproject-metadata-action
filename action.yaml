@@ -12,9 +12,8 @@
 # available on PATH. If "packaging" is missing, it is installed in a private
 # virtual environment.
 #
-# Only Linux and macOS runners are supported. Windows runners are not: the
-# integration tests do not run on them, and the step expects python3 and a
-# POSIX bash.
+# Only Linux and macOS runners are supported. On a Windows runner the step
+# fails with an explicit error (the step expects python3 and a POSIX bash).
 
 name: Extract pyproject metadata
 description: Read the project name, version, optional-dependency extra names, and dependency version specifiers from pyproject.toml

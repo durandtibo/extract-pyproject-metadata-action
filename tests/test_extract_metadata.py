@@ -2616,3 +2616,19 @@ def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch)
     spec.loader.exec_module(module)
 
     assert module.__name__ == "extract_metadata_imported"
+
+
+def test_run_sh_fails_with_a_clear_message_on_a_windows_runner(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Windows")
+
+    assert result.process.returncode == 1
+    assert result.process.stderr == "::error::This action does not support Windows runners. Use a Linux or macOS runner.\n"
+    assert result.calls == []
+
+
+@pytest.mark.parametrize("runner_os", ["Linux", "macOS", ""])
+def test_run_sh_runs_on_the_other_runners(tmp_path: Path, runner_os: str) -> None:
+    result = run_run_sh(tmp_path, ["a"], RUNNER_OS=runner_os)
+
+    assert result.process.returncode == 0
+    assert result.calls[-1] == ["python3", str(SCRIPT_PATH), "a"]

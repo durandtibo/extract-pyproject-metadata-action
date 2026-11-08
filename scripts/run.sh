@@ -12,12 +12,19 @@
 # run, so a stale or broken one left by an earlier run (self-hosted runners keep
 # $RUNNER_TEMP between jobs) is never reused.
 #
-# The exit code is the one of extract_metadata.py, or 1 if the python3 on PATH is
-# older than 3.11 or the requirements cannot be installed.
+# The exit code is the one of extract_metadata.py, or 1 on a Windows runner, if
+# the python3 on PATH is older than 3.11 or if the requirements cannot be
+# installed.
 
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Only Linux and macOS are supported (a venv has Scripts/ instead of bin/ on Windows).
+if [ "${RUNNER_OS:-}" = "Windows" ]; then
+	echo "::error::This action does not support Windows runners. Use a Linux or macOS runner." >&2
+	exit 1
+fi
 
 if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
 	echo "::error::This action requires Python 3.11 or later, but the python3 on PATH is older or missing. Set up Python 3.11 or later (e.g. with actions/setup-python) before using this action." >&2
