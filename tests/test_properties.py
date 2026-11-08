@@ -14,17 +14,16 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from extract_pyproject_metadata.cli import (
-    MetadataError,
     compatible_python_versions,
     escape_annotation,
     escape_annotation_property,
     highest_python_version,
     lowest_python_version,
-    parse_bool,
     parse_dependencies,
     parse_python_candidates,
-    parse_string_array,
 )
+from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.inputs import parse_bool, parse_string_array
 
 settings.register_profile("derandomized", max_examples=200, deadline=None, derandomize=True)
 settings.load_profile("derandomized")

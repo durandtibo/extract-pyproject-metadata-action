@@ -18,8 +18,8 @@ from extract_pyproject_metadata.cli import (
     extract_dependency_specifiers,
     extract_metadata,
     load_pyproject,
-    parse_string_array,
 )
+from extract_pyproject_metadata.inputs import parse_string_array
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
 PACKAGE_PATH = Path(__file__).resolve().parents[1] / "src" / "extract_pyproject_metadata"

@@ -19,8 +19,6 @@ from helpers import (
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.cli import (
-    MetadataError,
-    Report,
     build_report,
     emit_github_output,
     escape_annotation,
@@ -32,6 +30,8 @@ from extract_pyproject_metadata.cli import (
     write_github_output,
     write_step_summary,
 )
+from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.types import Report
 
 
 def test_write_github_output_unwritable_file(tmp_path: Path) -> None:

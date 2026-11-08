@@ -10,12 +10,12 @@ from packaging.specifiers import SpecifierSet
 
 from extract_pyproject_metadata.cli import (
     DEFAULT_PYTHON_CANDIDATES,
-    MetadataError,
     compatible_python_versions,
     highest_python_version,
     lowest_python_version,
     parse_python_candidates,
 )
+from extract_pyproject_metadata.errors import MetadataError
 
 
 @pytest.mark.parametrize("requires_python", [">=3.10", ">=3.10,<4", "~=3.9", "==3.*", ">= 3.10", ""])
