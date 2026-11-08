@@ -67,6 +67,10 @@ runs:
         extras=$(jq -c '.extras' <<< "$metadata")
         dependency_specifiers=$(jq -c '.dependency_specifiers' <<< "$metadata")
 
+        # Workflow commands are only parsed on stdout; escape them like
+        # @actions/core does so a message cannot span several commands.
+        jq -r '.warnings[] | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A") | "::warning::" + .' <<< "$metadata"
+
         echo "📦 name=$name version=$version extras=$extras"
         echo "name=$name" >> "$GITHUB_OUTPUT"
         echo "version=$version" >> "$GITHUB_OUTPUT"
