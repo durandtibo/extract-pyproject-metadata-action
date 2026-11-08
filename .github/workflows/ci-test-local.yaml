@@ -584,6 +584,28 @@ jobs:
           assert_equal "description" "" "${{ steps.test-no-description.outputs.description }}"
           print_success "description test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 21: readme output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test readme output
+        id: test-readme
+        uses: ./
+        with:
+          pyproject-path: test-data/project-fields/pyproject.toml
+
+      - name: 🧪 Test readme output when not declared
+        id: test-no-readme
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify readme
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "readme" "docs/README.md" "${{ steps.test-readme.outputs.readme }}"
+          assert_equal "readme" "" "${{ steps.test-no-readme.outputs.readme }}"
+          print_success "readme test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

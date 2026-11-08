@@ -127,6 +127,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "version": "1.2.3",
         "normalized_version": "1.2.3",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -346,6 +347,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "version": "",
         "normalized_version": "",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -451,6 +453,7 @@ def test_main_dynamic_version_warning_in_json(
         "version": "",
         "normalized_version": "",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -569,6 +572,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "version": "1.2.3",
         "normalized_version": "1.2.3",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -645,6 +649,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "version": "1.2.3",
         "normalized_version": "1.2.3",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -793,6 +798,7 @@ METADATA = {
     "version": "1.2.3",
     "normalized_version": "1.2.3",
     "description": "",
+    "readme": "",
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -812,6 +818,7 @@ def test_format_outputs() -> None:
         "version": "1.2.3",
         "normalized-version": "1.2.3",
         "description": "",
+        "readme": "",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -938,6 +945,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "version": "1",
         "normalized-version": "1",
         "description": "",
+        "readme": "",
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -975,6 +983,7 @@ def test_build_report(tmp_path: Path) -> None:
         "version": "1",
         "normalized_version": "1",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -1111,6 +1120,7 @@ def test_format_step_summary_without_warnings() -> None:
         version="1.2.3",
         normalized_version="1.2.3",
         description="",
+        readme="",
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -1132,6 +1142,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `version` | <code>1&#46;2&#46;3</code> |\n"
         "| `normalized-version` | <code>1&#46;2&#46;3</code> |\n"
         "| `description` |  |\n"
+        "| `readme` |  |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -1151,6 +1162,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         version="1",
         normalized_version="1",
         description="",
+        readme="",
         requires_python="",
         extras=[],
         groups=[],
@@ -1524,6 +1536,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "version": "1.2.3",
         "normalized-version": "1.2.3",
         "description": "",
+        "readme": "",
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -1782,6 +1795,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "version": "1.2.3",
         "normalized_version": "1.2.3",
         "description": "",
+        "readme": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -2953,6 +2967,7 @@ def test_format_outputs_python_matrix() -> None:
         version="1",
         normalized_version="1",
         description="",
+        readme="",
         requires_python="",
         extras=[],
         groups=[],
@@ -2974,6 +2989,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         version="1",
         normalized_version="1",
         description="",
+        readme="",
         requires_python=">=4",
         extras=[],
         groups=[],
@@ -3047,6 +3063,7 @@ def test_format_outputs_normalized_version() -> None:
         version="1.0-RC1",
         normalized_version="1.0rc1",
         description="",
+        readme="",
         requires_python="",
         extras=[],
         groups=[],
@@ -3070,6 +3087,67 @@ def test_main_github_output_normalized_version(tmp_path: Path) -> None:
     assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
     values = parse_github_output(output.read_text(encoding="utf-8"))
     assert (values["version"], values["normalized-version"]) == ("1.0-RC1", "1.0rc1")
+
+
+@pytest.mark.parametrize(
+    ("readme", "expected"),
+    [
+        ('readme = "README.md"', "README.md"),
+        ('readme = "docs/README.rst"', "docs/README.rst"),
+        ('readme = ""', ""),
+        ('readme = {file = "README.rst", content-type = "text/x-rst"}', "README.rst"),
+        ('readme = {text = "Inline readme", content-type = "text/plain"}', ""),
+        ("readme = {}", ""),
+        ('dynamic = ["readme"]', ""),
+        ("", ""),
+    ],
+)
+def test_extract_metadata_readme(tmp_path: Path, readme: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{readme}\n')
+
+    assert extract(path)["readme"] == expected
+
+
+@pytest.mark.parametrize(
+    ("readme", "match"),
+    [
+        ("readme = 1", r"\[project\]\.readme must be a string or a table, got: 1"),
+        ('readme = ["README.md"]', r"\[project\]\.readme must be a string or a table"),
+        ("readme = true", r"\[project\]\.readme must be a string or a table, got: True"),
+        ("readme = {file = 1}", r"\[project\]\.readme\.file must be a string, got: 1"),
+        ('readme = {file = ["a"]}', r"\[project\]\.readme\.file must be a string"),
+    ],
+)
+def test_extract_metadata_readme_must_be_a_string_or_a_table(
+    tmp_path: Path, readme: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{readme}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_main_readme_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nreadme = "docs/README.md"\n'
+    )
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["readme"] == "docs/README.md"
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["readme"] == "docs/README.md"
+
+
+def test_main_invalid_readme_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nreadme = 1\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "[project].readme must be a string or a table" in capsys.readouterr().err
 
 
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -3281,7 +3359,13 @@ def test_readme_lists_the_outputs_of_the_log_line() -> None:
 def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
     omitted = set(_action_section_keys("outputs")) - set(extract_metadata_module._SUMMARY_FIELDS)
 
-    assert omitted == {"normalized-name", "normalized-version", "description", "python-matrix"}
+    assert omitted == {
+        "normalized-name",
+        "normalized-version",
+        "description",
+        "readme",
+        "python-matrix",
+    }
 
 
 def test_readme_default_of_python_candidates_matches_the_script() -> None:

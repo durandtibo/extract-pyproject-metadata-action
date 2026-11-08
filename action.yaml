@@ -94,6 +94,11 @@ outputs:
       Project description, as declared in [project].description (empty if not
       declared)
     value: ${{ steps.metadata.outputs.description }}
+  readme:
+    description: >
+      Path of the readme file, from [project].readme (a string, or the file of a
+      table); empty if not declared or inline
+    value: ${{ steps.metadata.outputs.readme }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty
