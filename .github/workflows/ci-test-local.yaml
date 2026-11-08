@@ -617,6 +617,16 @@ jobs:
           print_success "license test passed"
 
       # -----------------------------------------------------------------------
+      # Test 22b: license-files output
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify license-files
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "license-files" '["LICENSE","licenses/*.txt"]' '${{ steps.test-project-fields.outputs.license-files }}'
+          assert_equal "license-files" '[]' '${{ steps.test-no-project-fields.outputs.license-files }}'
+          print_success "license-files test passed"
+
+      # -----------------------------------------------------------------------
       # Test 23: authors output
       # -----------------------------------------------------------------------
       - name: ✓ Verify authors
@@ -635,6 +645,20 @@ jobs:
           assert_equal "urls" '{"Homepage":"https://example.com","Source Code":"https://example.com/src"}' '${{ steps.test-project-fields.outputs.urls }}'
           assert_equal "urls" '{}' '${{ steps.test-no-project-fields.outputs.urls }}'
           print_success "urls test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 24b: keywords, classifiers and scripts outputs
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify keywords, classifiers and scripts
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "keywords" '["toml","metadata"]' '${{ steps.test-project-fields.outputs.keywords }}'
+          assert_equal "keywords" '[]' '${{ steps.test-no-project-fields.outputs.keywords }}'
+          assert_equal "classifiers" '["Programming Language :: Python :: 3","License :: OSI Approved :: MIT License"]' '${{ steps.test-project-fields.outputs.classifiers }}'
+          assert_equal "classifiers" '[]' '${{ steps.test-no-project-fields.outputs.classifiers }}'
+          assert_equal "scripts" '{"fields-tool":"fields_pkg.cli:main"}' '${{ steps.test-project-fields.outputs.scripts }}'
+          assert_equal "scripts" '{}' '${{ steps.test-no-project-fields.outputs.scripts }}'
+          print_success "keywords, classifiers and scripts test passed"
 
       # -----------------------------------------------------------------------
       # Test 25: dependency-requirements output
@@ -701,6 +725,33 @@ jobs:
           assert_equal "dependency-specifiers" '{"grp-pkg@group:base":">=1.5","grp-pkg@group:dev":">=1.5","grp-pkg@project":null,"numpy@extra:numpy":"~=2.0","numpy@group:dev":null}' '${{ steps.test-dependency-scopes.outputs.dependency-specifiers }}'
           assert_equal "outcome" "failure" "${{ steps.test-invalid-dependency-scope.outcome }}"
           print_success "dependency scopes test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 30: no python-candidates version is allowed by requires-python
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test python-versions when no candidate is allowed
+        id: test-no-python-version
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9"]'
+
+      - name: 🧪 Test strict when no candidate is allowed (should fail)
+        id: test-no-python-version-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9"]'
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify the empty python-versions warning
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "python-versions" '[]' '${{ steps.test-no-python-version.outputs.python-versions }}'
+          assert_equal "python-matrix" '{"python-version":[]}' '${{ steps.test-no-python-version.outputs.python-matrix }}'
+          assert_equal "outcome" "failure" "${{ steps.test-no-python-version-strict.outcome }}"
+          print_success "empty python-versions test passed"
 
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:

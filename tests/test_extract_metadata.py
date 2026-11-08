@@ -34,7 +34,15 @@ from extract_metadata import (  # noqa: E402
     _check_string_array,
     _conflict_warnings,
     _dynamic_dependency_fields,
+    _extra_names,
     _flatten_group,
+    _group_names,
+    _required_name,
+    _required_version,
+    _static_and_dynamic_warnings,
+    _string_table,
+    _valid_name,
+    _valid_version,
     _index_dependencies,
     _index_requirements,
     _scoped_requirements,
@@ -217,8 +225,12 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -279,6 +291,176 @@ def test_main_json_keeps_non_ascii_characters(
     out = capsys.readouterr().out
     assert '"description": "Héllo ✓"' in out
     assert "\\u" not in out
+
+
+@pytest.mark.parametrize(
+    ("project", "expected"),
+    [
+        ("", []),
+        ('license-files = []\n', []),
+        ('license-files = ["LICENSE"]\n', ["LICENSE"]),
+        ('license-files = ["LICENSE", "licenses/*.txt", "LICENSE"]\n', ["LICENSE", "licenses/*.txt", "LICENSE"]),
+        ('dynamic = ["license-files"]\n', []),
+    ],
+)
+def test_extract_metadata_license_files(tmp_path: Path, project: str, expected: list[str]) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{project}')
+
+    assert extract(path)["license_files"] == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ('"LICENSE"', r"\[project\]\.license-files must be an array, got: 'LICENSE'"),
+        ('{ glob = "LICENSE" }', r"\[project\]\.license-files must be an array, got: \{'glob': 'LICENSE'\}"),
+        ('["LICENSE", 1]', r"\[project\]\.license-files must contain only strings, got: 1"),
+    ],
+)
+def test_extract_metadata_license_files_must_be_an_array_of_strings(
+    tmp_path: Path, value: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\nlicense-files = {value}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_main_license_files_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense-files = ["LICENSE", "licenses/*.txt"]\n'
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["license_files"] == ["LICENSE", "licenses/*.txt"]
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["license-files"] == (
+        '["LICENSE","licenses/*.txt"]'
+    )
+
+
+@pytest.mark.parametrize("key", ["keywords", "classifiers"])
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("", []),
+        ("[]", []),
+        ('["a"]', ["a"]),
+        ('["b", "a", "b"]', ["b", "a", "b"]),
+    ],
+)
+def test_extract_metadata_keywords_and_classifiers(
+    tmp_path: Path, key: str, value: str, expected: list[str]
+) -> None:
+    line = f"{key} = {value}\n" if value else ""
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{line}')
+
+    assert extract(path)[key] == expected
+
+
+@pytest.mark.parametrize("key", ["keywords", "classifiers"])
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ('"x"', r"must be an array, got: 'x'"),
+        ('["x", 1]', r"must contain only strings, got: 1"),
+    ],
+)
+def test_extract_metadata_keywords_and_classifiers_must_be_arrays_of_strings(
+    tmp_path: Path, key: str, value: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{key} = {value}\n')
+
+    with pytest.raises(MetadataError, match=rf"\[project\]\.{key} {match}"):
+        extract(path)
+
+
+def test_extract_metadata_scripts(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\n\n[project.scripts]\nz = "pkg.cli:z"\na = "pkg.cli:a"\n\n'
+        '[project.gui-scripts]\ng = "pkg.gui:main"\n',
+    )
+
+    assert extract(path)["scripts"] == {"z": "pkg.cli:z", "a": "pkg.cli:a"}
+    assert list(extract(path)["scripts"]) == ["z", "a"]
+
+
+def test_extract_metadata_scripts_default_to_empty(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert extract(path)["scripts"] == {}
+
+
+@pytest.mark.parametrize(
+    ("scripts", "match"),
+    [
+        ('scripts = ["a"]', r"\[project\.scripts\] must be a table, got: \['a'\]"),
+        ('[project.scripts]\na = 1', r"\[project\.scripts\]\.a must be a string, got: 1"),
+    ],
+)
+def test_extract_metadata_scripts_must_be_a_table_of_strings(
+    tmp_path: Path, scripts: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{scripts}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_string_table() -> None:
+    assert _string_table({"x": {"b": "1", "a": "2"}}, "x", "p.toml") == {"b": "1", "a": "2"}
+
+
+def test_string_table_absent() -> None:
+    assert _string_table({}, "x", "p.toml") == {}
+
+
+def test_string_table_returns_a_copy() -> None:
+    project = {"x": {"a": "1"}}
+
+    _string_table(project, "x", "p.toml")["b"] = "2"
+
+    assert project == {"x": {"a": "1"}}
+
+
+def test_string_table_not_a_table() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\] must be a table, got: 1$"):
+        _string_table({"x": 1}, "x", "p.toml")
+
+
+def test_string_table_not_a_string() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\]\.a must be a string, got: 1$"):
+        _string_table({"x": {"a": 1}}, "x", "p.toml")
+
+
+def test_main_keywords_classifiers_and_scripts_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nkeywords = ["toml"]\n'
+        'classifiers = ["Programming Language :: Python :: 3"]\n\n[project.scripts]\ntool = "a.cli:main"\n',
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (report["keywords"], report["classifiers"], report["scripts"]) == (
+        ["toml"],
+        ["Programming Language :: Python :: 3"],
+        {"tool": "a.cli:main"},
+    )
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    values = parse_github_output(output.read_text(encoding="utf-8"))
+    assert (values["keywords"], values["classifiers"], values["scripts"]) == (
+        '["toml"]',
+        '["Programming Language :: Python :: 3"]',
+        '{"tool":"a.cli:main"}',
+    )
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -440,8 +622,12 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -549,8 +735,12 @@ def test_main_dynamic_version_warning_in_json(
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -673,8 +863,12 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -787,8 +981,12 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -941,8 +1139,12 @@ METADATA = {
     "description": "",
     "readme": "",
     "license": "",
+    "license_files": [],
     "authors": [],
     "urls": {},
+    "keywords": [],
+    "classifiers": [],
+    "scripts": {},
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -969,8 +1171,12 @@ def test_format_outputs() -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
+        "keywords": '[]',
+        "classifiers": '[]',
+        "scripts": '{}',
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -1115,8 +1321,12 @@ def test_main_github_output_writes_outputs_and_annotations(
         "description": "",
         "readme": "",
         "license": "",
+        "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
+        "keywords": '[]',
+        "classifiers": '[]',
+        "scripts": '{}',
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -1160,8 +1370,12 @@ def test_build_report(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -1305,8 +1519,12 @@ def test_format_step_summary_without_warnings() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -1331,8 +1549,12 @@ def test_format_step_summary_without_warnings() -> None:
         "| `description` |  |\n"
         "| `readme` |  |\n"
         "| `license` |  |\n"
+        "| `license-files` | <code>&#91;&#93;</code> |\n"
         "| `authors` | <code>&#91;&#93;</code> |\n"
         "| `urls` | <code>&#123;&#125;</code> |\n"
+        "| `keywords` | <code>&#91;&#93;</code> |\n"
+        "| `classifiers` | <code>&#91;&#93;</code> |\n"
+        "| `scripts` | <code>&#123;&#125;</code> |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -1355,8 +1577,12 @@ def test_format_step_summary_lists_the_warnings() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=[],
         groups=[],
@@ -1733,8 +1959,12 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
+        "keywords": '[]',
+        "classifiers": '[]',
+        "scripts": '{}',
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -2040,8 +2270,12 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -2940,6 +3174,128 @@ def test_check_array_not_an_array(value: object) -> None:
         _check_array(value, "[x]", "p.toml")
 
 
+def test_required_name() -> None:
+    assert _required_name({"name": 1}, [], "p.toml") == 1
+
+
+def test_required_name_missing() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml is missing required key \[project\].name$"):
+        _required_name({}, ["version"], "p.toml")
+
+
+def test_required_name_dynamic() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name is listed in .*static name$"):
+        _required_name({}, ["name"], "p.toml")
+
+
+def test_static_and_dynamic_warnings() -> None:
+    project = {"name": "a", "version": "1", "description": "d"}
+
+    assert _static_and_dynamic_warnings(project, ["version", "readme", "version", "name"], "p.toml") == [
+        "p.toml: [project].version is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used",
+        "p.toml: [project].name is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used",
+    ]
+
+
+def test_static_and_dynamic_warnings_none() -> None:
+    assert _static_and_dynamic_warnings({"name": "a"}, ["version"], "p.toml") == []
+
+
+def test_required_version_static() -> None:
+    assert _required_version({"version": "1.0"}, [], "p.toml", False) == ("1.0", [])
+
+
+def test_required_version_is_returned_whatever_its_type() -> None:
+    assert _required_version({"version": 1.0}, [], "p.toml", True) == (1.0, [])
+
+
+def test_required_version_dynamic_warns() -> None:
+    assert _required_version({}, ["version"], "p.toml", False) == (
+        "",
+        ["p.toml: [project].version is dynamic, the version output is empty"],
+    )
+
+
+def test_required_version_dynamic_fails_when_requested() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version is dynamic, so it cannot be read"):
+        _required_version({}, ["version"], "p.toml", True)
+
+
+def test_required_version_missing() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml is missing required key \[project\].version$"):
+        _required_version({}, ["readme"], "p.toml", False)
+
+
+@pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
+def test_valid_name(name: str) -> None:
+    assert _valid_name(name, "p.toml") == name
+
+
+@pytest.mark.parametrize("name", [1, "", None, ["a"]])
+def test_valid_name_not_a_non_empty_string(name: object) -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name must be a non-empty string, got: "):
+        _valid_name(name, "p.toml")
+
+
+@pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
+def test_valid_name_not_a_project_name(name: str) -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name is not a valid project name"):
+        _valid_name(name, "p.toml")
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"), [("1.0-RC1", "1.0rc1"), ("1.2.3", "1.2.3"), ("v1.0", "1.0")]
+)
+def test_valid_version_static(version: str, expected: str) -> None:
+    assert _valid_version(version, True, "p.toml") == (version, expected)
+
+
+def test_valid_version_dynamic() -> None:
+    assert _valid_version("", False, "p.toml") == ("", "")
+
+
+def test_valid_version_not_a_string() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version must be a string, got: 1.0$"):
+        _valid_version(1.0, True, "p.toml")
+
+
+def test_valid_version_invalid() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version is not a valid PEP 440 version: 'latest'$"):
+        _valid_version("latest", True, "p.toml")
+
+
+def test_extra_names() -> None:
+    project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
+
+    assert _extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
+
+
+def test_extra_names_without_optional_dependencies() -> None:
+    assert _extra_names({}, ["all"], "p.toml") == ["all"]
+
+
+def test_extra_names_optional_dependencies_must_be_a_table() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"):
+        _extra_names({"optional-dependencies": []}, [], "p.toml")
+
+
+def test_group_names() -> None:
+    data = {"dependency-groups": {"test": [], "Dev_Tools": [], "dev-tools": [], "docs": []}}
+
+    assert _group_names(data, "p.toml") == ["Dev_Tools", "docs", "test"]
+
+
+def test_group_names_without_groups() -> None:
+    assert _group_names({}, "p.toml") == []
+
+
+def test_group_names_must_be_a_table() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[dependency-groups\] must be a table"):
+        _group_names({"dependency-groups": []}, "p.toml")
+
+
 def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
@@ -3071,19 +3427,15 @@ CANDIDATES = ["3.9", "3.10", "3.11", "3.12", "3.13"]
         ("~=3.11.0", ["3.11"]),
         ("==3.11.*", ["3.11"]),
         ("!=3.12.*", ["3.9", "3.10", "3.11", "3.13"]),
-        (">=3.14", []),
         (">=3", CANDIDATES),
         ("==3.12.3", ["3.12"]),
         ("===3.12.3", ["3.12"]),
         ("==3.12.3,!=3.12.0", ["3.12"]),
         ("~=3.12.3", ["3.12"]),
         (">3.12.5,<3.12.7", ["3.12"]),
-        (">3.12.5,<3.12.6", []),
         (">=3.11.4,<=3.11.4", ["3.11"]),
-        ("<3.9.0", []),
         ("==3.12.*,!=3.12.3", ["3.12"]),
         ("==3.12.99", ["3.12"]),
-        ("==3.12.150", []),
         (">=3.12.150", ["3.12", "3.13"]),
         ("<3.12.150", ["3.9", "3.10", "3.11", "3.12"]),
     ],
@@ -3092,11 +3444,32 @@ def test_compatible_python_versions(requires_python: str, expected: list[str]) -
     assert compatible_python_versions(requires_python, CANDIDATES) == (expected, [])
 
 
+@pytest.mark.parametrize(
+    "requires_python",
+    [">=3.14", ">3.12.5,<3.12.6", "<3.9.0", "==3.12.150", ">=3.12.5,<3.12.7,!=3.12.5,!=3.12.6"],
+)
+def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> None:
+    assert compatible_python_versions(requires_python, CANDIDATES, "p.toml") == (
+        [],
+        [
+            "p.toml: no python-candidates version satisfies [project].requires-python "
+            f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
+            "matrix built from them is rejected by GitHub"
+        ],
+    )
+
+
+def test_compatible_python_versions_none_allowed_warning_names_the_file() -> None:
+    _, warnings = compatible_python_versions(">=4", CANDIDATES, "custom/pyproject.toml")
+
+    assert warnings[0].startswith("custom/pyproject.toml: no python-candidates version")
+
+
 def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
     assert compatible_python_versions(">=3.10", ["3.12", "3.10", "3.8"]) == (["3.12", "3.10"], [])
 
 
-def test_compatible_python_versions_no_candidates() -> None:
+def test_compatible_python_versions_no_candidates_does_not_warn() -> None:
     assert compatible_python_versions(">=3.10", []) == ([], [])
 
 
@@ -3151,7 +3524,6 @@ def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
         "!=3.12.0,!=3.12.1,!=3.12.2,<3.12.3",
         ">3.12.5,!=3.12.6,<3.12.8",
         ">3.12.5,!=3.12.6,!=3.12.7,<3.12.9",
-        ">=3.12.5,<3.12.7,!=3.12.5,!=3.12.6",
         ">=3.12.9999",
         "<3.12.0",
         "<=3.12.0",
@@ -3218,8 +3590,12 @@ def test_format_outputs_python_matrix() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=[],
         groups=[],
@@ -3244,8 +3620,12 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python=">=4",
         extras=[],
         groups=[],
@@ -3322,8 +3702,12 @@ def test_format_outputs_normalized_version() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=[],
         groups=[],
@@ -3663,6 +4047,32 @@ def test_main_python_max_is_empty_without_allowed_version(
     assert (report["python_versions"], report["python_max"]) == ([], "")
 
 
+def test_main_warns_when_no_python_version_is_allowed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["warnings"] == [
+        f"{path}: no python-candidates version satisfies [project].requires-python ('>=4'): "
+        "python-versions and python-matrix are empty, and a job matrix built from them is "
+        "rejected by GitHub"
+    ]
+
+
+def test_main_strict_fails_when_no_python_version_is_allowed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
+    )
+
+    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert "strict is 'true' and there are 1 warning(s)" in capsys.readouterr().err
+
+
 def test_main_python_max_compares_versions_as_numbers(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -3894,8 +4304,12 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "description",
         "readme",
         "license",
+        "license-files",
         "authors",
         "urls",
+        "keywords",
+        "classifiers",
+        "scripts",
         "python-matrix",
         "dependency-requirements",
     }

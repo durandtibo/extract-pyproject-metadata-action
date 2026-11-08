@@ -3,6 +3,12 @@ name = "fields-pkg"
 version = "1.0"
 readme = "docs/README.md"
 license = "MIT"
+license-files = ["LICENSE", "licenses/*.txt"]
+keywords = ["toml", "metadata"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]
 authors = [
   { name = "Ada Lovelace", email = "ada@example.com" },
   { name = "Bob" },
@@ -11,3 +17,6 @@ authors = [
 [project.urls]
 Homepage = "https://example.com"
 "Source Code" = "https://example.com/src"
+
+[project.scripts]
+fields-tool = "fields_pkg.cli:main"

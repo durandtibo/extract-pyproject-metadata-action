@@ -109,6 +109,11 @@ outputs:
       License, from [project].license (an SPDX expression, or the text of the
       table); empty if not declared or a file
     value: ${{ steps.metadata.outputs.license }}
+  license-files:
+    description: >
+      JSON array of the patterns of [project].license-files, as written ("[]" if
+      none)
+    value: ${{ steps.metadata.outputs.license-files }}
   authors:
     description: >
       JSON array of the authors of [project].authors, each an object with the
@@ -119,6 +124,17 @@ outputs:
       JSON object mapping each label of [project.urls] to its URL ("{}" if
       none)
     value: ${{ steps.metadata.outputs.urls }}
+  keywords:
+    description: JSON array of [project].keywords, as written ("[]" if none)
+    value: ${{ steps.metadata.outputs.keywords }}
+  classifiers:
+    description: JSON array of [project].classifiers, as written ("[]" if none)
+    value: ${{ steps.metadata.outputs.classifiers }}
+  scripts:
+    description: >
+      JSON object mapping each name of [project.scripts] to its entry point ("{}"
+      if none)
+    value: ${{ steps.metadata.outputs.scripts }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty

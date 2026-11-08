@@ -20,8 +20,9 @@ group only (``numpy@extra:fast``); the key of the result is the entry as written
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
-     "description": ..., "readme": ..., "license": ...,
+     "description": ..., "readme": ..., "license": ..., "license_files": [...],
      "authors": [...], "urls": {...},
+     "keywords": [...], "classifiers": [...], "scripts": {...},
      "requires_python": ...,
      "extras": [...], "groups": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
@@ -40,7 +41,7 @@ With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs to FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that
 values may contain line breaks). They are ``name``, ``normalized-name``,
 ``version``, ``normalized-version``, ``description``, ``readme``, ``license``,
-``authors``, ``urls``, ``requires-python``, ``extras``, ``groups``,
+``license-files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires-python``, ``extras``, ``groups``,
 ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
 ``project-dependencies``, ``dependency-specifiers`` and
 ``dependency-requirements``. It also prints to stdout one
@@ -149,8 +150,12 @@ class Metadata(TypedDict):
     description: str
     readme: str
     license: str
+    license_files: list[str]
     authors: list[dict[str, str]]
     urls: dict[str, str]
+    keywords: list[str]
+    classifiers: list[str]
+    scripts: dict[str, str]
     requires_python: str
     extras: list[str]
     groups: list[str]
@@ -232,7 +237,7 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value (so is ``normalized_version``,
         the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
@@ -242,10 +247,14 @@ def extract_metadata(
         file (a string ``[project].readme``, or the ``file`` of a table), or an empty
         string if there is none or the readme is inline (``text``). ``license`` is the
         SPDX expression of ``[project].license`` or the ``text`` of its table, or an empty
-        string if there is none or the license is a ``file``. ``authors`` is the list of
+        string if there is none or the license is a ``file``. ``license_files`` is the array of
+        ``[project].license-files`` (the patterns as written), empty if there is none. ``authors`` is the list of
         the authors of ``[project].authors`` (``name`` and ``email`` only), empty if
         there is none. ``urls`` maps the labels of ``[project.urls]`` to their URLs, in
-        the order of the file, and is empty if there is none. ``extras`` lists the ``extra_values`` first, then the
+        the order of the file, and is empty if there is none. ``keywords`` and
+        ``classifiers`` are the arrays of ``[project].keywords`` and
+        ``[project].classifiers`` as written (empty if there is none), and ``scripts`` maps
+        the names of ``[project.scripts]`` to their entry points, like ``urls``. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
@@ -261,15 +270,79 @@ def extract_metadata(
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``description`` or ``requires-python`` that is not a string, a ``readme`` that
             is neither a string nor a table with a string ``file``, a ``license`` that
-            is neither a string nor a table with a string ``text`` and ``file``, an
-            ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` that is not a table of strings, an
+            is neither a string nor a table with a string ``text`` and ``file``, a
+            ``license-files`` that is not an array of strings, an
+            ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` or ``scripts`` that is not a table of strings, a
+            ``keywords`` or ``classifiers`` that is not an array of strings, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
     dynamic = _check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
+    raw_name = _required_name(project, dynamic, pyproject_path)
+    warnings = _static_and_dynamic_warnings(project, dynamic, pyproject_path)
+    raw_version, version_warnings = _required_version(
+        project, dynamic, pyproject_path, fail_on_dynamic_version
+    )
+    warnings.extend(version_warnings)
+    name = _valid_name(raw_name, pyproject_path)
+    version, normalized_version = _valid_version(raw_version, "version" in project, pyproject_path)
+
+    description = _check_str(project.get("description", ""), "[project].description", pyproject_path)
+
+    readme = _readme_path(project.get("readme", ""), pyproject_path)
+    license_ = _license_text(project.get("license", ""), pyproject_path)
+    authors = _authors(project.get("authors", []), pyproject_path)
+    urls = _urls(project, pyproject_path)
+    scripts = _string_table(project, "scripts", pyproject_path)
+    keywords = _check_string_array(project.get("keywords", []), "[project].keywords", pyproject_path)
+    classifiers = _check_string_array(
+        project.get("classifiers", []), "[project].classifiers", pyproject_path
+    )
+
+    requires_python = _check_str(
+        project.get("requires-python", ""), "[project].requires-python", pyproject_path
+    )
+    metadata = Metadata(
+        name=name,
+        normalized_name=canonicalize_name(name),
+        version=version,
+        normalized_version=normalized_version,
+        description=description,
+        readme=readme,
+        license=license_,
+        license_files=_check_string_array(
+            project.get("license-files", []), "[project].license-files", pyproject_path
+        ),
+        authors=authors,
+        urls=urls,
+        keywords=keywords,
+        classifiers=classifiers,
+        scripts=scripts,
+        requires_python=requires_python,
+        extras=_extra_names(project, extra_values, pyproject_path),
+        groups=_group_names(data, pyproject_path),
+    )
+    return metadata, warnings
+
+
+def _required_name(project: dict[str, Any], dynamic: list[str], pyproject_path: str) -> object:
+    """Return ``[project].name`` as written, which must be set.
+
+    Args:
+        project: The ``[project]`` table.
+        dynamic: The ``[project].dynamic`` array.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        The value of ``name``, whatever its type (see ``_valid_name``).
+
+    Raises:
+        MetadataError: If ``name`` is not set, with a message that says so when
+            it is listed in ``dynamic`` (PEP 621 requires a static name).
+    """
     try:
-        name = project["name"]
+        return project["name"]
     except KeyError as exc:
         if "name" in dynamic:
             # PEP 621: the name cannot be dynamic, so the build backend cannot supply it.
@@ -280,30 +353,85 @@ def extract_metadata(
             raise MetadataError(msg) from exc
         msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
         raise MetadataError(msg) from exc
-    # PEP 621: a field that is set cannot also be dynamic. The static value is the one read.
-    warnings: list[str] = [
+
+
+def _static_and_dynamic_warnings(
+    project: dict[str, Any], dynamic: list[str], pyproject_path: str
+) -> list[str]:
+    """Describe the fields that are set in ``[project]`` and also listed in ``dynamic``.
+
+    PEP 621 forbids it. The static value is the one that is read.
+
+    Args:
+        project: The ``[project]`` table.
+        dynamic: The ``[project].dynamic`` array.
+        pyproject_path: Path of the file, used in the messages.
+
+    Returns:
+        One warning per such field, in the order of ``dynamic``, without duplicates.
+    """
+    return [
         f"{pyproject_path}: [project].{field} is set and also listed in [project].dynamic, "
         "which PEP 621 forbids; the static value is used"
         for field in dict.fromkeys(dynamic)
         if field in project
     ]
+
+
+def _required_version(
+    project: dict[str, Any],
+    dynamic: list[str],
+    pyproject_path: str,
+    fail_on_dynamic_version: bool,
+) -> tuple[object, list[str]]:
+    """Return ``[project].version`` as written, or an empty string if it is dynamic.
+
+    Args:
+        project: The ``[project]`` table.
+        dynamic: The ``[project].dynamic`` array.
+        pyproject_path: Path of the file, used in the messages.
+        fail_on_dynamic_version: Whether a dynamic version is an error instead
+            of a warning.
+
+    Returns:
+        A tuple ``(version, warnings)``. ``version`` is the value of ``version``
+        whatever its type (see ``_valid_version``), or ``""`` when the build
+        backend computes it. ``warnings`` has one message in that case.
+
+    Raises:
+        MetadataError: If ``version`` is neither set nor dynamic, or is dynamic
+            and ``fail_on_dynamic_version`` is true.
+    """
     if "version" in project:
-        version = project["version"]
-    elif "version" in dynamic:
-        # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
-        if fail_on_dynamic_version:
-            msg = (
-                f"{pyproject_path}: [project].version is dynamic, so it cannot be read "
-                "(fail-on-dynamic-version is 'true')"
-            )
-            raise MetadataError(msg)
-        version = ""
-        warnings.append(
-            f"{pyproject_path}: [project].version is dynamic, the version output is empty"
-        )
-    else:
+        return project["version"], []
+    if "version" not in dynamic:
         msg = f"{pyproject_path} is missing required key [project].version"
         raise MetadataError(msg)
+    # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
+    if fail_on_dynamic_version:
+        msg = (
+            f"{pyproject_path}: [project].version is dynamic, so it cannot be read "
+            "(fail-on-dynamic-version is 'true')"
+        )
+        raise MetadataError(msg)
+    return "", [f"{pyproject_path}: [project].version is dynamic, the version output is empty"]
+
+
+def _valid_name(name: object, pyproject_path: str) -> str:
+    """Return ``name`` if it is a valid project name (PEP 508).
+
+    Args:
+        name: The value of ``[project].name``.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        ``name``, unchanged.
+
+    Raises:
+        MetadataError: If ``name`` is not a non-empty string, or contains
+            other characters than letters, digits, ``-``, ``_`` and ``.``, or
+            does not start and end with a letter or a digit.
+    """
     if not isinstance(name, str) or not name:
         msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
         raise MetadataError(msg)
@@ -313,62 +441,86 @@ def extract_metadata(
             f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
         )
         raise MetadataError(msg)
+    return name
+
+
+def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tuple[str, str]:
+    """Return the version and its canonical form (PEP 440).
+
+    Args:
+        version: The value of ``[project].version``, or ``""`` if it is dynamic.
+        is_static: Whether ``version`` is set in ``[project]`` (it is not
+            when it is dynamic).
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        A tuple ``(version, normalized_version)``. ``normalized_version`` is an
+        empty string when the version is not static.
+
+    Raises:
+        MetadataError: If ``version`` is not a string, or a static version is
+            not a valid PEP 440 version.
+    """
     _check_str(version, "[project].version", pyproject_path)
-    normalized_version = ""
-    if "version" in project:
-        try:
-            normalized_version = str(Version(version))
-        except InvalidVersion as exc:
-            msg = (
-                f"{pyproject_path}: [project].version is not a valid PEP 440 version: "
-                f"{version!r}"
-            )
-            raise MetadataError(msg) from exc
+    if not is_static:
+        return version, ""
+    try:
+        return version, str(Version(version))
+    except InvalidVersion as exc:
+        msg = f"{pyproject_path}: [project].version is not a valid PEP 440 version: {version!r}"
+        raise MetadataError(msg) from exc
 
-    description = _check_str(project.get("description", ""), "[project].description", pyproject_path)
 
-    readme = _readme_path(project.get("readme", ""), pyproject_path)
-    license_ = _license_text(project.get("license", ""), pyproject_path)
-    authors = _authors(project.get("authors", []), pyproject_path)
-    urls = _urls(project, pyproject_path)
+def _extra_names(
+    project: dict[str, Any], extra_values: list[str], pyproject_path: str
+) -> list[str]:
+    """Return the extra names: ``extra_values`` first, then the sorted extras.
 
-    requires_python = _check_str(
-        project.get("requires-python", ""), "[project].requires-python", pyproject_path
-    )
+    Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
+    "foo-bar" are one extra. The first spelling of each is kept, at the
+    position of its first occurrence.
 
+    Args:
+        project: The ``[project]`` table.
+        extra_values: The values to put first, as returned by ``parse_string_array``.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The names, without duplicates.
+
+    Raises:
+        MetadataError: If ``[project.optional-dependencies]`` is not a table.
+    """
     optional_dependencies = _get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     extras = sorted(optional_dependencies, key=canonicalize_name)
-
-    # Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
-    # "foo-bar" are one extra. The first spelling of each is kept, at the
-    # position of its first occurrence.
     unique_extras: dict[str, str] = {}
     for extra in extra_values + extras:
         unique_extras.setdefault(canonicalize_name(extra), extra)
+    return list(unique_extras.values())
 
+
+def _group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
+    """Return the names of ``[dependency-groups]``, sorted by normalized name.
+
+    Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
+
+    Args:
+        data: The parsed pyproject.toml.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The names, without duplicates; empty if there is no such table.
+
+    Raises:
+        MetadataError: If ``[dependency-groups]`` is not a table.
+    """
     dependency_groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
-    # Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
     unique_groups: dict[str, str] = {}
     for group in sorted(dependency_groups, key=canonicalize_name):
         unique_groups.setdefault(canonicalize_name(group), group)
-    groups = list(unique_groups.values())
-    metadata = Metadata(
-        name=name,
-        normalized_name=canonicalize_name(name),
-        version=version,
-        normalized_version=normalized_version,
-        description=description,
-        readme=readme,
-        license=license_,
-        authors=authors,
-        urls=urls,
-        requires_python=requires_python,
-        extras=list(unique_extras.values()),
-        groups=groups,
-    )
-    return metadata, warnings
+    return list(unique_groups.values())
 
 
 def _readme_path(readme: object, pyproject_path: str) -> str:
@@ -470,10 +622,28 @@ def _urls(project: dict[str, Any], pyproject_path: str) -> dict[str, str]:
         MetadataError: If ``[project.urls]`` is not a table or a URL is not a
             string.
     """
-    urls = _get_table(project, "urls", "[project.urls]", pyproject_path)
-    for label, url in urls.items():
-        _check_str(url, f"[project.urls].{label}", pyproject_path)
-    return dict(urls)
+    return _string_table(project, "urls", pyproject_path)
+
+
+def _string_table(project: dict[str, Any], key: str, pyproject_path: str) -> dict[str, str]:
+    """Return a table of ``[project]`` whose values are strings, such as ``[project.urls]``.
+
+    Args:
+        project: The ``[project]`` table.
+        key: The key of the table, such as ``"scripts"``.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        The keys and the values as written, in the order of the file. Empty if
+        there is no such table.
+
+    Raises:
+        MetadataError: If the table is not a table or a value is not a string.
+    """
+    table = _get_table(project, key, f"[project.{key}]", pyproject_path)
+    for name, value in table.items():
+        _check_str(value, f"[project.{key}].{name}", pyproject_path)
+    return dict(table)
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -1116,7 +1286,9 @@ def compatible_python_versions(
         A tuple ``(versions, warnings)``. ``versions`` are the allowed
         candidates, in the order of ``candidates``: all of them when
         ``requires_python`` is empty, none of them (with a warning) when it is
-        not a valid specifier.
+        not a valid specifier. There is also a warning when ``candidates`` is
+        not empty and none of them is allowed, because a job matrix built from
+        an empty list is rejected by GitHub.
     """
     if not requires_python.strip():
         return list(candidates), []
@@ -1136,6 +1308,14 @@ def compatible_python_versions(
             for patch in _PATCH_RELEASES
         )
     ]
+    if candidates and not versions:
+        # GitHub rejects a matrix vector without values, far from the cause.
+        warning = (
+            f"{pyproject_path}: no python-candidates version satisfies [project].requires-python "
+            f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
+            "matrix built from them is rejected by GitHub"
+        )
+        return versions, [warning]
     return versions, []
 
 
@@ -1291,8 +1471,12 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "description": metadata["description"],
         "readme": metadata["readme"],
         "license": metadata["license"],
+        "license-files": _compact_json(metadata["license_files"]),
         "authors": _compact_json(metadata["authors"]),
         "urls": _compact_json(metadata["urls"]),
+        "keywords": _compact_json(metadata["keywords"]),
+        "classifiers": _compact_json(metadata["classifiers"]),
+        "scripts": _compact_json(metadata["scripts"]),
         "requires-python": metadata["requires_python"],
         "extras": _compact_json(metadata["extras"]),
         "groups": _compact_json(metadata["groups"]),
