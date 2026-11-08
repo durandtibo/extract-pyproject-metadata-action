@@ -140,7 +140,9 @@ The step also prints a one-line `📦` summary of the outputs in the log, with l
 breaks in the values escaped, to help debugging a workflow. With
 `step-summary: "true"`, the outputs and the warnings are also written to the job
 summary of the run as a Markdown table (values are escaped, so a value from
-`pyproject.toml` cannot add Markdown or HTML to the page).
+`pyproject.toml` cannot add Markdown or HTML to the page). When the step fails,
+the error message is written to the job summary instead, so the reason is visible
+on the summary page of the run and not only in the log of the step.
 
 ### Python version matrix
 
