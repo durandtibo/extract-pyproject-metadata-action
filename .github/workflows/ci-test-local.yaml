@@ -677,6 +677,31 @@ jobs:
           assert_equal "outcome" "failure" "${{ steps.test-missing-python-executable.outcome }}"
           print_success "python-executable test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 29: dependencies with a scope
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test dependencies with a scope
+        id: test-dependency-scopes
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["grp-pkg@group:base","grp-pkg@group:dev","grp-pkg@project","numpy@extra:numpy","numpy@group:dev"]'
+
+      - name: 🧪 Test an invalid dependency scope (should fail)
+        id: test-invalid-dependency-scope
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["numpy@numpy"]'
+        continue-on-error: true
+
+      - name: ✓ Verify the dependency scopes
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "dependency-specifiers" '{"grp-pkg@group:base":">=1.5","grp-pkg@group:dev":">=1.5","grp-pkg@project":null,"numpy@extra:numpy":"~=2.0","numpy@group:dev":null}' '${{ steps.test-dependency-scopes.outputs.dependency-specifiers }}'
+          assert_equal "outcome" "failure" "${{ steps.test-invalid-dependency-scope.outcome }}"
+          print_success "dependency scopes test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

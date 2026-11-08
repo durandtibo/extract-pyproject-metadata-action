@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -33,7 +33,12 @@ from extract_metadata import (  # noqa: E402
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
+    _index_dependencies,
     _index_requirements,
+    _scoped_requirements,
+    _lookup_key,
+    _requirements_from_index,
+    _specifiers_from_index,
     _get_table,
     compatible_python_versions,
     escape_annotation,
@@ -50,6 +55,7 @@ from extract_metadata import (  # noqa: E402
     lowest_python_version,
     main,
     parse_bool,
+    parse_dependencies,
     parse_options,
     parse_python_candidates,
     parse_string_array,
@@ -1831,6 +1837,44 @@ def test_candidate_requirements_search_order() -> None:
     ]
 
 
+def test_scoped_requirements() -> None:
+    data = {
+        "project": {
+            "dependencies": ["a"],
+            "optional-dependencies": {"Extra_One": ["b"], "two": ["c", "d"]},
+        },
+        "dependency-groups": {"Dev_Tools": ["e", {"include-group": "lint"}], "lint": ["f"]},
+    }
+
+    assert _scoped_requirements(data) == (
+        [
+            ("project", "a"),
+            ("extra:extra-one", "b"),
+            ("extra:two", "c"),
+            ("extra:two", "d"),
+            ("group:dev-tools", "e"),
+            ("group:dev-tools", "f"),
+            ("group:lint", "f"),
+        ],
+        [],
+    )
+
+
+def test_scoped_requirements_share_a_scope_between_the_spellings_of_a_name() -> None:
+    data = {"project": {"optional-dependencies": {"Foo_Bar": ["a"], "foo-bar": ["b"]}}}
+
+    assert _scoped_requirements(data)[0] == [("extra:foo-bar", "a"), ("extra:foo-bar", "b")]
+
+
+def test_scoped_requirements_empty() -> None:
+    assert _scoped_requirements({}) == ([], [])
+
+
+def test_scoped_requirements_wrong_type() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
+        _scoped_requirements({"project": {"dependencies": "a"}}, "p.toml")
+
+
 def test_candidate_requirements_empty() -> None:
     assert _candidate_requirements({}) == ([], [])
 
@@ -1855,6 +1899,12 @@ def test_candidate_requirements_empty() -> None:
 def test_candidate_requirements_non_string_entries(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
         _candidate_requirements(data, "p.toml")
+
+
+def test_candidate_requirements_expands_the_spellings_of_a_group_once() -> None:
+    data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
+
+    assert _candidate_requirements(data)[0] == ["a", "b", "c"]
 
 
 def test_candidate_requirements_does_not_modify_the_data() -> None:
@@ -3841,6 +3891,229 @@ def test_parse_requirement_is_called_once_per_distinct_string() -> None:
     assert parse.cache_info().misses == 2
 
 
+def _specifier_error(raw: str) -> InvalidSpecifier:
+    """Return the error that ``packaging`` raises for the invalid specifier ``raw``."""
+    with pytest.raises(InvalidSpecifier) as exc_info:
+        SpecifierSet(raw)
+    return exc_info.value
+
+
+def _parse_error(raw: str) -> InvalidRequirement:
+    """Return the error that ``packaging`` raises for the invalid requirement ``raw``."""
+    with pytest.raises(InvalidRequirement) as exc_info:
+        Requirement(raw)
+    return exc_info.value
+
+
+DATA_WITH_REQUIREMENTS = {
+    "project": {
+        "dependencies": ["numpy>=1.20; python_version < '3.12'", "not valid!", "tqdm"],
+        "optional-dependencies": {"x": ["numpy>=1.26; python_version >= '3.12'"]},
+    },
+    "dependency-groups": {"dev": ["pytest", {"include-group": "missing"}]},
+}
+
+
+def test_index_dependencies() -> None:
+    found, warnings = _index_dependencies(DATA_WITH_REQUIREMENTS, "p.toml")
+
+    assert found == {
+        "numpy": [(">=1.20", 'python_version < "3.12"'), (">=1.26", 'python_version >= "3.12"')],
+        "tqdm": [("", None)],
+        "pytest": [("", None)],
+        "numpy@project": [(">=1.20", 'python_version < "3.12"')],
+        "tqdm@project": [("", None)],
+        "numpy@extra:x": [(">=1.26", 'python_version >= "3.12"')],
+        "pytest@group:dev": [("", None)],
+    }
+    assert warnings == [
+        "p.toml: [dependency-groups].dev: include-group 'missing' does not match any group",
+        "Ignoring invalid requirement 'not valid!' in p.toml: "
+        + str(_parse_error("not valid!")),
+    ]
+
+
+def test_index_dependencies_empty() -> None:
+    assert _index_dependencies({}, "p.toml") == ({}, [])
+
+
+def test_index_dependencies_wrong_type() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
+        _index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
+
+
+def test_specifiers_from_index() -> None:
+    found = {"numpy": [(">=1", None), ("<2", None)], "tqdm": [("", None)]}
+
+    assert _specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
+        {"Numpy": ">=1", "tqdm": "", "other": None},
+        ["warning", "Numpy has different specifiers in p.toml: ['<2', '>=1']; using '>=1'"],
+    )
+
+
+def test_specifiers_from_index_without_dependencies_ignores_the_index_warnings() -> None:
+    assert _specifiers_from_index({}, ["warning"], [], "p.toml") == ({}, [])
+
+
+def test_requirements_from_index() -> None:
+    found = {"numpy": [(">=1", "python_version < '3.12'"), ("", None)]}
+
+    assert _requirements_from_index(found, ["NumPy", "other"]) == {
+        "NumPy": [
+            {"specifier": ">=1", "marker": "python_version < '3.12'"},
+            {"specifier": "", "marker": ""},
+        ],
+        "other": [],
+    }
+
+
+def test_main_warnings_are_in_the_order_of_the_sources(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\ndynamic = ["version"]\nrequires-python = "python3"\n'
+        'dependencies = ["x>=1", "x>=2"]\n\n[dependency-groups]\ndev = ["x>=3", "not valid!"]\n',
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 0
+    warnings = json.loads(capsys.readouterr().out)["warnings"]
+    assert len(warnings) == 5
+    # The metadata, the Python versions, the dependencies of the project, then the lookups.
+    assert warnings[:3] == [
+        f"{path}: [project].version is dynamic, the version output is empty",
+        f"{path}: [project].requires-python is not a valid version specifier, "
+        f"the python-versions output is empty: {_specifier_error('python3')}",
+        f"x has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
+    ]
+    assert warnings[3].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
+    assert warnings[4] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "[]",
+        '["numpy", "NumPy"]',
+        '["numpy@project"]',
+        '["numpy@extra:x", "numpy@group:dev"]',
+        '["a@extra:with:colon", "a@group:Dev_Tools"]',
+    ],
+)
+def test_parse_dependencies(raw: str) -> None:
+    assert parse_dependencies(raw) == json.loads(raw)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["numpy@dev", "numpy@", "numpy@extra", "numpy@extra:", "numpy@group:", "numpy@Project", "numpy@feature:x", "numpy@@project"],
+)
+def test_parse_dependencies_invalid_scope(entry: str) -> None:
+    with pytest.raises(MetadataError, match=rf"^dependencies entry {re.escape(repr(entry))} has an invalid scope: "):
+        parse_dependencies(json.dumps([entry]))
+
+
+@pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[1]"])
+def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
+    with pytest.raises(MetadataError, match=r"^dependencies (is not valid JSON|must be a JSON array of strings)"):
+        parse_dependencies(raw)
+
+
+@pytest.mark.parametrize(
+    ("dependency", "expected"),
+    [
+        ("numpy", "numpy"),
+        ("Foo_Bar", "foo-bar"),
+        ("Foo.Bar@project", "foo-bar@project"),
+        ("numpy@extra:Dev_Tools", "numpy@extra:dev-tools"),
+        ("numpy@group:Dev..Tools", "numpy@group:dev-tools"),
+    ],
+)
+def test_lookup_key(dependency: str, expected: str) -> None:
+    assert _lookup_key(dependency) == expected
+
+
+DATA_WITH_SCOPES = """\
+[project]
+name = "a"
+version = "1"
+dependencies = ["numpy>=1.20", "tqdm"]
+
+[project.optional-dependencies]
+Fast = ["numpy>=2", "ujson"]
+slow = ["numpy<2"]
+
+[dependency-groups]
+lint = ["ruff>=0.5"]
+dev = ["numpy>=1.26", {include-group = "lint"}, "pytest"]
+"""
+
+
+@pytest.mark.parametrize(
+    ("dependencies", "expected"),
+    [
+        ('["numpy"]', {"numpy": ">=1.20"}),
+        ('["numpy@project"]', {"numpy@project": ">=1.20"}),
+        ('["numpy@extra:fast"]', {"numpy@extra:fast": ">=2"}),
+        ('["numpy@extra:Fast"]', {"numpy@extra:Fast": ">=2"}),
+        ('["numpy@extra:slow"]', {"numpy@extra:slow": "<2"}),
+        ('["NumPy@group:dev"]', {"NumPy@group:dev": ">=1.26"}),
+        ('["ruff@group:dev", "ruff@group:lint"]', {"ruff@group:dev": ">=0.5", "ruff@group:lint": ">=0.5"}),
+        ('["ujson@project", "ujson@extra:fast", "ujson@group:dev"]', {"ujson@project": None, "ujson@extra:fast": "", "ujson@group:dev": None}),
+        ('["tqdm@extra:fast"]', {"tqdm@extra:fast": None}),
+        ('["numpy@extra:missing", "numpy@group:missing"]', {"numpy@extra:missing": None, "numpy@group:missing": None}),
+    ],
+)
+def test_dependency_specifiers_with_a_scope(
+    tmp_path: Path, dependencies: str, expected: dict
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert specifiers(path, dependencies) == expected
+
+
+def test_main_dependency_requirements_with_a_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert main(["extract_metadata.py", str(path), "[]", '["numpy", "numpy@extra:slow", "pytest@group:dev"]']) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["dependency_requirements"] == {
+        "numpy": [
+            {"specifier": ">=1.20", "marker": ""},
+            {"specifier": ">=2", "marker": ""},
+            {"specifier": "<2", "marker": ""},
+            {"specifier": ">=1.26", "marker": ""},
+        ],
+        "numpy@extra:slow": [{"specifier": "<2", "marker": ""}],
+        "pytest@group:dev": [{"specifier": "", "marker": ""}],
+    }
+    assert report["dependency_specifiers"] == {
+        "numpy": ">=1.20",
+        "numpy@extra:slow": "<2",
+        "pytest@group:dev": "",
+    }
+
+
+def test_main_fail_on_missing_names_the_entry_with_a_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 1
+    assert "['tqdm@extra:fast']" in capsys.readouterr().err
+
+
+def test_main_returns_one_for_an_invalid_dependency_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert main(["extract_metadata.py", str(path), "[]", '["numpy@dev"]']) == 1
+    assert "dependencies entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
+
+
 def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -3850,8 +4123,9 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     extract_metadata_module._parse_requirement.cache_clear()
 
     assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
-    # "x>=1", "y" and "w": each is read again for the project dependencies ("x>=1", "y") and
-    # for the requirements of the requested packages ("x>=1", "y", "w").
+    # "x>=1", "y" and "w" are parsed once, in the index of all the requirements that both lookups
+    # share. They are read again for the index of their own place ("x>=1" and "y" for the project,
+    # "w" for the extra), and "x>=1" and "y" for the project dependencies.
     assert extract_metadata_module._parse_requirement.cache_info().misses == 3
     assert extract_metadata_module._parse_requirement.cache_info().hits == 5
 
