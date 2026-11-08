@@ -24,12 +24,9 @@ from helpers import (
 )
 
 import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import (
-    build_report,
-    check_no_missing_dependency,
-    load_pyproject,
-    main,
-)
+import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
+from extract_pyproject_metadata.cli import build_report, load_pyproject, main
+from extract_pyproject_metadata.dependencies.lookup import check_no_missing_dependency
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import Options, parse_bool, parse_options
 from extract_pyproject_metadata.output.github import format_error
@@ -1915,14 +1912,14 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
         '[project]\nname = "a"\nversion = "1"\ndependencies = ["x>=1", "y"]\n\n'
         '[project.optional-dependencies]\nz = ["w"]\n',
     )
-    extract_metadata_module._parse_requirement.cache_clear()
+    dependencies_requirements_module._parse_requirement.cache_clear()
 
     assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
     # "x>=1", "y" and "w" are parsed once, in the index of all the requirements that both lookups
     # share. They are read again for the index of their own place ("x>=1" and "y" for the project,
     # "w" for the extra), and "x>=1" and "y" for the project dependencies.
-    assert extract_metadata_module._parse_requirement.cache_info().misses == 3
-    assert extract_metadata_module._parse_requirement.cache_info().hits == 5
+    assert dependencies_requirements_module._parse_requirement.cache_info().misses == 3
+    assert dependencies_requirements_module._parse_requirement.cache_info().hits == 5
 
 
 

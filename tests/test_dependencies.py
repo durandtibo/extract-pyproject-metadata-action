@@ -23,25 +23,25 @@ from helpers import (
 )
 from packaging.requirements import InvalidRequirement, Requirement
 
-import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import (
-    _candidate_requirements,
-    _conflict_warnings,
-    _dynamic_dependency_fields,
-    _extra_names,
-    _flatten_group,
-    _group_names,
-    _index_dependencies,
-    _index_requirements,
+import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
+from extract_pyproject_metadata.cli import _extra_names, _group_names, load_pyproject
+from extract_pyproject_metadata.dependencies.groups import flatten_group
+from extract_pyproject_metadata.dependencies.lookup import (
     _lookup_key,
-    _requirements_from_index,
-    _scoped_requirements,
-    _specifiers_from_index,
     extract_dependency_requirements,
     extract_dependency_specifiers,
-    extract_project_dependencies,
-    load_pyproject,
     parse_dependencies,
+    requirements_from_index,
+    specifiers_from_index,
+)
+from extract_pyproject_metadata.dependencies.requirements import (
+    _candidate_requirements,
+    _index_requirements,
+    _scoped_requirements,
+    conflict_warnings,
+    dynamic_dependency_fields,
+    extract_project_dependencies,
+    index_dependencies,
 )
 from extract_pyproject_metadata.errors import MetadataError
 
@@ -175,7 +175,7 @@ def test_dependency_invalid_input(tmp_path: Path, value: str) -> None:
     ],
 )
 def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
-    assert _flatten_group(groups, name)[0] == expected
+    assert flatten_group(groups, name)[0] == expected
 
 
 
@@ -198,7 +198,7 @@ def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
 def test_flatten_group_include_cycles_terminate(
     groups: dict, name: str, expected: list[str]
 ) -> None:
-    assert _flatten_group(groups, name)[0] == expected
+    assert flatten_group(groups, name)[0] == expected
 
 
 
@@ -393,7 +393,7 @@ def test_dependency_malformed_table_error_names_the_file() -> None:
 
 def test_flatten_group_group_must_be_an_array() -> None:
     with pytest.raises(MetadataError, match=r"custom\.toml: \[dependency-groups\]\.a must be an array"):
-        _flatten_group({"a": "x"}, "a", pyproject_path="custom.toml")
+        flatten_group({"a": "x"}, "a", pyproject_path="custom.toml")
 
 
 
@@ -407,19 +407,19 @@ def test_flatten_group_unknown_entry(entry: object) -> None:
         match=r"p\.toml: \[dependency-groups\]\.a entries must be strings or "
         r"\{'include-group': <name>\} tables, got: ",
     ):
-        _flatten_group({"a": ["x", entry], "b": ["y"]}, "a", pyproject_path="p.toml")
+        flatten_group({"a": ["x", entry], "b": ["y"]}, "a", pyproject_path="p.toml")
 
 
 
 def test_flatten_group_unknown_entry_in_an_included_group() -> None:
     with pytest.raises(MetadataError, match=r"\[dependency-groups\]\.b entries must be"):
-        _flatten_group({"a": [{"include-group": "b"}], "b": [{"typo": 1}]}, "a")
+        flatten_group({"a": [{"include-group": "b"}], "b": [{"typo": 1}]}, "a")
 
 
 
 def test_flatten_group_include_group_must_be_a_string() -> None:
     with pytest.raises(MetadataError, match=r"\.a: include-group must be a string, got: \['b'\]"):
-        _flatten_group({"a": [{"include-group": ["b"]}]}, "a")
+        flatten_group({"a": [{"include-group": ["b"]}]}, "a")
 
 
 
@@ -441,7 +441,7 @@ def test_candidate_requirements_wrong_types(data: dict, match: str) -> None:
 
 def test_flatten_group_cycle_adds_a_warning() -> None:
     groups = {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}
-    result, warnings = _flatten_group(groups, "a", pyproject_path="p.toml")
+    result, warnings = flatten_group(groups, "a", pyproject_path="p.toml")
 
     assert result == ["y", "x"]
     assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
@@ -449,7 +449,7 @@ def test_flatten_group_cycle_adds_a_warning() -> None:
 
 
 def test_flatten_group_self_include_adds_a_warning() -> None:
-    result, warnings = _flatten_group({"a": [{"include-group": "a"}, "x"]}, "a")
+    result, warnings = flatten_group({"a": [{"include-group": "a"}, "x"]}, "a")
 
     assert result == ["x"]
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> a"]
@@ -458,7 +458,7 @@ def test_flatten_group_self_include_adds_a_warning() -> None:
 
 def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
     groups = {"c": [{"include-group": "a"}], "a": [{"include-group": "b"}], "b": [{"include-group": "c"}]}
-    _, warnings = _flatten_group(groups, "b")
+    _, warnings = flatten_group(groups, "b")
 
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> b -> c -> a"]
 
@@ -466,7 +466,7 @@ def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
 
 def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
     groups = {"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": [{"include-group": "b"}]}
-    _, warnings = _flatten_group(groups, "a")
+    _, warnings = flatten_group(groups, "a")
 
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: b -> c -> b"]
 
@@ -474,7 +474,7 @@ def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
 
 def test_flatten_group_cycle_uses_canonical_names() -> None:
     groups = {"My_Group": [{"include-group": "my-group"}]}
-    _, warnings = _flatten_group(groups, "My_Group")
+    _, warnings = flatten_group(groups, "My_Group")
 
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: my-group -> my-group"]
 
@@ -482,7 +482,7 @@ def test_flatten_group_cycle_uses_canonical_names() -> None:
 
 def test_flatten_group_no_cycle_adds_no_warning() -> None:
     groups = {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]}
-    result, warnings = _flatten_group(groups, "a")
+    result, warnings = flatten_group(groups, "a")
 
     assert result == ["y", "y"]
     assert warnings == []
@@ -490,7 +490,7 @@ def test_flatten_group_no_cycle_adds_no_warning() -> None:
 
 
 def test_flatten_group_follows_a_chain_up_to_the_depth_limit() -> None:
-    result, warnings = _flatten_group(chain_of_groups(100), "g0")
+    result, warnings = flatten_group(chain_of_groups(100), "g0")
 
     assert result == ["numpy>=1"]
     assert warnings == []
@@ -501,18 +501,18 @@ def test_flatten_group_rejects_a_chain_deeper_than_the_limit() -> None:
     with pytest.raises(
         MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries are nested more than 100 levels deep"
     ):
-        _flatten_group(chain_of_groups(101), "g0", pyproject_path="p.toml")
+        flatten_group(chain_of_groups(101), "g0", pyproject_path="p.toml")
 
 
 
 def test_flatten_group_rejects_a_chain_longer_than_the_recursion_limit() -> None:
     with pytest.raises(MetadataError, match="nested more than 100 levels deep"):
-        _flatten_group(chain_of_groups(5000), "g0")
+        flatten_group(chain_of_groups(5000), "g0")
 
 
 
 def test_flatten_group_expands_a_diamond_within_the_budget() -> None:
-    result, warnings = _flatten_group(diamond_of_groups(10), "g0")
+    result, warnings = flatten_group(diamond_of_groups(10), "g0")
 
     assert result == ["numpy>=1"] * 1024
     assert warnings == []
@@ -523,7 +523,7 @@ def test_flatten_group_rejects_an_exponential_expansion() -> None:
     with pytest.raises(
         MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries expand more than 10000 groups in total"
     ):
-        _flatten_group(diamond_of_groups(25), "g0", pyproject_path="p.toml")
+        flatten_group(diamond_of_groups(25), "g0", pyproject_path="p.toml")
 
 
 
@@ -531,7 +531,7 @@ def test_flatten_group_shares_the_budget_between_the_included_groups() -> None:
     budget = [3]
 
     with pytest.raises(MetadataError, match="expand more than"):
-        _flatten_group(chain_of_groups(5), "g0", budget=budget)
+        flatten_group(chain_of_groups(5), "g0", budget=budget)
 
     assert budget == [-1]
 
@@ -579,7 +579,7 @@ def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
 
 
 def test_flatten_group_missing_include_group_adds_a_warning() -> None:
-    result, warnings = _flatten_group(
+    result, warnings = flatten_group(
         {"dev": [{"include-group": "tset"}, "x"]}, "dev", pyproject_path="p.toml")
 
     assert result == ["x"]
@@ -588,7 +588,7 @@ def test_flatten_group_missing_include_group_adds_a_warning() -> None:
 
 
 def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warning() -> None:
-    result, warnings = _flatten_group(
+    result, warnings = flatten_group(
         {"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
 
     assert result == ["y"]
@@ -710,7 +710,7 @@ def test_dependency_one_warning_per_conflicting_marker(tmp_path: Path) -> None:
     ],
 )
 def test_conflict_warnings(matches: list[tuple[str, str | None]], expected: list[str]) -> None:
-    assert _conflict_warnings("a", matches, matches[0][0], "p.toml") == expected
+    assert conflict_warnings("a", matches, matches[0][0], "p.toml") == expected
 
 
 
@@ -835,7 +835,7 @@ def test_group_names_must_be_a_table() -> None:
     ],
 )
 def test_dynamic_dependency_fields(data: dict, expected: list[str]) -> None:
-    assert _dynamic_dependency_fields(data) == expected
+    assert dynamic_dependency_fields(data) == expected
 
 
 
@@ -878,7 +878,7 @@ def test_dependency_static_value_wins_over_dynamic_without_warning() -> None:
 
 
 def test_parse_requirement_valid() -> None:
-    requirement = extract_metadata_module._parse_requirement("Foo_Bar[x]>=1; python_version<'3.12'")
+    requirement = dependencies_requirements_module._parse_requirement("Foo_Bar[x]>=1; python_version<'3.12'")
 
     assert isinstance(requirement, Requirement)
     assert (requirement.name, str(requirement.specifier)) == ("Foo_Bar", ">=1")
@@ -886,14 +886,14 @@ def test_parse_requirement_valid() -> None:
 
 
 def test_parse_requirement_invalid_is_returned_not_raised() -> None:
-    error = extract_metadata_module._parse_requirement("bad requirement!!")
+    error = dependencies_requirements_module._parse_requirement("bad requirement!!")
 
     assert isinstance(error, InvalidRequirement)
 
 
 
 def test_parse_requirement_is_called_once_per_distinct_string() -> None:
-    parse = extract_metadata_module._parse_requirement
+    parse = dependencies_requirements_module._parse_requirement
     parse.cache_clear()
 
     assert parse("numpy>=1") is parse("numpy>=1")
@@ -903,7 +903,7 @@ def test_parse_requirement_is_called_once_per_distinct_string() -> None:
 
 
 def test_index_dependencies() -> None:
-    found, warnings = _index_dependencies(DATA_WITH_REQUIREMENTS, "p.toml")
+    found, warnings = index_dependencies(DATA_WITH_REQUIREMENTS, "p.toml")
 
     assert found == {
         "numpy": [(">=1.20", 'python_version < "3.12"'), (">=1.26", 'python_version >= "3.12"')],
@@ -923,20 +923,20 @@ def test_index_dependencies() -> None:
 
 
 def test_index_dependencies_empty() -> None:
-    assert _index_dependencies({}, "p.toml") == ({}, [])
+    assert index_dependencies({}, "p.toml") == ({}, [])
 
 
 
 def test_index_dependencies_wrong_type() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
-        _index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
+        index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
 
 
 
 def test_specifiers_from_index() -> None:
     found = {"numpy": [(">=1", None), ("<2", None)], "tqdm": [("", None)]}
 
-    assert _specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
+    assert specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
         {"Numpy": ">=1", "tqdm": "", "other": None},
         ["warning", "Numpy has different specifiers in p.toml: ['<2', '>=1']; using '>=1'"],
     )
@@ -944,14 +944,14 @@ def test_specifiers_from_index() -> None:
 
 
 def test_specifiers_from_index_without_dependencies_ignores_the_index_warnings() -> None:
-    assert _specifiers_from_index({}, ["warning"], [], "p.toml") == ({}, [])
+    assert specifiers_from_index({}, ["warning"], [], "p.toml") == ({}, [])
 
 
 
 def test_requirements_from_index() -> None:
     found = {"numpy": [(">=1", "python_version < '3.12'"), ("", None)]}
 
-    assert _requirements_from_index(found, ["NumPy", "other"]) == {
+    assert requirements_from_index(found, ["NumPy", "other"]) == {
         "NumPy": [
             {"specifier": ">=1", "marker": "python_version < '3.12'"},
             {"specifier": "", "marker": ""},
