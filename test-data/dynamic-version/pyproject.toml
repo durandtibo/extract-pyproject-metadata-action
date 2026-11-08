@@ -1,0 +1,6 @@
+[project]
+name = "dynamic-pkg"
+dynamic = ["version"]
+
+[project.optional-dependencies]
+numpy = ["numpy"]

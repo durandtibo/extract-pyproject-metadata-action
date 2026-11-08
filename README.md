@@ -58,7 +58,7 @@ the example above outputs:
 | Name                    | Description                                                                                                                                                                                                                                                                                      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `name`                  | Project name, as declared in `[project].name`.                                                                                                                                                                                                                                                   |
-| `version`               | Project version, as declared in `[project].version`.                                                                                                                                                                                                                                             |
+| `version`               | Project version, as declared in `[project].version`. Empty if `version` is listed in `[project].dynamic` (a warning is emitted).                                                                                                                                                                 |
 | `extras`                | JSON array of extra names, sorted, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept).                                                                                                                                                                         |
 | `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found, `""` if the requirement has no specifier. A warning is emitted if different specifiers are found, or if a requirement string in the file is invalid and ignored. |
 
@@ -68,7 +68,8 @@ The action's step fails (non-zero exit) when:
 
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML.
-- `[project]` is missing the required `name` or `version` key.
+- `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
+- `[project].dynamic` is not an array.
 - `[project]` is not a table, `name` is not a non-empty string, or `version` is
   not a string (for example `version = 1.0` is a TOML float; write
   `version = "1.0"`).

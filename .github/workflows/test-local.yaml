@@ -149,3 +149,20 @@ jobs:
             exit 1
           fi
           print_success "invalid extra-values correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 7: dynamic version gives an empty version output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test dynamic version
+        id: test-dynamic-version
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+
+      - name: ✓ Verify dynamic version is empty
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "dynamic-pkg" "${{ steps.test-dynamic-version.outputs.name }}"
+          assert_equal "version" "" "${{ steps.test-dynamic-version.outputs.version }}"
+          assert_equal "extras" '["numpy"]' '${{ steps.test-dynamic-version.outputs.extras }}'
+          print_success "dynamic version test passed"
