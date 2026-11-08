@@ -2841,6 +2841,44 @@ def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "requires_python",
+    [
+        ">=3.12.0,<3.12.1",
+        "!=3.12.*",
+        ">=3.11,!=3.12.*",
+        "!=3.12.0,!=3.12.1",
+        "!=3.12.0,!=3.12.1,!=3.12.2,<3.12.3",
+        ">3.12.5,!=3.12.6,<3.12.8",
+        ">3.12.5,!=3.12.6,!=3.12.7,<3.12.9",
+        ">=3.12.5,<3.12.7,!=3.12.5,!=3.12.6",
+        ">=3.12.9999",
+        ">3.12.9999",
+        ">=3.12.10001",
+        "<3.12.0",
+        "<=3.12.0",
+        "~=3.12.3",
+        "===3.12.1",
+        "==3.12.*,!=3.12.0",
+        ">=3.10.2,<3.12.5",
+    ],
+)
+def test_compatible_python_versions_match_a_brute_force_search(requires_python: str) -> None:
+    candidates = ["3.10", "3.11", "3.12", "3.13"]
+    specifier = SpecifierSet(requires_python)
+    patches = [*range(40), 9998, 9999, 10000, 10001, 10002]
+    expected = [
+        candidate
+        for candidate in candidates
+        if any(specifier.contains(f"{candidate}.{patch}") for patch in patches)
+    ]
+
+    versions, warnings = compatible_python_versions(requires_python, candidates)
+
+    assert versions == expected
+    assert warnings == []
+
+
+@pytest.mark.parametrize(
     ("versions", "expected"),
     [
         ([], ""),
