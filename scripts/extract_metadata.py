@@ -256,62 +256,14 @@ def extract_metadata(
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
     dynamic = _check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
-    try:
-        name = project["name"]
-    except KeyError as exc:
-        if "name" in dynamic:
-            # PEP 621: the name cannot be dynamic, so the build backend cannot supply it.
-            msg = (
-                f"{pyproject_path}: [project].name is listed in [project].dynamic, but "
-                "PEP 621 requires a static name"
-            )
-            raise MetadataError(msg) from exc
-        msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
-        raise MetadataError(msg) from exc
-    # PEP 621: a field that is set cannot also be dynamic. The static value is the one read.
-    warnings: list[str] = [
-        f"{pyproject_path}: [project].{field} is set and also listed in [project].dynamic, "
-        "which PEP 621 forbids; the static value is used"
-        for field in dict.fromkeys(dynamic)
-        if field in project
-    ]
-    if "version" in project:
-        version = project["version"]
-    elif "version" in dynamic:
-        # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
-        if fail_on_dynamic_version:
-            msg = (
-                f"{pyproject_path}: [project].version is dynamic, so it cannot be read "
-                "(fail-on-dynamic-version is 'true')"
-            )
-            raise MetadataError(msg)
-        version = ""
-        warnings.append(
-            f"{pyproject_path}: [project].version is dynamic, the version output is empty"
-        )
-    else:
-        msg = f"{pyproject_path} is missing required key [project].version"
-        raise MetadataError(msg)
-    if not isinstance(name, str) or not name:
-        msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
-        raise MetadataError(msg)
-    if not _VALID_NAME.fullmatch(name):
-        msg = (
-            f"{pyproject_path}: [project].name is not a valid project name (letters, digits, "
-            f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
-        )
-        raise MetadataError(msg)
-    _check_str(version, "[project].version", pyproject_path)
-    normalized_version = ""
-    if "version" in project:
-        try:
-            normalized_version = str(Version(version))
-        except InvalidVersion as exc:
-            msg = (
-                f"{pyproject_path}: [project].version is not a valid PEP 440 version: "
-                f"{version!r}"
-            )
-            raise MetadataError(msg) from exc
+    raw_name = _required_name(project, dynamic, pyproject_path)
+    warnings = _static_and_dynamic_warnings(project, dynamic, pyproject_path)
+    raw_version, version_warnings = _required_version(
+        project, dynamic, pyproject_path, fail_on_dynamic_version
+    )
+    warnings.extend(version_warnings)
+    name = _valid_name(raw_name, pyproject_path)
+    version, normalized_version = _valid_version(raw_version, "version" in project, pyproject_path)
 
     description = _check_str(project.get("description", ""), "[project].description", pyproject_path)
 
@@ -323,25 +275,6 @@ def extract_metadata(
     requires_python = _check_str(
         project.get("requires-python", ""), "[project].requires-python", pyproject_path
     )
-
-    optional_dependencies = _get_table(
-        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
-    )
-    extras = sorted(optional_dependencies, key=canonicalize_name)
-
-    # Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
-    # "foo-bar" are one extra. The first spelling of each is kept, at the
-    # position of its first occurrence.
-    unique_extras: dict[str, str] = {}
-    for extra in extra_values + extras:
-        unique_extras.setdefault(canonicalize_name(extra), extra)
-
-    dependency_groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
-    # Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
-    unique_groups: dict[str, str] = {}
-    for group in sorted(dependency_groups, key=canonicalize_name):
-        unique_groups.setdefault(canonicalize_name(group), group)
-    groups = list(unique_groups.values())
     metadata = Metadata(
         name=name,
         normalized_name=canonicalize_name(name),
@@ -353,10 +286,207 @@ def extract_metadata(
         authors=authors,
         urls=urls,
         requires_python=requires_python,
-        extras=list(unique_extras.values()),
-        groups=groups,
+        extras=_extra_names(project, extra_values, pyproject_path),
+        groups=_group_names(data, pyproject_path),
     )
     return metadata, warnings
+
+
+def _required_name(project: dict[str, Any], dynamic: list[str], pyproject_path: str) -> object:
+    """Return ``[project].name`` as written, which must be set.
+
+    Args:
+        project: The ``[project]`` table.
+        dynamic: The ``[project].dynamic`` array.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        The value of ``name``, whatever its type (see ``_valid_name``).
+
+    Raises:
+        MetadataError: If ``name`` is not set, with a message that says so when
+            it is listed in ``dynamic`` (PEP 621 requires a static name).
+    """
+    try:
+        return project["name"]
+    except KeyError as exc:
+        if "name" in dynamic:
+            # PEP 621: the name cannot be dynamic, so the build backend cannot supply it.
+            msg = (
+                f"{pyproject_path}: [project].name is listed in [project].dynamic, but "
+                "PEP 621 requires a static name"
+            )
+            raise MetadataError(msg) from exc
+        msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
+        raise MetadataError(msg) from exc
+
+
+def _static_and_dynamic_warnings(
+    project: dict[str, Any], dynamic: list[str], pyproject_path: str
+) -> list[str]:
+    """Describe the fields that are set in ``[project]`` and also listed in ``dynamic``.
+
+    PEP 621 forbids it. The static value is the one that is read.
+
+    Args:
+        project: The ``[project]`` table.
+        dynamic: The ``[project].dynamic`` array.
+        pyproject_path: Path of the file, used in the messages.
+
+    Returns:
+        One warning per such field, in the order of ``dynamic``, without duplicates.
+    """
+    return [
+        f"{pyproject_path}: [project].{field} is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used"
+        for field in dict.fromkeys(dynamic)
+        if field in project
+    ]
+
+
+def _required_version(
+    project: dict[str, Any],
+    dynamic: list[str],
+    pyproject_path: str,
+    fail_on_dynamic_version: bool,
+) -> tuple[object, list[str]]:
+    """Return ``[project].version`` as written, or an empty string if it is dynamic.
+
+    Args:
+        project: The ``[project]`` table.
+        dynamic: The ``[project].dynamic`` array.
+        pyproject_path: Path of the file, used in the messages.
+        fail_on_dynamic_version: Whether a dynamic version is an error instead
+            of a warning.
+
+    Returns:
+        A tuple ``(version, warnings)``. ``version`` is the value of ``version``
+        whatever its type (see ``_valid_version``), or ``""`` when the build
+        backend computes it. ``warnings`` has one message in that case.
+
+    Raises:
+        MetadataError: If ``version`` is neither set nor dynamic, or is dynamic
+            and ``fail_on_dynamic_version`` is true.
+    """
+    if "version" in project:
+        return project["version"], []
+    if "version" not in dynamic:
+        msg = f"{pyproject_path} is missing required key [project].version"
+        raise MetadataError(msg)
+    # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
+    if fail_on_dynamic_version:
+        msg = (
+            f"{pyproject_path}: [project].version is dynamic, so it cannot be read "
+            "(fail-on-dynamic-version is 'true')"
+        )
+        raise MetadataError(msg)
+    return "", [f"{pyproject_path}: [project].version is dynamic, the version output is empty"]
+
+
+def _valid_name(name: object, pyproject_path: str) -> str:
+    """Return ``name`` if it is a valid project name (PEP 508).
+
+    Args:
+        name: The value of ``[project].name``.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        ``name``, unchanged.
+
+    Raises:
+        MetadataError: If ``name`` is not a non-empty string, or contains
+            other characters than letters, digits, ``-``, ``_`` and ``.``, or
+            does not start and end with a letter or a digit.
+    """
+    if not isinstance(name, str) or not name:
+        msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
+        raise MetadataError(msg)
+    if not _VALID_NAME.fullmatch(name):
+        msg = (
+            f"{pyproject_path}: [project].name is not a valid project name (letters, digits, "
+            f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
+        )
+        raise MetadataError(msg)
+    return name
+
+
+def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tuple[str, str]:
+    """Return the version and its canonical form (PEP 440).
+
+    Args:
+        version: The value of ``[project].version``, or ``""`` if it is dynamic.
+        is_static: Whether ``version`` is set in ``[project]`` (it is not
+            when it is dynamic).
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        A tuple ``(version, normalized_version)``. ``normalized_version`` is an
+        empty string when the version is not static.
+
+    Raises:
+        MetadataError: If ``version`` is not a string, or a static version is
+            not a valid PEP 440 version.
+    """
+    _check_str(version, "[project].version", pyproject_path)
+    if not is_static:
+        return version, ""
+    try:
+        return version, str(Version(version))
+    except InvalidVersion as exc:
+        msg = f"{pyproject_path}: [project].version is not a valid PEP 440 version: {version!r}"
+        raise MetadataError(msg) from exc
+
+
+def _extra_names(
+    project: dict[str, Any], extra_values: list[str], pyproject_path: str
+) -> list[str]:
+    """Return the extra names: ``extra_values`` first, then the sorted extras.
+
+    Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
+    "foo-bar" are one extra. The first spelling of each is kept, at the
+    position of its first occurrence.
+
+    Args:
+        project: The ``[project]`` table.
+        extra_values: The values to put first, as returned by ``parse_string_array``.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The names, without duplicates.
+
+    Raises:
+        MetadataError: If ``[project.optional-dependencies]`` is not a table.
+    """
+    optional_dependencies = _get_table(
+        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
+    )
+    extras = sorted(optional_dependencies, key=canonicalize_name)
+    unique_extras: dict[str, str] = {}
+    for extra in extra_values + extras:
+        unique_extras.setdefault(canonicalize_name(extra), extra)
+    return list(unique_extras.values())
+
+
+def _group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
+    """Return the names of ``[dependency-groups]``, sorted by normalized name.
+
+    Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
+
+    Args:
+        data: The parsed pyproject.toml.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The names, without duplicates; empty if there is no such table.
+
+    Raises:
+        MetadataError: If ``[dependency-groups]`` is not a table.
+    """
+    dependency_groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+    unique_groups: dict[str, str] = {}
+    for group in sorted(dependency_groups, key=canonicalize_name):
+        unique_groups.setdefault(canonicalize_name(group), group)
+    return list(unique_groups.values())
 
 
 def _readme_path(readme: object, pyproject_path: str) -> str:

@@ -33,7 +33,14 @@ from extract_metadata import (  # noqa: E402
     _check_string_array,
     _conflict_warnings,
     _dynamic_dependency_fields,
+    _extra_names,
     _flatten_group,
+    _group_names,
+    _required_name,
+    _required_version,
+    _static_and_dynamic_warnings,
+    _valid_name,
+    _valid_version,
     _index_requirements,
     _get_table,
     compatible_python_versions,
@@ -2855,6 +2862,128 @@ def test_check_array() -> None:
 def test_check_array_not_an_array(value: object) -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[x\] must be an array, got: "):
         _check_array(value, "[x]", "p.toml")
+
+
+def test_required_name() -> None:
+    assert _required_name({"name": 1}, [], "p.toml") == 1
+
+
+def test_required_name_missing() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml is missing required key \[project\].name$"):
+        _required_name({}, ["version"], "p.toml")
+
+
+def test_required_name_dynamic() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name is listed in .*static name$"):
+        _required_name({}, ["name"], "p.toml")
+
+
+def test_static_and_dynamic_warnings() -> None:
+    project = {"name": "a", "version": "1", "description": "d"}
+
+    assert _static_and_dynamic_warnings(project, ["version", "readme", "version", "name"], "p.toml") == [
+        "p.toml: [project].version is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used",
+        "p.toml: [project].name is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used",
+    ]
+
+
+def test_static_and_dynamic_warnings_none() -> None:
+    assert _static_and_dynamic_warnings({"name": "a"}, ["version"], "p.toml") == []
+
+
+def test_required_version_static() -> None:
+    assert _required_version({"version": "1.0"}, [], "p.toml", False) == ("1.0", [])
+
+
+def test_required_version_is_returned_whatever_its_type() -> None:
+    assert _required_version({"version": 1.0}, [], "p.toml", True) == (1.0, [])
+
+
+def test_required_version_dynamic_warns() -> None:
+    assert _required_version({}, ["version"], "p.toml", False) == (
+        "",
+        ["p.toml: [project].version is dynamic, the version output is empty"],
+    )
+
+
+def test_required_version_dynamic_fails_when_requested() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version is dynamic, so it cannot be read"):
+        _required_version({}, ["version"], "p.toml", True)
+
+
+def test_required_version_missing() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml is missing required key \[project\].version$"):
+        _required_version({}, ["readme"], "p.toml", False)
+
+
+@pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
+def test_valid_name(name: str) -> None:
+    assert _valid_name(name, "p.toml") == name
+
+
+@pytest.mark.parametrize("name", [1, "", None, ["a"]])
+def test_valid_name_not_a_non_empty_string(name: object) -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name must be a non-empty string, got: "):
+        _valid_name(name, "p.toml")
+
+
+@pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
+def test_valid_name_not_a_project_name(name: str) -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name is not a valid project name"):
+        _valid_name(name, "p.toml")
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"), [("1.0-RC1", "1.0rc1"), ("1.2.3", "1.2.3"), ("v1.0", "1.0")]
+)
+def test_valid_version_static(version: str, expected: str) -> None:
+    assert _valid_version(version, True, "p.toml") == (version, expected)
+
+
+def test_valid_version_dynamic() -> None:
+    assert _valid_version("", False, "p.toml") == ("", "")
+
+
+def test_valid_version_not_a_string() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version must be a string, got: 1.0$"):
+        _valid_version(1.0, True, "p.toml")
+
+
+def test_valid_version_invalid() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version is not a valid PEP 440 version: 'latest'$"):
+        _valid_version("latest", True, "p.toml")
+
+
+def test_extra_names() -> None:
+    project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
+
+    assert _extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
+
+
+def test_extra_names_without_optional_dependencies() -> None:
+    assert _extra_names({}, ["all"], "p.toml") == ["all"]
+
+
+def test_extra_names_optional_dependencies_must_be_a_table() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"):
+        _extra_names({"optional-dependencies": []}, [], "p.toml")
+
+
+def test_group_names() -> None:
+    data = {"dependency-groups": {"test": [], "Dev_Tools": [], "dev-tools": [], "docs": []}}
+
+    assert _group_names(data, "p.toml") == ["Dev_Tools", "docs", "test"]
+
+
+def test_group_names_without_groups() -> None:
+    assert _group_names({}, "p.toml") == []
+
+
+def test_group_names_must_be_a_table() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[dependency-groups\] must be a table"):
+        _group_names({"dependency-groups": []}, "p.toml")
 
 
 def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
