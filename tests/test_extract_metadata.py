@@ -33,7 +33,10 @@ from extract_metadata import (  # noqa: E402
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
+    _index_dependencies,
     _index_requirements,
+    _requirements_from_index,
+    _specifiers_from_index,
     _get_table,
     compatible_python_versions,
     escape_annotation,
@@ -3815,6 +3818,71 @@ def test_parse_requirement_is_called_once_per_distinct_string() -> None:
     assert parse.cache_info().misses == 2
 
 
+def _parse_error(raw: str) -> InvalidRequirement:
+    """Return the error that ``packaging`` raises for the invalid requirement ``raw``."""
+    with pytest.raises(InvalidRequirement) as exc_info:
+        Requirement(raw)
+    return exc_info.value
+
+
+DATA_WITH_REQUIREMENTS = {
+    "project": {
+        "dependencies": ["numpy>=1.20; python_version < '3.12'", "not valid!", "tqdm"],
+        "optional-dependencies": {"x": ["numpy>=1.26; python_version >= '3.12'"]},
+    },
+    "dependency-groups": {"dev": ["pytest", {"include-group": "missing"}]},
+}
+
+
+def test_index_dependencies() -> None:
+    found, warnings = _index_dependencies(DATA_WITH_REQUIREMENTS, "p.toml")
+
+    assert found == {
+        "numpy": [(">=1.20", 'python_version < "3.12"'), (">=1.26", 'python_version >= "3.12"')],
+        "tqdm": [("", None)],
+        "pytest": [("", None)],
+    }
+    assert warnings == [
+        "p.toml: [dependency-groups].dev: include-group 'missing' does not match any group",
+        "Ignoring invalid requirement 'not valid!' in p.toml: "
+        + str(_parse_error("not valid!")),
+    ]
+
+
+def test_index_dependencies_empty() -> None:
+    assert _index_dependencies({}, "p.toml") == ({}, [])
+
+
+def test_index_dependencies_wrong_type() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
+        _index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
+
+
+def test_specifiers_from_index() -> None:
+    found = {"numpy": [(">=1", None), ("<2", None)], "tqdm": [("", None)]}
+
+    assert _specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
+        {"Numpy": ">=1", "tqdm": "", "other": None},
+        ["warning", "Numpy has different specifiers in p.toml: ['<2', '>=1']; using '>=1'"],
+    )
+
+
+def test_specifiers_from_index_without_dependencies_ignores_the_index_warnings() -> None:
+    assert _specifiers_from_index({}, ["warning"], [], "p.toml") == ({}, [])
+
+
+def test_requirements_from_index() -> None:
+    found = {"numpy": [(">=1", "python_version < '3.12'"), ("", None)]}
+
+    assert _requirements_from_index(found, ["NumPy", "other"]) == {
+        "NumPy": [
+            {"specifier": ">=1", "marker": "python_version < '3.12'"},
+            {"specifier": "", "marker": ""},
+        ],
+        "other": [],
+    }
+
+
 def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -3824,10 +3892,10 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     extract_metadata_module._parse_requirement.cache_clear()
 
     assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
-    # "x>=1", "y" and "w": each is read again for the project dependencies ("x>=1", "y") and
-    # for the requirements of the requested packages ("x>=1", "y", "w").
+    # "x>=1", "y" and "w" are parsed once, in the index of all the requirements that both lookups
+    # share; "x>=1" and "y" are read again for the project dependencies.
     assert extract_metadata_module._parse_requirement.cache_info().misses == 3
-    assert extract_metadata_module._parse_requirement.cache_info().hits == 5
+    assert extract_metadata_module._parse_requirement.cache_info().hits == 2
 
 
 def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
