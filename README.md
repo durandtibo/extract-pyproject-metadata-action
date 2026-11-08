@@ -341,6 +341,12 @@ The action's step fails (non-zero exit) when:
 - An entry of a `[dependency-groups]` group is neither a string nor a table whose
   only key is `include-group` (for example a typo such as
   `{include_group = "lint"}`). It used to be ignored silently.
+- The `include-group` entries of `[dependency-groups]` are nested more than 100 levels deep, or
+  expand more than 10,000 groups in total (a group included several times by several
+  groups). They used to end with a Python traceback (`RecursionError`) or a run that never
+  ended.
+- The file has arrays or inline tables nested so deeply that the TOML parser gives up (about
+  a thousand levels). It used to end with a Python traceback.
 - A requirement of `[project].dependencies` or of a `[project.optional-dependencies]`
   extra is not a string (for example `dependencies = ["numpy", 1]`). It used to be
   ignored silently.
