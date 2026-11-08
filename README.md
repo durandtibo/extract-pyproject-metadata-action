@@ -11,18 +11,18 @@ installs.
 Requires the repository to already be checked out and a **Python 3.11 or
 later** interpreter (`python3`, or the one named by the `python-executable` input) available on `PATH`, for example set up with
 `actions/setup-python`; the action fails with a clear message otherwise. If the
-`packaging` package is missing, the action installs it in a
+`packaging` package is missing or older than `23.0`, the action installs it in a
 private virtual environment under `$RUNNER_TEMP` (removed at the end of the
 step), with the versions listed in
 `scripts/requirements.txt` (`packaging>=23.0,<27`; a `packaging` that is already
-installed is used as it is, whatever its version). It never modifies the Python
-environment of the caller.
+installed is used as it is when it is `23.0` or later, even when it is newer than
+the upper bound). It never modifies the Python environment of the caller.
 
 That installation needs a package index: PyPI by default, or the one that `pip`
 is configured to use (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `pip.conf`, ...). On
 a runner without network access, or when you prefer not to download anything
 in the job, install `packaging` in the Python of the job beforehand (for
-example `python -m pip install packaging`, from a mirror or a cache): the
+example `python -m pip install --upgrade packaging`, from a mirror or a cache): the
 action then uses it as it is and does not touch the network.
 
 > [!NOTE]
@@ -287,7 +287,7 @@ The action's step fails (non-zero exit) when:
 
 - It runs on a Windows runner (`RUNNER_OS` is `Windows`), which is not supported.
 - The Python interpreter (`python3`, or `python-executable`) is older than 3.11, missing or cannot be run, or `packaging` is missing
-  and cannot be installed (for example, no access to a package index).
+  or older than `23.0` and cannot be installed (for example, no access to a package index).
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
   permission).

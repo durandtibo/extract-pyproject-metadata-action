@@ -5,6 +5,7 @@ import json
 import importlib.util
 import re
 import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -4447,7 +4448,15 @@ case "$1" in
   -c)
     case "$2" in
       *version_info*) name=version; status="${STUB_VERSION_STATUS:-0}" ;;
-      *) name=probe; status="${STUB_PROBE_STATUS:-0}" ;;
+      *)
+        name=probe
+        if [ -n "${STUB_REAL_PYTHON:-}" ]; then
+          # The real check of run.sh, run by a real Python with a "packaging" of another version.
+          PYTHONPATH="$STUB_FAKE_PACKAGING" "$STUB_REAL_PYTHON" -c "$2" "${@:3}" 2>/dev/null
+          status=$?
+        else
+          status="${STUB_PROBE_STATUS:-0}"
+        fi ;;
     esac
     printf '%s\\037' python3 "$name" >> "$STUB_LOG"; echo >> "$STUB_LOG"
     exit "$status" ;;
@@ -4534,6 +4543,45 @@ def test_run_sh_installs_the_requirements_in_a_private_venv_when_they_are_missin
         ["venv-python", "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", str(REQUIREMENTS_PATH)],
         ["venv-python", str(SCRIPT_PATH), "--flag", "a b", "[]"],
     ]
+
+
+def fake_packaging(tmp_path: Path, version: str) -> Path:
+    """Return a directory with a copy of ``packaging`` that says it is ``version``."""
+    import packaging
+
+    fake = tmp_path / f"fake-packaging-{version}"
+    shutil.copytree(Path(packaging.__file__).parent, fake / "packaging")
+    init = fake / "packaging" / "__init__.py"
+    init.write_text(re.sub(r"__version__ = .*", f'__version__ = "{version}"', init.read_text()))
+    return fake
+
+
+@pytest.mark.parametrize(("version", "installs"), [("22.9", True), ("23.0", False), ("26.1", False), ("30.0", False)])
+def test_run_sh_installs_packaging_in_a_venv_only_when_it_is_older_than_the_requirement(
+    tmp_path: Path, version: str, installs: bool
+) -> None:
+    result = run_run_sh(
+        tmp_path,
+        ["a"],
+        STUB_REAL_PYTHON=sys.executable,
+        STUB_FAKE_PACKAGING=str(fake_packaging(tmp_path, version)),
+    )
+
+    assert result.process.returncode == 0
+    assert len(result.created_venvs) == int(installs)
+
+
+def test_run_sh_installs_packaging_in_a_venv_when_it_cannot_be_imported(tmp_path: Path) -> None:
+    broken = tmp_path / "broken"
+    (broken / "packaging").mkdir(parents=True)
+    (broken / "packaging" / "__init__.py").write_text("raise ImportError('no packaging')\n")
+
+    result = run_run_sh(
+        tmp_path, ["a"], STUB_REAL_PYTHON=sys.executable, STUB_FAKE_PACKAGING=str(broken)
+    )
+
+    assert result.process.returncode == 0
+    assert len(result.created_venvs) == 1
 
 
 @pytest.mark.parametrize("probe_status", ["0", "1"])
