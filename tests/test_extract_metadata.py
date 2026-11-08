@@ -4049,7 +4049,7 @@ def test_script_requirements_list_the_dependencies_of_the_script() -> None:
     )
     lines = [line for line in requirements.splitlines() if line and not line.startswith("#")]
 
-    assert lines == ["packaging>=23.0"]
+    assert lines == ["packaging>=23.0,<27"]
 
 
 def test_test_requirements_include_the_script_requirements() -> None:
@@ -4250,7 +4250,7 @@ def test_run_sh_fails_with_a_clear_message_when_the_venv_cannot_be_created(tmp_p
     result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_VENV_STATUS="1")
 
     assert result.process.returncode == 1
-    assert re.search(r"^::error::Could not install the 'packaging' Python package\.", result.process.stderr)
+    assert re.search(r"^::error::Could not install the 'packaging' Python package ", result.process.stderr)
     assert result.calls == [
         ["python3", "version"],
         ["python3", "probe"],
@@ -4263,8 +4263,15 @@ def test_run_sh_fails_with_a_clear_message_when_the_requirements_cannot_be_insta
     result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_PIP_STATUS="1")
 
     assert result.process.returncode == 1
-    assert "::error::Could not install the 'packaging' Python package." in result.process.stderr
+    assert "::error::Could not install the 'packaging' Python package" in result.process.stderr
     assert all(str(SCRIPT_PATH) not in call for call in result.calls)
+
+
+def test_run_sh_install_error_mentions_the_package_index(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", STUB_PIP_STATUS="1")
+
+    assert "needs access to a package index" in result.process.stderr
+    assert "install it in the Python on PATH" in result.process.stderr
 
 
 def test_run_sh_fails_when_the_temporary_directory_cannot_be_created(tmp_path: Path) -> None:

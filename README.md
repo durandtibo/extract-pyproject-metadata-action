@@ -14,7 +14,8 @@ later** interpreter (`python3`) available on `PATH`, for example set up with
 `packaging` package is missing, the action installs it in a
 private virtual environment under `$RUNNER_TEMP` (removed at the end of the
 step), with the versions listed in
-`scripts/requirements.txt`. It never modifies the Python
+`scripts/requirements.txt` (`packaging>=23.0,<27`; a `packaging` that is already
+installed is used as it is, whatever its version). It never modifies the Python
 environment of the caller.
 
 That installation needs a package index: PyPI by default, or the one that `pip`
