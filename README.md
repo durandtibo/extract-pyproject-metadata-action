@@ -243,7 +243,11 @@ The action's step fails (non-zero exit) when:
 - The `python3` on `PATH` is older than 3.11 (or missing), or `packaging` is missing
   and cannot be installed (for example, no access to a package index).
 - `pyproject-path` does not point to an existing file.
-- The file is not valid TOML.
+- The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
+  permission).
+- The outputs (`$GITHUB_OUTPUT`) or, with `step-summary`, the job summary
+  (`$GITHUB_STEP_SUMMARY`) cannot be written. These used to end with a Python
+  traceback, like the unreadable file.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
 - `[project].dynamic` is not an array of strings (for example `dynamic = [1]`).
 - `name` is listed in `[project].dynamic` and not set in `[project]` (PEP 621 requires

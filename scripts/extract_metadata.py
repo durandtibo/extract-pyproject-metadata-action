@@ -64,7 +64,8 @@ to ``strategy.matrix`` as it is.
 Exits non-zero with a message on stderr (with ``--github-output FILE``, an
 ``::error file=<path>::`` workflow command, so that GitHub shows an error
 annotation on the file) if the file is missing, is not
-valid TOML, [project] is missing the required "name"/"version" keys, a
+valid TOML (or cannot be read, or is not UTF-8), the outputs or the job summary
+cannot be written, [project] is missing the required "name"/"version" keys, a
 dependency table ([project].dependencies, [project.optional-dependencies] or
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
 expected shape, a Python candidate is not a "major.minor" string,
@@ -75,6 +76,7 @@ expected shape, a Python candidate is not a "major.minor" string,
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import json
 import os
@@ -159,7 +161,8 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         The parsed TOML document.
 
     Raises:
-        MetadataError: If the file is missing or is not valid TOML.
+        MetadataError: If the file is missing, cannot be read (for example for
+            lack of permission), is not UTF-8 or is not valid TOML.
     """
     path = Path(pyproject_path)
     if not path.is_file():
@@ -170,6 +173,12 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
             return tomllib.load(f)
     except tomllib.TOMLDecodeError as exc:
         msg = f"{pyproject_path} is not valid TOML: {exc}"
+        raise MetadataError(msg) from exc
+    except UnicodeDecodeError as exc:
+        msg = f"{pyproject_path} is not valid UTF-8: {exc}"
+        raise MetadataError(msg) from exc
+    except OSError as exc:
+        msg = f"{pyproject_path} cannot be read: {exc}"
         raise MetadataError(msg) from exc
 
 
@@ -1224,9 +1233,17 @@ def format_error_summary(message: str) -> str:
 
 
 def write_step_summary(summary_path: str, markdown: str) -> None:
-    """Append ``markdown`` to the job summary file, followed by a blank line."""
-    with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
-        f.write(f"{markdown}\n")
+    """Append ``markdown`` to the job summary file, followed by a blank line.
+
+    Raises:
+        MetadataError: If the file cannot be written.
+    """
+    try:
+        with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
+            f.write(f"{markdown}\n")
+    except OSError as exc:
+        msg = f"cannot write the job summary to {summary_path}: {exc}"
+        raise MetadataError(msg) from exc
 
 
 def resolve_step_summary(enabled: bool, environ: Mapping[str, str]) -> str | None:
@@ -1264,13 +1281,20 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
     Args:
         output_path: Path of the file, which is created if it does not exist.
         outputs: Output names and values.
+
+    Raises:
+        MetadataError: If the file cannot be written.
     """
-    with Path(output_path).open("a", encoding="utf-8", newline="") as f:
-        for key, value in outputs.items():
-            delimiter = _new_delimiter()
-            while delimiter in key or delimiter in value:
+    try:
+        with Path(output_path).open("a", encoding="utf-8", newline="") as f:
+            for key, value in outputs.items():
                 delimiter = _new_delimiter()
-            f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
+                while delimiter in key or delimiter in value:
+                    delimiter = _new_delimiter()
+                f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
+    except OSError as exc:
+        msg = f"cannot write the outputs to {output_path}: {exc}"
+        raise MetadataError(msg) from exc
 
 
 def _build_parser(prog: str) -> argparse.ArgumentParser:
@@ -1391,6 +1415,9 @@ def emit_github_output(report: Report, pyproject_path: str, output_path: str) ->
         pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
             warning annotations.
         output_path: Path of the ``$GITHUB_OUTPUT`` file.
+
+    Raises:
+        MetadataError: If the outputs cannot be written.
     """
     outputs = format_outputs(report)
     file = escape_annotation_property(pyproject_path)
@@ -1432,20 +1459,21 @@ def main(argv: list[str]) -> int:
         options = parse_options(args)
         summary_path = resolve_step_summary(options.step_summary, os.environ)
         report = build_report(args, options)
+        if args.github_output is None:
+            # Like the action outputs, keep non-ASCII characters as they are.
+            print(json.dumps(report, ensure_ascii=False))
+        else:
+            emit_github_output(report, args.pyproject_path, args.github_output)
+        if summary_path is not None:
+            write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     except MetadataError as exc:
         annotate = args.github_output is not None
         print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)
         if summary_path is not None:
-            write_step_summary(summary_path, format_error_summary(str(exc)))
+            # The error is already reported: a summary that cannot be written is not worth another.
+            with contextlib.suppress(MetadataError):
+                write_step_summary(summary_path, format_error_summary(str(exc)))
         return 1
-
-    if args.github_output is None:
-        # Like the action outputs, keep non-ASCII characters as they are.
-        print(json.dumps(report, ensure_ascii=False))
-    else:
-        emit_github_output(report, args.pyproject_path, args.github_output)
-    if summary_path is not None:
-        write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     return 0
 
 
