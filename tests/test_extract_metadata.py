@@ -13,6 +13,9 @@ import extract_metadata as extract_metadata_module  # noqa: E402
 from extract_metadata import (  # noqa: E402
     MetadataError,
     extract_dependency_specifiers,
+    _candidate_requirements,
+    _flatten_group,
+    _parse_dependencies,
     escape_annotation,
     extract_metadata,
     format_outputs,
@@ -820,3 +823,187 @@ def test_main_github_output_multiline_name_cannot_inject_outputs_or_commands(
 )
 def test_single_line(value: str, expected: str) -> None:
     assert extract_metadata_module._single_line(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("groups", "name", "expected"),
+    [
+        ({"a": ["x>=1"]}, "a", ["x>=1"]),
+        ({"a": []}, "a", []),
+        ({}, "a", []),
+        ({"a": ["x"]}, "missing", []),
+        ({"My_Group": ["x"]}, "my-group", ["x"]),
+        ({"a": [{"include-group": "b"}, "x"], "b": ["y"]}, "a", ["y", "x"]),
+        ({"a": [{"include-group": "B-C"}], "b_c": ["y"]}, "a", ["y"]),
+        ({"a": [{"include-group": "missing"}, "x"]}, "a", ["x"]),
+        ({"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": ["z"]}, "a", ["z"]),
+        ({"a": [1, None, {"other": "b"}, "x"]}, "a", ["x"]),
+    ],
+)
+def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
+    assert _flatten_group(groups, name) == expected
+
+
+@pytest.mark.parametrize(
+    ("groups", "name", "expected"),
+    [
+        ({"a": [{"include-group": "a"}, "x"]}, "a", ["x"]),
+        ({"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}, "a", ["y", "x"]),
+        (
+            {
+                "a": [{"include-group": "b"}],
+                "b": [{"include-group": "c"}, "y"],
+                "c": [{"include-group": "a"}, "z"],
+            },
+            "a",
+            ["z", "y"],
+        ),
+    ],
+)
+def test_flatten_group_include_cycles_terminate(
+    groups: dict, name: str, expected: list[str]
+) -> None:
+    assert _flatten_group(groups, name) == expected
+
+
+def test_candidate_requirements_search_order() -> None:
+    data = {
+        "project": {
+            "dependencies": ["a>=1"],
+            "optional-dependencies": {"x": ["b>=2"], "y": ["c>=3"]},
+        },
+        "dependency-groups": {"dev": ["d>=4"], "test": [{"include-group": "dev"}, "e>=5"]},
+    }
+
+    assert _candidate_requirements(data) == [
+        "a>=1",
+        "b>=2",
+        "c>=3",
+        "d>=4",
+        "d>=4",
+        "e>=5",
+    ]
+
+
+def test_candidate_requirements_empty() -> None:
+    assert _candidate_requirements({}) == []
+
+
+def test_candidate_requirements_ignores_non_string_entries() -> None:
+    data = {
+        "project": {"dependencies": ["a", 1, None], "optional-dependencies": {"x": [{"b": 1}, "c"]}}
+    }
+
+    assert _candidate_requirements(data) == ["a", "c"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("[]", []), ('["a"]', ["a"]), ('["a", "B_c"]', ["a", "B_c"]), ('["a", "a"]', ["a", "a"])],
+)
+def test_parse_dependencies(value: str, expected: list[str]) -> None:
+    assert _parse_dependencies(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ("not json", "dependencies is not valid JSON"),
+        ("", "dependencies is not valid JSON"),
+        ('{"a": 1}', "dependencies must be a JSON array of strings"),
+        ('"a"', "dependencies must be a JSON array of strings"),
+        ("[1]", "dependencies must be a JSON array of strings"),
+        ('["a", null]', "dependencies must be a JSON array of strings"),
+        ('[["a"]]', "dependencies must be a JSON array of strings"),
+    ],
+)
+def test_parse_dependencies_invalid(value: str, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _parse_dependencies(value)
+
+
+def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [dependency-groups]
+        a = [{include-group = "b"}, "x>=1"]
+        b = [{include-group = "a"}, "y>=2"]
+        """,
+    )
+
+    assert specifiers(path, '["x", "y"]') == {"x": ">=1", "y": ">=2"}
+
+
+def test_dependency_requested_twice_and_empty_project(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, "")
+
+    assert specifiers(path, '["x", "x"]') == {"x": None}
+
+
+def test_dependency_name_matches_across_pep_503_spellings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\ndependencies = ["Zope.Interface>=5"]\n')
+
+    assert specifiers(path, '["zope-interface", "ZOPE_INTERFACE"]') == {
+        "zope-interface": ">=5",
+        "ZOPE_INTERFACE": ">=5",
+    }
+
+
+@pytest.mark.parametrize(
+    ("argv_tail", "message"),
+    [
+        (["[]", "not json"], "dependencies is not valid JSON"),
+        (["[]", '{"a": 1}'], "dependencies must be a JSON array of strings"),
+        (["not json"], "extra-values is not valid JSON"),
+        (["{}"], "extra-values must be a JSON array"),
+        (["[1]"], "extra-values must be a JSON array of strings"),
+    ],
+)
+def test_main_invalid_inputs_return_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv_tail: list[str], message: str
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    exit_code = main(["extract_metadata.py", str(path), *argv_tail])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert message in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["extract_metadata.py", "a"],
+        ["extract_metadata.py", "a", "[]", "[]", "extra"],
+    ],
+)
+def test_main_wrong_number_of_arguments_returns_two(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(argv) == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n',
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(SCRIPT_PATH), str(path), "[]", '["numpy", "pandas"]'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "name": "coola",
+        "version": "1.2.3",
+        "extras": [],
+        "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
+        "warnings": [],
+    }
