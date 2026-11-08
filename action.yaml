@@ -59,6 +59,12 @@ inputs:
     required: false
     default: "false"
 
+  strict:
+    description: >
+      Set to "true" to fail when there is any warning, instead of only
+      reporting it ("true" or "false")
+    required: false
+    default: "false"
   step-summary:
     description: >
       Set to "true" to also write the outputs and the warnings to the job
@@ -117,6 +123,7 @@ runs:
         FAIL_ON_MISSING: ${{ inputs.fail-on-missing }}
         PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
         FAIL_ON_DYNAMIC_VERSION: ${{ inputs.fail-on-dynamic-version }}
+        STRICT: ${{ inputs.strict }}
         STEP_SUMMARY: ${{ inputs.step-summary }}
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
@@ -124,5 +131,6 @@ runs:
           --fail-on-missing "$FAIL_ON_MISSING" \
           --python-candidates "$PYTHON_CANDIDATES" \
           --fail-on-dynamic-version "$FAIL_ON_DYNAMIC_VERSION" \
+          --strict "$STRICT" \
           --step-summary "$STEP_SUMMARY" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"

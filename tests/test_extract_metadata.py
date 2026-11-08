@@ -820,6 +820,72 @@ def test_build_report_errors(tmp_path: Path, argv: list[str], match: str) -> Non
         build_report(parse_args(*argv))
 
 
+def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    with pytest.raises(
+        MetadataError,
+        match=r"^strict is 'true' and there are 1 warning\(s\):\n- dup has different specifiers in ",
+    ):
+        build_report(parse_args("--strict", "true", str(path), "[]", '["dup"]'))
+
+
+def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nrequires-python = "nope"\n'
+        'dependencies = ["bad requirement!!"]\n',
+    )
+
+    with pytest.raises(MetadataError) as excinfo:
+        build_report(parse_args("--strict", "true", str(path), "[]"))
+
+    lines = str(excinfo.value).splitlines()
+    assert lines[0] == "strict is 'true' and there are 2 warning(s):"
+    assert lines[1].startswith("- ")
+    assert lines[2].startswith("- ")
+
+
+def test_build_report_strict_without_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    report = build_report(parse_args("--strict", "true", str(path), "[]"))
+
+    assert report["warnings"] == []
+
+
+def test_build_report_not_strict_keeps_the_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    report = build_report(parse_args("--strict", "false", str(path), "[]", '["dup"]'))
+
+    assert len(report["warnings"]) == 1
+
+
+def test_main_strict_fails_without_writing_the_outputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    output = tmp_path / "out"
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(output), "--strict", "true", str(path), "[]", '["dup"]']
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.err.startswith(f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- dup")
+    assert captured.out == ""
+    assert not output.exists()
+
+
+def test_main_invalid_strict_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", "--strict", "maybe", str(path), "[]"]) == 1
+    assert "strict must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
+
+
 def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     output = tmp_path / "github_output"
     report = build_report(parse_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["dup"]'))
