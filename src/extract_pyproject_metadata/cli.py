@@ -104,11 +104,9 @@ import functools
 import json
 import os
 import re
-import string
 import sys
 import tomllib
-import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -119,6 +117,20 @@ from packaging.version import InvalidVersion, Version
 from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import Options, parse_options, parse_string_array
+from extract_pyproject_metadata.output.escaping import (
+    escape_annotation,
+)
+from extract_pyproject_metadata.output.github import (
+    emit_github_output,
+    format_error,
+    format_outputs,
+)
+from extract_pyproject_metadata.output.summary import (
+    format_error_summary,
+    format_step_summary,
+    resolve_step_summary,
+    write_step_summary,
+)
 from extract_pyproject_metadata.python_versions import (
     DEFAULT_PYTHON_CANDIDATES,
     compatible_python_versions,
@@ -1245,237 +1257,6 @@ def check_no_missing_dependency(
         raise MetadataError(msg)
 
 
-def escape_annotation(message: str) -> str:
-    """Escape a message for use in a ``::warning::`` workflow command.
-
-    Same escaping as ``@actions/core``: without it a newline would end the
-    command and the rest of the message would be parsed as another command.
-    """
-    return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-
-
-def escape_annotation_property(value: str) -> str:
-    """Escape a property value (such as ``file``) of a workflow command.
-
-    Same escaping as ``@actions/core``: like ``escape_annotation``, plus ``:``
-    and ``,``, which delimit properties.
-    """
-    return escape_annotation(value).replace(":", "%3A").replace(",", "%2C")
-
-
-def _compact_json(value: object) -> str:
-    """Serialize ``value`` as the compact JSON of an action output.
-
-    No space after ``,`` and ``:``, and non-ASCII characters are kept as they are.
-    """
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
-
-
-def format_outputs(metadata: Report) -> dict[str, str]:
-    """Convert the metadata dict into the string outputs of the action.
-
-    Args:
-        metadata: The report built by ``build_report``.
-
-    Returns:
-        A dict mapping each output name of ``action.yaml`` to its value, with
-        JSON values in compact form.
-    """
-    return {
-        "name": metadata["name"],
-        "normalized-name": metadata["normalized_name"],
-        "version": metadata["version"],
-        "normalized-version": metadata["normalized_version"],
-        "description": metadata["description"],
-        "readme": metadata["readme"],
-        "license": metadata["license"],
-        "license-files": _compact_json(metadata["license_files"]),
-        "authors": _compact_json(metadata["authors"]),
-        "urls": _compact_json(metadata["urls"]),
-        "keywords": _compact_json(metadata["keywords"]),
-        "classifiers": _compact_json(metadata["classifiers"]),
-        "scripts": _compact_json(metadata["scripts"]),
-        "requires-python": metadata["requires_python"],
-        "extras": _compact_json(metadata["extras"]),
-        "groups": _compact_json(metadata["groups"]),
-        "build-backend": metadata["build_backend"],
-        "build-requires": _compact_json(metadata["build_requires"]),
-        "python-versions": _compact_json(metadata["python_versions"]),
-        "python-min": metadata["python_min"],
-        "python-max": metadata["python_max"],
-        "python-matrix": _compact_json({"python-version": metadata["python_versions"]}),
-        "project-dependencies": _compact_json(metadata["project_dependencies"]),
-        "dependency-specifiers": _compact_json(metadata["dependency_specifiers"]),
-        "dependency-requirements": _compact_json(metadata["dependency_requirements"]),
-    }
-
-
-def _new_delimiter() -> str:
-    """Return a random delimiter for a multiline ``$GITHUB_OUTPUT`` value."""
-    return f"ghadelimiter_{uuid.uuid4()}"
-
-
-def _single_line(value: str) -> str:
-    """Escape backslashes and line breaks so ``value`` stays on one log line."""
-    return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
-
-
-# The outputs shown in the summary line, in order (normalized-name is derived from name, and
-# description may be long).
-_SUMMARY_FIELDS = (
-    "name",
-    "version",
-    "requires-python",
-    "python-versions",
-    "python-min",
-    "python-max",
-    "extras",
-    "groups",
-    "project-dependencies",
-    "dependency-specifiers",
-)
-
-
-def format_summary(outputs: dict[str, str]) -> str:
-    """Build the one-line summary of the outputs that is printed in the log.
-
-    Args:
-        outputs: The action outputs, as returned by ``format_outputs``.
-
-    Returns:
-        A line that starts with ``📦`` and lists ``name=value`` for the outputs
-        in ``_SUMMARY_FIELDS``. Values come from the file, so line breaks and
-        backslashes are escaped: a value cannot end the line and start a
-        workflow command (``::...``) in the log.
-    """
-    fields = " ".join(f"{field}={_single_line(outputs[field])}" for field in _SUMMARY_FIELDS)
-    return f"📦 {fields}"
-
-
-def _html_cell(value: str) -> str:
-    """Escape ``value`` for a cell of a Markdown table, shown as code.
-
-    Every ASCII punctuation character is replaced by its numeric character
-    reference, so that nothing in a value from the file can be interpreted as
-    Markdown or HTML (a ``|`` ends the cell, ``<`` starts a tag, ``_`` is
-    emphasis...). Line breaks are escaped as in the summary line of the log.
-    """
-    escaped = "".join(
-        f"&#{ord(char)};" if char in string.punctuation else char for char in _single_line(value)
-    )
-    return f"<code>{escaped}</code>" if escaped else ""
-
-
-def format_step_summary(report: Report, outputs: dict[str, str]) -> str:
-    """Build the Markdown of the job summary.
-
-    Args:
-        report: The report built by ``build_report``.
-        outputs: The action outputs, as returned by ``format_outputs``.
-
-    Returns:
-        A heading, a table with one row per output and, if there are warnings,
-        a list of them. Values are escaped by ``_html_cell``.
-    """
-    lines = [
-        "### 📦 Project metadata",
-        "",
-        "| Output | Value |",
-        "| --- | --- |",
-    ]
-    lines.extend(f"| `{key}` | {_html_cell(value)} |" for key, value in outputs.items())
-    if report["warnings"]:
-        lines.extend(["", "#### ⚠️ Warnings", ""])
-        lines.extend(f"- {_html_cell(warning)}" for warning in report["warnings"])
-    return "\n".join(lines) + "\n"
-
-
-def format_error_summary(message: str) -> str:
-    """Build the Markdown of the job summary when the action fails.
-
-    Args:
-        message: The message of the ``MetadataError``. Each line (the error
-            of ``--strict`` lists one warning per line, each starting with
-            ``"- "``) becomes a list item.
-
-    Returns:
-        A heading and a list of the lines of the message, escaped by
-        ``_html_cell`` like the values of ``format_step_summary``.
-    """
-    lines = ["### ❌ Project metadata", ""]
-    lines.extend(
-        f"- {_html_cell(line.strip().removeprefix('- '))}"
-        for line in message.split("\n")
-        if line.strip()
-    )
-    return "\n".join(lines) + "\n"
-
-
-def write_step_summary(summary_path: str, markdown: str) -> None:
-    """Append ``markdown`` to the job summary file, followed by a blank line.
-
-    Raises:
-        MetadataError: If the file cannot be written.
-    """
-    try:
-        with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
-            f.write(f"{markdown}\n")
-    except OSError as exc:
-        msg = f"cannot write the job summary to {summary_path}: {exc}"
-        raise MetadataError(msg) from exc
-
-
-def resolve_step_summary(enabled: bool, environ: Mapping[str, str]) -> str | None:
-    """Return the path of the job summary file, or None if it is not requested.
-
-    Args:
-        enabled: The parsed ``--step-summary`` option.
-        environ: The environment variables.
-
-    Returns:
-        The value of ``GITHUB_STEP_SUMMARY`` when ``enabled`` is true, None
-        otherwise.
-
-    Raises:
-        MetadataError: If ``enabled`` is true and ``GITHUB_STEP_SUMMARY`` is not
-            set (the action is not running in a GitHub workflow).
-    """
-    if not enabled:
-        return None
-    summary_path = environ.get("GITHUB_STEP_SUMMARY", "")
-    if not summary_path:
-        msg = "step-summary is 'true' but the environment variable GITHUB_STEP_SUMMARY is not set"
-        raise MetadataError(msg)
-    return summary_path
-
-
-def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
-    """Append outputs to a ``$GITHUB_OUTPUT`` file.
-
-    Every value is written with the ``key<<delimiter`` syntax, so a value that
-    contains line breaks (a TOML string can) cannot end early and add outputs
-    of its own. The delimiter is random and is regenerated if it appears in
-    the key or the value.
-
-    Args:
-        output_path: Path of the file, which is created if it does not exist.
-        outputs: Output names and values.
-
-    Raises:
-        MetadataError: If the file cannot be written.
-    """
-    try:
-        with Path(output_path).open("a", encoding="utf-8", newline="") as f:
-            for key, value in outputs.items():
-                delimiter = _new_delimiter()
-                while delimiter in key or delimiter in value:
-                    delimiter = _new_delimiter()
-                f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
-    except OSError as exc:
-        msg = f"cannot write the outputs to {output_path}: {exc}"
-        raise MetadataError(msg) from exc
-
-
 class _ArgumentParser(argparse.ArgumentParser):
     """An argument parser whose usage errors can be GitHub error annotations.
 
@@ -1613,46 +1394,6 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         warnings=warnings,
         schema_version=SCHEMA_VERSION,
     )
-
-
-def emit_github_output(report: Report, pyproject_path: str, output_path: str) -> None:
-    """Write the outputs of the action and print the workflow commands and the summary.
-
-    Args:
-        report: The report built by ``build_report``.
-        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
-            warning annotations.
-        output_path: Path of the ``$GITHUB_OUTPUT`` file.
-
-    Raises:
-        MetadataError: If the outputs cannot be written.
-    """
-    outputs = format_outputs(report)
-    file = escape_annotation_property(pyproject_path)
-    for warning in report["warnings"]:
-        print(f"::warning file={file}::{escape_annotation(warning)}")
-    print(format_summary(outputs))
-    write_github_output(output_path, outputs)
-
-
-def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
-    """Format an error message for stderr.
-
-    Args:
-        message: The message of the ``MetadataError``.
-        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
-            annotation.
-        annotate: Whether to build a ``::error file=<path>::`` workflow command
-            (so that GitHub shows an error annotation on the file) instead of
-            the plain message.
-
-    Returns:
-        The line to print on stderr.
-    """
-    if not annotate:
-        return message
-    file = escape_annotation_property(pyproject_path)
-    return f"::error file={file}::{escape_annotation(message)}"
 
 
 def main(argv: list[str]) -> int:

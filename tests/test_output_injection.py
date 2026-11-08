@@ -16,16 +16,14 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import (
-    _build_parser,
-    build_report,
+import extract_pyproject_metadata.output.github as output_github_module
+from extract_pyproject_metadata.cli import _build_parser, build_report, main
+from extract_pyproject_metadata.output.github import (
     format_outputs,
-    format_step_summary,
     format_summary,
-    main,
     write_github_output,
 )
+from extract_pyproject_metadata.output.summary import format_step_summary
 
 HOSTILE_VALUES = [
     "plain",
@@ -86,7 +84,7 @@ def test_write_github_output_picks_another_delimiter_when_the_value_contains_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     delimiters = iter(["DELIM", "DELIM", "OTHER"])
-    monkeypatch.setattr(extract_metadata_module, "_new_delimiter", lambda: next(delimiters))
+    monkeypatch.setattr(output_github_module, "_new_delimiter", lambda: next(delimiters))
     path = tmp_path / "output"
     value = "first\nDELIM\n::error::forged"
 
@@ -101,7 +99,7 @@ def test_write_github_output_picks_another_delimiter_when_the_key_contains_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     delimiters = iter(["DELIM", "OTHER"])
-    monkeypatch.setattr(extract_metadata_module, "_new_delimiter", lambda: next(delimiters))
+    monkeypatch.setattr(output_github_module, "_new_delimiter", lambda: next(delimiters))
     path = tmp_path / "output"
 
     write_github_output(str(path), {"keyDELIM": "value"})

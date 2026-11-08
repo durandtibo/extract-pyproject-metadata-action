@@ -13,13 +13,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from extract_pyproject_metadata.cli import (
-    escape_annotation,
-    escape_annotation_property,
-    parse_dependencies,
-)
+from extract_pyproject_metadata.cli import parse_dependencies
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_bool, parse_string_array
+from extract_pyproject_metadata.output.escaping import escape_annotation, escape_annotation_property
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
     highest_python_version,

@@ -17,20 +17,19 @@ from helpers import (
     write_pyproject,
 )
 
-import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import (
-    build_report,
-    emit_github_output,
-    escape_annotation,
-    escape_annotation_property,
-    format_outputs,
-    format_step_summary,
-    format_summary,
-    main,
-    write_github_output,
-    write_step_summary,
-)
+import extract_pyproject_metadata.output.escaping as output_escaping_module
+import extract_pyproject_metadata.output.github as output_github_module
+import extract_pyproject_metadata.output.summary as output_summary_module
+from extract_pyproject_metadata.cli import build_report, main
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.output.escaping import escape_annotation, escape_annotation_property
+from extract_pyproject_metadata.output.github import (
+    emit_github_output,
+    format_outputs,
+    format_summary,
+    write_github_output,
+)
+from extract_pyproject_metadata.output.summary import format_step_summary, write_step_summary
 from extract_pyproject_metadata.types import Report
 
 
@@ -104,7 +103,7 @@ def test_write_github_output_picks_a_delimiter_not_in_the_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     delimiters = iter(["BAD", "GOOD"])
-    monkeypatch.setattr(extract_metadata_module, "_new_delimiter", lambda: next(delimiters))
+    monkeypatch.setattr(output_github_module, "_new_delimiter", lambda: next(delimiters))
     output = tmp_path / "github_output"
 
     write_github_output(str(output), {"name": "xBADx"})
@@ -114,7 +113,7 @@ def test_write_github_output_picks_a_delimiter_not_in_the_value(
 
 
 def test_new_delimiter_is_random_and_not_guessable() -> None:
-    first, second = extract_metadata_module._new_delimiter(), extract_metadata_module._new_delimiter()
+    first, second = output_github_module._new_delimiter(), output_github_module._new_delimiter()
 
     assert first != second
     assert first.startswith("ghadelimiter_")
@@ -150,7 +149,7 @@ def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     ],
 )
 def test_html_cell(value: str, expected: str) -> None:
-    assert extract_metadata_module._html_cell(value) == expected
+    assert output_summary_module._html_cell(value) == expected
 
 
 
@@ -286,7 +285,7 @@ def test_escape_annotation(message: str, expected: str) -> None:
     [("plain", "plain"), ("", ""), ("a\nb", "a\\nb"), ("a\r\nb", "a\\r\\nb"), ("a\\nb", "a\\\\nb")],
 )
 def test_single_line(value: str, expected: str) -> None:
-    assert extract_metadata_module._single_line(value) == expected
+    assert output_escaping_module.single_line(value) == expected
 
 
 
@@ -448,14 +447,14 @@ def test_action_section_keys_finds_the_inputs_and_outputs() -> None:
 
 def test_readme_lists_the_outputs_of_the_log_line() -> None:
     readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
-    listed = ", ".join(f"`{field}`" for field in extract_metadata_module._SUMMARY_FIELDS)
+    listed = ", ".join(f"`{field}`" for field in output_github_module._SUMMARY_FIELDS)
 
     assert f"The line shows {listed};" in readme
 
 
 
 def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
-    omitted = set(_action_section_keys("outputs")) - set(extract_metadata_module._SUMMARY_FIELDS)
+    omitted = set(_action_section_keys("outputs")) - set(output_github_module._SUMMARY_FIELDS)
 
     assert omitted == {
         "normalized-name",
