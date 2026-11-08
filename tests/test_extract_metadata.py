@@ -2234,6 +2234,33 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     assert extract_metadata_module._parse_requirement.cache_info().hits == 2
 
 
+def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
+    parser = extract_metadata_module._build_parser("extract_metadata.py")
+
+    assert parser.description == extract_metadata_module.__doc__.splitlines()[0]
+
+
+def test_build_parser_without_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Python runs with -OO strip the docstrings.
+    monkeypatch.setattr(extract_metadata_module, "__doc__", None)
+
+    assert extract_metadata_module._build_parser("extract_metadata.py").description == ""
+
+
+def test_script_runs_with_stripped_docstrings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    result = subprocess.run(
+        [sys.executable, "-OO", str(SCRIPT_PATH), str(path), "[]"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["name"] == "coola"
+
+
 def test_extract_project_dependencies() -> None:
     data = {"project": {"dependencies": ["numpy>=1.20,<3", "Foo_Bar", "tqdm[extra]~=4.0"]}}
 
