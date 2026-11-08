@@ -18,6 +18,7 @@ characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
      "description": ..., "readme": ..., "license": ..., "license_files": [...],
      "authors": [...], "urls": {...},
+     "keywords": [...], "classifiers": [...], "scripts": {...},
      "requires_python": ...,
      "extras": [...], "groups": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
@@ -36,7 +37,7 @@ With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs to FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that
 values may contain line breaks). They are ``name``, ``normalized-name``,
 ``version``, ``normalized-version``, ``description``, ``readme``, ``license``,
-``license-files``, ``authors``, ``urls``, ``requires-python``, ``extras``, ``groups``,
+``license-files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires-python``, ``extras``, ``groups``,
 ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
 ``project-dependencies``, ``dependency-specifiers`` and
 ``dependency-requirements``. It also prints to stdout one
@@ -140,6 +141,9 @@ class Metadata(TypedDict):
     license_files: list[str]
     authors: list[dict[str, str]]
     urls: dict[str, str]
+    keywords: list[str]
+    classifiers: list[str]
+    scripts: dict[str, str]
     requires_python: str
     extras: list[str]
     groups: list[str]
@@ -221,7 +225,7 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value (so is ``normalized_version``,
         the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
@@ -235,7 +239,10 @@ def extract_metadata(
         ``[project].license-files`` (the patterns as written), empty if there is none. ``authors`` is the list of
         the authors of ``[project].authors`` (``name`` and ``email`` only), empty if
         there is none. ``urls`` maps the labels of ``[project.urls]`` to their URLs, in
-        the order of the file, and is empty if there is none. ``extras`` lists the ``extra_values`` first, then the
+        the order of the file, and is empty if there is none. ``keywords`` and
+        ``classifiers`` are the arrays of ``[project].keywords`` and
+        ``[project].classifiers`` as written (empty if there is none), and ``scripts`` maps
+        the names of ``[project.scripts]`` to their entry points, like ``urls``. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
@@ -253,7 +260,8 @@ def extract_metadata(
             is neither a string nor a table with a string ``file``, a ``license`` that
             is neither a string nor a table with a string ``text`` and ``file``, a
             ``license-files`` that is not an array of strings, an
-            ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` that is not a table of strings, an
+            ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` or ``scripts`` that is not a table of strings, a
+            ``keywords`` or ``classifiers`` that is not an array of strings, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
@@ -274,6 +282,11 @@ def extract_metadata(
     license_ = _license_text(project.get("license", ""), pyproject_path)
     authors = _authors(project.get("authors", []), pyproject_path)
     urls = _urls(project, pyproject_path)
+    scripts = _string_table(project, "scripts", pyproject_path)
+    keywords = _check_string_array(project.get("keywords", []), "[project].keywords", pyproject_path)
+    classifiers = _check_string_array(
+        project.get("classifiers", []), "[project].classifiers", pyproject_path
+    )
 
     requires_python = _check_str(
         project.get("requires-python", ""), "[project].requires-python", pyproject_path
@@ -291,6 +304,9 @@ def extract_metadata(
         ),
         authors=authors,
         urls=urls,
+        keywords=keywords,
+        classifiers=classifiers,
+        scripts=scripts,
         requires_python=requires_python,
         extras=_extra_names(project, extra_values, pyproject_path),
         groups=_group_names(data, pyproject_path),
@@ -594,10 +610,28 @@ def _urls(project: dict[str, Any], pyproject_path: str) -> dict[str, str]:
         MetadataError: If ``[project.urls]`` is not a table or a URL is not a
             string.
     """
-    urls = _get_table(project, "urls", "[project.urls]", pyproject_path)
-    for label, url in urls.items():
-        _check_str(url, f"[project.urls].{label}", pyproject_path)
-    return dict(urls)
+    return _string_table(project, "urls", pyproject_path)
+
+
+def _string_table(project: dict[str, Any], key: str, pyproject_path: str) -> dict[str, str]:
+    """Return a table of ``[project]`` whose values are strings, such as ``[project.urls]``.
+
+    Args:
+        project: The ``[project]`` table.
+        key: The key of the table, such as ``"scripts"``.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        The keys and the values as written, in the order of the file. Empty if
+        there is no such table.
+
+    Raises:
+        MetadataError: If the table is not a table or a value is not a string.
+    """
+    table = _get_table(project, key, f"[project.{key}]", pyproject_path)
+    for name, value in table.items():
+        _check_str(value, f"[project.{key}].{name}", pyproject_path)
+    return dict(table)
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -1275,6 +1309,9 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "license-files": _compact_json(metadata["license_files"]),
         "authors": _compact_json(metadata["authors"]),
         "urls": _compact_json(metadata["urls"]),
+        "keywords": _compact_json(metadata["keywords"]),
+        "classifiers": _compact_json(metadata["classifiers"]),
+        "scripts": _compact_json(metadata["scripts"]),
         "requires-python": metadata["requires_python"],
         "extras": _compact_json(metadata["extras"]),
         "groups": _compact_json(metadata["groups"]),

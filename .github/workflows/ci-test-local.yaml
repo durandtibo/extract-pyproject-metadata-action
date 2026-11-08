@@ -647,6 +647,20 @@ jobs:
           print_success "urls test passed"
 
       # -----------------------------------------------------------------------
+      # Test 24b: keywords, classifiers and scripts outputs
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify keywords, classifiers and scripts
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "keywords" '["toml","metadata"]' '${{ steps.test-project-fields.outputs.keywords }}'
+          assert_equal "keywords" '[]' '${{ steps.test-no-project-fields.outputs.keywords }}'
+          assert_equal "classifiers" '["Programming Language :: Python :: 3","License :: OSI Approved :: MIT License"]' '${{ steps.test-project-fields.outputs.classifiers }}'
+          assert_equal "classifiers" '[]' '${{ steps.test-no-project-fields.outputs.classifiers }}'
+          assert_equal "scripts" '{"fields-tool":"fields_pkg.cli:main"}' '${{ steps.test-project-fields.outputs.scripts }}'
+          assert_equal "scripts" '{}' '${{ steps.test-no-project-fields.outputs.scripts }}'
+          print_success "keywords, classifiers and scripts test passed"
+
+      # -----------------------------------------------------------------------
       # Test 25: dependency-requirements output
       # -----------------------------------------------------------------------
       - name: 🧪 Test dependency-requirements output
