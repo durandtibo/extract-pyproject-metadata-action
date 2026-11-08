@@ -2156,6 +2156,47 @@ def test_action_yaml_default_of_python_candidates_matches_the_script() -> None:
     assert f"default: '{DEFAULT_PYTHON_CANDIDATES}'" in action
 
 
+ACTION_PATH = Path(__file__).resolve().parents[1] / "action.yaml"
+README_PATH = Path(__file__).resolve().parents[1] / "README.md"
+
+
+def _action_section_keys(section: str) -> list[str]:
+    """Return the names under the top-level ``inputs:`` or ``outputs:`` key of action.yaml."""
+    keys: list[str] = []
+    in_section = False
+    for line in ACTION_PATH.read_text(encoding="utf-8").splitlines():
+        if re.match(r"^\S", line):
+            in_section = line.startswith(f"{section}:")
+        elif in_section and (match := re.match(r"^  ([a-z][a-z-]*):\s*$", line)):
+            keys.append(match.group(1))
+    return keys
+
+
+def _readme_table_names(heading: str) -> list[str]:
+    """Return the names (first column) of the table under the ``## <heading>`` of the README."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    section = readme.split(f"\n## {heading}\n", 1)[1].split("\n#", 1)[0]
+    return re.findall(r"^\| `([a-z-]+)`", section, flags=re.MULTILINE)
+
+
+def test_action_section_keys_finds_the_inputs_and_outputs() -> None:
+    assert "pyproject-path" in _action_section_keys("inputs")
+    assert "normalized-name" in _action_section_keys("outputs")
+
+
+@pytest.mark.parametrize(("section", "heading"), [("inputs", "Inputs"), ("outputs", "Outputs")])
+def test_readme_documents_the_inputs_and_outputs_of_action_yaml(
+    section: str, heading: str
+) -> None:
+    assert sorted(_readme_table_names(heading)) == sorted(_action_section_keys(section))
+
+
+def test_readme_default_of_python_candidates_matches_the_script() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+
+    assert f"| `{DEFAULT_PYTHON_CANDIDATES}` |" in readme
+
+
 def test_extract_project_dependencies() -> None:
     data = {"project": {"dependencies": ["numpy>=1.20,<3", "Foo_Bar", "tqdm[extra]~=4.0"]}}
 
