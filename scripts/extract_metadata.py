@@ -75,7 +75,7 @@ import tomllib
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -118,6 +118,15 @@ class Report(Metadata):
     project_dependencies: dict[str, str]
     dependency_specifiers: dict[str, str | None]
     warnings: list[str]
+
+
+class Options(NamedTuple):
+    """The boolean inputs of the action, parsed."""
+
+    fail_on_missing: bool
+    fail_on_dynamic_version: bool
+    strict: bool
+    step_summary: bool
 
 
 def load_pyproject(pyproject_path: str) -> dict[str, Any]:
@@ -815,6 +824,29 @@ def parse_bool(value: str, name: str) -> bool:
     return lowered == "true"
 
 
+def parse_options(args: argparse.Namespace) -> Options:
+    """Parse the four boolean inputs of the command line, in one place.
+
+    Args:
+        args: The parsed command line, as returned by ``_build_parser``.
+
+    Returns:
+        The parsed booleans.
+
+    Raises:
+        MetadataError: If one of them is neither ``"true"`` nor ``"false"``
+            (the first invalid one, in the order of ``Options``).
+    """
+    return Options(
+        fail_on_missing=parse_bool(args.fail_on_missing, "fail-on-missing"),
+        fail_on_dynamic_version=parse_bool(
+            args.fail_on_dynamic_version, "fail-on-dynamic-version"
+        ),
+        strict=parse_bool(args.strict, "strict"),
+        step_summary=parse_bool(args.step_summary, "step-summary"),
+    )
+
+
 def check_no_missing_dependency(
     specifiers: dict[str, str | None],
     pyproject_path: str,
@@ -998,23 +1030,22 @@ def write_step_summary(summary_path: str, markdown: str) -> None:
         f.write(f"{markdown}\n")
 
 
-def resolve_step_summary(value: str, environ: Mapping[str, str]) -> str | None:
+def resolve_step_summary(enabled: bool, environ: Mapping[str, str]) -> str | None:
     """Return the path of the job summary file, or None if it is not requested.
 
     Args:
-        value: The ``--step-summary`` option, ``"true"`` or ``"false"``.
+        enabled: The parsed ``--step-summary`` option.
         environ: The environment variables.
 
     Returns:
-        The value of ``GITHUB_STEP_SUMMARY`` when ``value`` is ``"true"``,
-        None when it is ``"false"``.
+        The value of ``GITHUB_STEP_SUMMARY`` when ``enabled`` is true, None
+        otherwise.
 
     Raises:
-        MetadataError: If ``value`` is neither ``"true"`` nor ``"false"``, or
-            is ``"true"`` and ``GITHUB_STEP_SUMMARY`` is not set (the action
-            is not running in a GitHub workflow).
+        MetadataError: If ``enabled`` is true and ``GITHUB_STEP_SUMMARY`` is not
+            set (the action is not running in a GitHub workflow).
     """
-    if not parse_bool(value, "step-summary"):
+    if not enabled:
         return None
     summary_path = environ.get("GITHUB_STEP_SUMMARY", "")
     if not summary_path:
@@ -1094,11 +1125,12 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
     return parser
 
 
-def build_report(args: argparse.Namespace) -> Report:
+def build_report(args: argparse.Namespace, options: Options | None = None) -> Report:
     """Read the pyproject.toml and the inputs of the command line, and build the report.
 
     Args:
         args: The parsed command line, as returned by ``_build_parser``.
+        options: The parsed boolean inputs. Parsed from ``args`` when omitted.
 
     Returns:
         The report: the metadata, the Python versions, the dependency
@@ -1110,15 +1142,14 @@ def build_report(args: argparse.Namespace) -> Report:
             is not found with ``--fail-on-missing true``, or there is a
             warning with ``--strict true``.
     """
-    fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
-    fail_on_dynamic_version = parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version")
-    strict = parse_bool(args.strict, "strict")
+    if options is None:
+        options = parse_options(args)
     data = load_pyproject(args.pyproject_path)
     extra_values = parse_string_array(args.extra_values, "extra-values")
     dependencies = parse_string_array(args.dependencies, "dependencies")
     python_candidates = parse_python_candidates(args.python_candidates)
     metadata, warnings = extract_metadata(
-        data, extra_values, args.pyproject_path, fail_on_dynamic_version
+        data, extra_values, args.pyproject_path, options.fail_on_dynamic_version
     )
     specifiers, specifier_warnings = extract_dependency_specifiers(
         data, dependencies, args.pyproject_path
@@ -1132,12 +1163,12 @@ def build_report(args: argparse.Namespace) -> Report:
     warnings.extend(python_warnings)
     warnings.extend(project_warnings)
     warnings.extend(specifier_warnings)
-    if fail_on_missing:
+    if options.fail_on_missing:
         check_no_missing_dependency(
             specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
         )
     warnings = list(dict.fromkeys(warnings))
-    if strict and warnings:
+    if options.strict and warnings:
         listed = "".join(f"\n- {warning}" for warning in warnings)
         msg = f"strict is 'true' and there are {len(warnings)} warning(s):{listed}"
         raise MetadataError(msg)
@@ -1197,8 +1228,9 @@ def main(argv: list[str]) -> int:
 
     summary_path: str | None = None
     try:
-        summary_path = resolve_step_summary(args.step_summary, os.environ)
-        report = build_report(args)
+        options = parse_options(args)
+        summary_path = resolve_step_summary(options.step_summary, os.environ)
+        report = build_report(args, options)
     except MetadataError as exc:
         annotate = args.github_output is not None
         print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)

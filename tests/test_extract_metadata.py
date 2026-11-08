@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import extract_metadata as extract_metadata_module  # noqa: E402
 from extract_metadata import (  # noqa: E402
     Metadata,
+    Options,
     MetadataError,
     Report,
     build_report,
@@ -47,6 +48,7 @@ from extract_metadata import (  # noqa: E402
     lowest_python_version,
     main,
     parse_bool,
+    parse_options,
     parse_python_candidates,
     parse_string_array,
     resolve_step_summary,
@@ -1181,18 +1183,64 @@ def test_write_step_summary_appends(tmp_path: Path) -> None:
     ],
 )
 def test_resolve_step_summary(value: str, environ: dict[str, str], expected: str | None) -> None:
-    assert resolve_step_summary(value, environ) == expected
+    assert resolve_step_summary(parse_bool(value, "step-summary"), environ) == expected
 
 
 @pytest.mark.parametrize("environ", [{}, {"GITHUB_STEP_SUMMARY": ""}])
 def test_resolve_step_summary_without_the_environment_variable(environ: dict[str, str]) -> None:
     with pytest.raises(MetadataError, match=r"step-summary is 'true' but .*GITHUB_STEP_SUMMARY"):
-        resolve_step_summary("true", environ)
+        resolve_step_summary(True, environ)
 
 
-def test_resolve_step_summary_invalid_value() -> None:
-    with pytest.raises(MetadataError, match=r"step-summary must be 'true' or 'false', got: 'maybe'"):
-        resolve_step_summary("maybe", {})
+def test_parse_options() -> None:
+    args = parse_args(
+        "--fail-on-missing",
+        "true",
+        "--fail-on-dynamic-version",
+        " TRUE",
+        "--step-summary",
+        "true",
+        "p.toml",
+        "[]",
+    )
+
+    assert parse_options(args) == Options(
+        fail_on_missing=True, fail_on_dynamic_version=True, strict=False, step_summary=True
+    )
+
+
+def test_parse_options_defaults() -> None:
+    assert parse_options(parse_args("p.toml", "[]")) == Options(False, False, False, False)
+
+
+@pytest.mark.parametrize(
+    ("option", "name"),
+    [
+        ("--fail-on-missing", "fail-on-missing"),
+        ("--fail-on-dynamic-version", "fail-on-dynamic-version"),
+        ("--strict", "strict"),
+        ("--step-summary", "step-summary"),
+    ],
+)
+def test_parse_options_invalid_value(option: str, name: str) -> None:
+    with pytest.raises(MetadataError, match=rf"{name} must be 'true' or 'false', got: 'maybe'"):
+        parse_options(parse_args(option, "maybe", "p.toml", "[]"))
+
+
+def test_parse_options_reports_the_first_invalid_value() -> None:
+    args = parse_args("--strict", "x", "--fail-on-missing", "y", "p.toml", "[]")
+
+    with pytest.raises(MetadataError, match=r"fail-on-missing must be"):
+        parse_options(args)
+
+
+def test_build_report_uses_the_given_options(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+    args = parse_args("--strict", "maybe", str(path), "[]", '["missing"]')
+
+    report = build_report(args, Options(False, False, False, False))
+
+    assert report["dependency_specifiers"] == {"missing": None}
 
 
 def test_main_step_summary_writes_the_job_summary(
