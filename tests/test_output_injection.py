@@ -19,8 +19,8 @@ from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import extract_metadata as extract_metadata_module  # noqa: E402
-from extract_metadata import (  # noqa: E402
+import extract_metadata as extract_metadata_module
+from extract_metadata import (
     _build_parser,
     build_report,
     format_outputs,
@@ -44,7 +44,7 @@ HOSTILE_VALUES = [
     "ghadelimiter_",
     "%0A%0D%25",
     "<script>alert(1)</script> | | `code` [link](http://x) _em_ *b*",
-    "unicode: é ☕ 😀   \u0085",
+    "unicode: é ☕ 😀 \u2028 \u0085",
     "a" * 100_000,
 ]
 
