@@ -137,6 +137,17 @@ outputs:
       JSON object mapping each label of [project.urls] to its URL ("{}" if
       none)
     value: ${{ steps.metadata.outputs.urls }}
+  keywords:
+    description: JSON array of [project].keywords, as written ("[]" if none)
+    value: ${{ steps.metadata.outputs.keywords }}
+  classifiers:
+    description: JSON array of [project].classifiers, as written ("[]" if none)
+    value: ${{ steps.metadata.outputs.classifiers }}
+  scripts:
+    description: >
+      JSON object mapping each name of [project.scripts] to its entry point ("{}"
+      if none)
+    value: ${{ steps.metadata.outputs.scripts }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty

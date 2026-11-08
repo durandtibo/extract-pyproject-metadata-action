@@ -40,6 +40,7 @@ from extract_metadata import (  # noqa: E402
     _required_name,
     _required_version,
     _static_and_dynamic_warnings,
+    _string_table,
     _valid_name,
     _valid_version,
     _index_dependencies,
@@ -227,6 +228,9 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -335,6 +339,127 @@ def test_main_license_files_in_json_and_github_output(
     assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
     assert parse_github_output(output.read_text(encoding="utf-8"))["license-files"] == (
         '["LICENSE","licenses/*.txt"]'
+    )
+
+
+@pytest.mark.parametrize("key", ["keywords", "classifiers"])
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("", []),
+        ("[]", []),
+        ('["a"]', ["a"]),
+        ('["b", "a", "b"]', ["b", "a", "b"]),
+    ],
+)
+def test_extract_metadata_keywords_and_classifiers(
+    tmp_path: Path, key: str, value: str, expected: list[str]
+) -> None:
+    line = f"{key} = {value}\n" if value else ""
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{line}')
+
+    assert extract(path)[key] == expected
+
+
+@pytest.mark.parametrize("key", ["keywords", "classifiers"])
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ('"x"', r"must be an array, got: 'x'"),
+        ('["x", 1]', r"must contain only strings, got: 1"),
+    ],
+)
+def test_extract_metadata_keywords_and_classifiers_must_be_arrays_of_strings(
+    tmp_path: Path, key: str, value: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{key} = {value}\n')
+
+    with pytest.raises(MetadataError, match=rf"\[project\]\.{key} {match}"):
+        extract(path)
+
+
+def test_extract_metadata_scripts(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\n\n[project.scripts]\nz = "pkg.cli:z"\na = "pkg.cli:a"\n\n'
+        '[project.gui-scripts]\ng = "pkg.gui:main"\n',
+    )
+
+    assert extract(path)["scripts"] == {"z": "pkg.cli:z", "a": "pkg.cli:a"}
+    assert list(extract(path)["scripts"]) == ["z", "a"]
+
+
+def test_extract_metadata_scripts_default_to_empty(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert extract(path)["scripts"] == {}
+
+
+@pytest.mark.parametrize(
+    ("scripts", "match"),
+    [
+        ('scripts = ["a"]', r"\[project\.scripts\] must be a table, got: \['a'\]"),
+        ('[project.scripts]\na = 1', r"\[project\.scripts\]\.a must be a string, got: 1"),
+    ],
+)
+def test_extract_metadata_scripts_must_be_a_table_of_strings(
+    tmp_path: Path, scripts: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{scripts}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_string_table() -> None:
+    assert _string_table({"x": {"b": "1", "a": "2"}}, "x", "p.toml") == {"b": "1", "a": "2"}
+
+
+def test_string_table_absent() -> None:
+    assert _string_table({}, "x", "p.toml") == {}
+
+
+def test_string_table_returns_a_copy() -> None:
+    project = {"x": {"a": "1"}}
+
+    _string_table(project, "x", "p.toml")["b"] = "2"
+
+    assert project == {"x": {"a": "1"}}
+
+
+def test_string_table_not_a_table() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\] must be a table, got: 1$"):
+        _string_table({"x": 1}, "x", "p.toml")
+
+
+def test_string_table_not_a_string() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\]\.a must be a string, got: 1$"):
+        _string_table({"x": {"a": 1}}, "x", "p.toml")
+
+
+def test_main_keywords_classifiers_and_scripts_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nkeywords = ["toml"]\n'
+        'classifiers = ["Programming Language :: Python :: 3"]\n\n[project.scripts]\ntool = "a.cli:main"\n',
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (report["keywords"], report["classifiers"], report["scripts"]) == (
+        ["toml"],
+        ["Programming Language :: Python :: 3"],
+        {"tool": "a.cli:main"},
+    )
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    values = parse_github_output(output.read_text(encoding="utf-8"))
+    assert (values["keywords"], values["classifiers"], values["scripts"]) == (
+        '["toml"]',
+        '["Programming Language :: Python :: 3"]',
+        '{"tool":"a.cli:main"}',
     )
 
 
@@ -500,6 +625,9 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -610,6 +738,9 @@ def test_main_dynamic_version_warning_in_json(
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -735,6 +866,9 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -850,6 +984,9 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -1005,6 +1142,9 @@ METADATA = {
     "license_files": [],
     "authors": [],
     "urls": {},
+    "keywords": [],
+    "classifiers": [],
+    "scripts": {},
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -1034,6 +1174,9 @@ def test_format_outputs() -> None:
         "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
+        "keywords": '[]',
+        "classifiers": '[]',
+        "scripts": '{}',
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -1181,6 +1324,9 @@ def test_main_github_output_writes_outputs_and_annotations(
         "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
+        "keywords": '[]',
+        "classifiers": '[]',
+        "scripts": '{}',
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -1227,6 +1373,9 @@ def test_build_report(tmp_path: Path) -> None:
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -1373,6 +1522,9 @@ def test_format_step_summary_without_warnings() -> None:
         license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -1400,6 +1552,9 @@ def test_format_step_summary_without_warnings() -> None:
         "| `license-files` | <code>&#91;&#93;</code> |\n"
         "| `authors` | <code>&#91;&#93;</code> |\n"
         "| `urls` | <code>&#123;&#125;</code> |\n"
+        "| `keywords` | <code>&#91;&#93;</code> |\n"
+        "| `classifiers` | <code>&#91;&#93;</code> |\n"
+        "| `scripts` | <code>&#123;&#125;</code> |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -1425,6 +1580,9 @@ def test_format_step_summary_lists_the_warnings() -> None:
         license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=[],
         groups=[],
@@ -1804,6 +1962,9 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
+        "keywords": '[]',
+        "classifiers": '[]',
+        "scripts": '{}',
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -2112,6 +2273,9 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "license_files": [],
         "authors": [],
         "urls": {},
+        "keywords": [],
+        "classifiers": [],
+        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -3413,6 +3577,9 @@ def test_format_outputs_python_matrix() -> None:
         license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=[],
         groups=[],
@@ -3440,6 +3607,9 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python=">=4",
         extras=[],
         groups=[],
@@ -3519,6 +3689,9 @@ def test_format_outputs_normalized_version() -> None:
         license_files=[],
         authors=[],
         urls={},
+        keywords=[],
+        classifiers=[],
+        scripts={},
         requires_python="",
         extras=[],
         groups=[],
@@ -4064,6 +4237,9 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "license-files",
         "authors",
         "urls",
+        "keywords",
+        "classifiers",
+        "scripts",
         "python-matrix",
         "dependency-requirements",
     }
