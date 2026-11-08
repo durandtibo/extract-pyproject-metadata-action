@@ -725,6 +725,38 @@ def test_main_returns_usage_error_on_bad_args() -> None:
     assert exit_code == 2
 
 
+def test_main_prints_the_usage_error_on_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["extract_metadata.py"]) == 2
+
+    err = capsys.readouterr().err
+    assert err.startswith("usage: extract_metadata.py [-h]")
+    assert err.endswith(
+        "\nextract_metadata.py: error: the following arguments are required: "
+        "pyproject_path, extra_values\n"
+    )
+
+
+@pytest.mark.parametrize("option", [["--github-output", "out"], ["--github-output=out"]])
+def test_main_annotates_the_usage_error_with_github_output(
+    option: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["extract_metadata.py", *option]) == 2
+
+    err = capsys.readouterr().err
+    assert err.startswith("::error::usage: extract_metadata.py [-h]")
+    assert err.endswith(
+        "%0Aextract_metadata.py: error: the following arguments are required: "
+        "pyproject_path, extra_values\n"
+    )
+    assert err.count("\n") == 1
+
+
+def test_main_help_exits_with_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["extract_metadata.py", "--github-output", "out", "--help"]) == 0
+
+    assert capsys.readouterr().out.startswith("usage: extract_metadata.py [-h]")
+
+
 def test_cli_end_to_end(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
