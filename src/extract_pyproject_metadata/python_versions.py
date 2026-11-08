@@ -1,4 +1,4 @@
-"""Select the Python versions that requires-python allows."""
+"""Select the Python versions that ``requires-python`` allows."""
 
 from __future__ import annotations
 
