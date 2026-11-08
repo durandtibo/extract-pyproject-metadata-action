@@ -31,6 +31,10 @@ jobs:
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
+  # Check the type hints of the script
+  type-check:
+    uses: ./.github/workflows/ci-type-check.yaml
+
   # Run the integration tests of the local action
   test-local:
     needs: get-matrix

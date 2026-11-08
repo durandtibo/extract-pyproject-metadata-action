@@ -120,8 +120,9 @@ from packaging.version import InvalidVersion, Version
 try:
     from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 except ImportError:  # packaging before 24.2 cannot validate license expressions
-    InvalidLicenseExpression = None
-    canonicalize_license_expression = None
+    # Only the None checks of ``_license_warnings`` use these names without the import.
+    InvalidLicenseExpression = None  # type: ignore[assignment,misc]
+    canonicalize_license_expression = None  # type: ignore[assignment]
 
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
@@ -481,7 +482,7 @@ def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tup
         MetadataError: If ``version`` is not a string, or a static version is
             not a valid PEP 440 version.
     """
-    _check_str(version, "[project].version", pyproject_path)
+    version = _check_str(version, "[project].version", pyproject_path)
     if not is_static:
         return version, ""
     try:
