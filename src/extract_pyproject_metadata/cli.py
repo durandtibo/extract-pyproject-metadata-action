@@ -110,12 +110,17 @@ import tomllib
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple, NoReturn, TypedDict
+from typing import Any, NoReturn
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
+
+from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
+from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.inputs import Options, parse_options, parse_string_array
+from extract_pyproject_metadata.types import Metadata, Report
 
 try:
     from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
@@ -154,55 +159,6 @@ _PROJECT_SCOPE = "project"
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit. Always used with ``fullmatch``.
 _VALID_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
-
-
-class MetadataError(Exception):
-    """Raised when pyproject.toml cannot be read or is missing required metadata."""
-
-
-class Metadata(TypedDict):
-    """The project metadata read by ``extract_metadata``."""
-
-    name: str
-    normalized_name: str
-    version: str
-    normalized_version: str
-    description: str
-    readme: str
-    license: str
-    license_files: list[str]
-    authors: list[dict[str, str]]
-    urls: dict[str, str]
-    keywords: list[str]
-    classifiers: list[str]
-    scripts: dict[str, str]
-    requires_python: str
-    extras: list[str]
-    groups: list[str]
-    build_backend: str
-    build_requires: list[str]
-
-
-class Report(Metadata):
-    """The metadata, Python versions, lowest Python version, dependency specifiers and warnings built by ``build_report``."""
-
-    python_versions: list[str]
-    python_min: str
-    python_max: str
-    project_dependencies: dict[str, str]
-    dependency_specifiers: dict[str, str | None]
-    dependency_requirements: dict[str, list[dict[str, str]]]
-    warnings: list[str]
-    schema_version: int
-
-
-class Options(NamedTuple):
-    """The boolean inputs of the action, parsed."""
-
-    fail_on_missing: bool
-    fail_on_dynamic_version: bool
-    strict: bool
-    step_summary: bool
 
 
 def load_pyproject(pyproject_path: str) -> dict[str, Any]:
@@ -310,8 +266,8 @@ def extract_metadata(
             table, a ``build-backend`` that is not a string, a ``requires`` that is not an
             array of strings, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
-    project = _get_table(data, "project", "[project]", pyproject_path)
-    dynamic = _check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
+    project = get_table(data, "project", "[project]", pyproject_path)
+    dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
     raw_name = _required_name(project, dynamic, pyproject_path)
     warnings = _static_and_dynamic_warnings(project, dynamic, pyproject_path)
     raw_version, version_warnings = _required_version(
@@ -321,7 +277,7 @@ def extract_metadata(
     name = _valid_name(raw_name, pyproject_path)
     version, normalized_version = _valid_version(raw_version, "version" in project, pyproject_path)
 
-    description = _check_str(project.get("description", ""), "[project].description", pyproject_path)
+    description = check_str(project.get("description", ""), "[project].description", pyproject_path)
 
     readme = _readme_path(project.get("readme", ""), pyproject_path)
     license_ = _license_text(project.get("license", ""), pyproject_path)
@@ -329,12 +285,12 @@ def extract_metadata(
     authors = _authors(project.get("authors", []), pyproject_path)
     urls = _urls(project, pyproject_path)
     scripts = _string_table(project, "scripts", pyproject_path)
-    keywords = _check_string_array(project.get("keywords", []), "[project].keywords", pyproject_path)
-    classifiers = _check_string_array(
+    keywords = check_string_array(project.get("keywords", []), "[project].keywords", pyproject_path)
+    classifiers = check_string_array(
         project.get("classifiers", []), "[project].classifiers", pyproject_path
     )
 
-    requires_python = _check_str(
+    requires_python = check_str(
         project.get("requires-python", ""), "[project].requires-python", pyproject_path
     )
     build_backend, build_requires = _build_system(data, pyproject_path)
@@ -346,7 +302,7 @@ def extract_metadata(
         description=description,
         readme=readme,
         license=license_,
-        license_files=_check_string_array(
+        license_files=check_string_array(
             project.get("license-files", []), "[project].license-files", pyproject_path
         ),
         authors=authors,
@@ -498,7 +454,7 @@ def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tup
         MetadataError: If ``version`` is not a string, or a static version is
             not a valid PEP 440 version.
     """
-    version = _check_str(version, "[project].version", pyproject_path)
+    version = check_str(version, "[project].version", pyproject_path)
     if not is_static:
         return version, ""
     try:
@@ -528,7 +484,7 @@ def _extra_names(
     Raises:
         MetadataError: If ``[project.optional-dependencies]`` is not a table.
     """
-    optional_dependencies = _get_table(
+    optional_dependencies = get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     extras = sorted(optional_dependencies, key=canonicalize_name)
@@ -554,11 +510,11 @@ def _build_system(data: dict[str, Any], pyproject_path: str) -> tuple[str, list[
         MetadataError: If ``[build-system]`` is not a table, ``build-backend`` is
             not a string or ``requires`` is not an array of strings.
     """
-    table = _get_table(data, "build-system", "[build-system]", pyproject_path)
-    build_backend = _check_str(
+    table = get_table(data, "build-system", "[build-system]", pyproject_path)
+    build_backend = check_str(
         table.get("build-backend", ""), "[build-system].build-backend", pyproject_path
     )
-    requires = _check_string_array(table.get("requires", []), "[build-system].requires", pyproject_path)
+    requires = check_string_array(table.get("requires", []), "[build-system].requires", pyproject_path)
     return build_backend, list(requires)
 
 
@@ -577,7 +533,7 @@ def _group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
     Raises:
         MetadataError: If ``[dependency-groups]`` is not a table.
     """
-    dependency_groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+    dependency_groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     unique_groups: dict[str, str] = {}
     for group in sorted(dependency_groups, key=canonicalize_name):
         unique_groups.setdefault(canonicalize_name(group), group)
@@ -606,7 +562,7 @@ def _readme_path(readme: object, pyproject_path: str) -> str:
     if not isinstance(readme, dict):
         msg = f"{pyproject_path}: [project].readme must be a string or a table, got: {readme!r}"
         raise MetadataError(msg)
-    return _check_str(readme.get("file", ""), "[project].readme.file", pyproject_path)
+    return check_str(readme.get("file", ""), "[project].readme.file", pyproject_path)
 
 
 def _license_text(license_: object, pyproject_path: str) -> str:
@@ -632,8 +588,8 @@ def _license_text(license_: object, pyproject_path: str) -> str:
     if not isinstance(license_, dict):
         msg = f"{pyproject_path}: [project].license must be a string or a table, got: {license_!r}"
         raise MetadataError(msg)
-    file = _check_str(license_.get("text", ""), "[project].license.text", pyproject_path)
-    _check_str(license_.get("file", ""), "[project].license.file", pyproject_path)
+    file = check_str(license_.get("text", ""), "[project].license.text", pyproject_path)
+    check_str(license_.get("file", ""), "[project].license.file", pyproject_path)
     return file
 
 
@@ -680,7 +636,7 @@ def _authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
             table, or a ``name`` or an ``email`` is not a string.
     """
     result: list[dict[str, str]] = []
-    for index, author in enumerate(_check_array(authors, "[project].authors", pyproject_path)):
+    for index, author in enumerate(check_array(authors, "[project].authors", pyproject_path)):
         label = f"[project].authors[{index}]"
         if not isinstance(author, dict):
             msg = f"{pyproject_path}: {label} must be a table, got: {author!r}"
@@ -689,7 +645,7 @@ def _authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
         for key in ("name", "email"):
             if key not in author:
                 continue
-            entry[key] = _check_str(author[key], f"{label}.{key}", pyproject_path)
+            entry[key] = check_str(author[key], f"{label}.{key}", pyproject_path)
         result.append(entry)
     return result
 
@@ -727,99 +683,10 @@ def _string_table(project: dict[str, Any], key: str, pyproject_path: str) -> dic
     Raises:
         MetadataError: If the table is not a table or a value is not a string.
     """
-    table = _get_table(project, key, f"[project.{key}]", pyproject_path)
+    table = get_table(project, key, f"[project.{key}]", pyproject_path)
     for name, value in table.items():
-        _check_str(value, f"[project.{key}].{name}", pyproject_path)
+        check_str(value, f"[project.{key}].{name}", pyproject_path)
     return dict(table)
-
-
-def parse_string_array(raw: str, input_name: str) -> list[str]:
-    """Parse the JSON array of strings of an action input.
-
-    Args:
-        raw: The value of the input.
-        input_name: The name of the input, used in the error messages.
-
-    Returns:
-        The strings, in order, duplicates included.
-
-    Raises:
-        MetadataError: If ``raw`` is not valid JSON or not an array of strings.
-    """
-    try:
-        values = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        msg = f"{input_name} is not valid JSON: {raw!r}"
-        raise MetadataError(msg) from exc
-    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
-        msg = f"{input_name} must be a JSON array of strings, got: {raw!r}"
-        raise MetadataError(msg)
-    return values
-
-
-def _check_str(value: object, label: str, pyproject_path: str) -> str:
-    """Return ``value`` if it is a string, and raise ``MetadataError`` otherwise.
-
-    Args:
-        value: The value read from the file.
-        label: The name of the key in the error message, such as ``[project].description``.
-        pyproject_path: Path of the file, used in the error message.
-
-    Returns:
-        ``value``, unchanged.
-
-    Raises:
-        MetadataError: If ``value`` is not a string.
-    """
-    if not isinstance(value, str):
-        msg = f"{pyproject_path}: {label} must be a string, got: {value!r}"
-        raise MetadataError(msg)
-    return value
-
-
-def _check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
-    """Return ``value`` if it is an array, and raise ``MetadataError`` otherwise."""
-    if not isinstance(value, list):
-        msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
-        raise MetadataError(msg)
-    return value
-
-
-def _check_string_array(value: object, label: str, pyproject_path: str) -> list[str]:
-    """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise.
-
-    Used for the arrays of requirement strings and for ``[project].dynamic``.
-    """
-    entries = _check_array(value, label, pyproject_path)
-    for entry in entries:
-        if not isinstance(entry, str):
-            msg = f"{pyproject_path}: {label} must contain only strings, got: {entry!r}"
-            raise MetadataError(msg)
-    return entries
-
-
-def _get_table(
-    container: dict[str, Any], key: str, label: str, pyproject_path: str
-) -> dict[str, Any]:
-    """Return ``container[key]`` (an empty table if absent), checking that it is a table.
-
-    Args:
-        container: The table that holds ``key``.
-        key: The key to read.
-        label: The name of the table in error messages, such as ``[project]``.
-        pyproject_path: Path of the file, used in the error message.
-
-    Returns:
-        The table, or an empty dict if ``key`` is absent.
-
-    Raises:
-        MetadataError: If the value is not a table.
-    """
-    value = container.get(key, {})
-    if not isinstance(value, dict):
-        msg = f"{pyproject_path}: {label} must be a table, got: {value!r}"
-        raise MetadataError(msg)
-    return value
 
 
 def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
@@ -891,7 +758,7 @@ def _flatten_group(
         if canonicalize_name(gname) != key:
             continue
         label = f"[dependency-groups].{gname}"
-        for entry in _check_array(entries, label, pyproject_path):
+        for entry in check_array(entries, label, pyproject_path):
             if isinstance(entry, str):
                 out.append(entry)
             elif isinstance(entry, dict) and set(entry) == {"include-group"}:
@@ -988,21 +855,21 @@ def _scoped_requirements(
     Raises:
         MetadataError: Under the same conditions as ``_candidate_requirements``.
     """
-    project = _get_table(data, "project", "[project]", pyproject_path)
+    project = get_table(data, "project", "[project]", pyproject_path)
     reqs = [
         (_PROJECT_SCOPE, raw)
-        for raw in _check_string_array(
+        for raw in check_string_array(
             project.get("dependencies", []), "[project].dependencies", pyproject_path
         )
     ]
-    optional_dependencies = _get_table(
+    optional_dependencies = get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
         scope = f"extra:{canonicalize_name(extra)}"
-        reqs.extend((scope, raw) for raw in _check_string_array(extra_reqs, label, pyproject_path))
-    groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+        reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label, pyproject_path))
+    groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
         _dynamic_message(field, pyproject_path)
         for field in _dynamic_dependency_fields(data)
@@ -1149,8 +1016,8 @@ def extract_project_dependencies(
         MetadataError: If ``[project]`` is not a table, or
             ``[project].dependencies`` is not an array of strings.
     """
-    project = _get_table(data, "project", "[project]", pyproject_path)
-    entries = _check_string_array(
+    project = get_table(data, "project", "[project]", pyproject_path)
+    entries = check_string_array(
         project.get("dependencies", []), "[project].dependencies", pyproject_path
     )
     found, names, warnings = _index_requirements(entries, pyproject_path)
@@ -1468,49 +1335,6 @@ def highest_python_version(versions: Sequence[str]) -> str:
     if not versions:
         return ""
     return max(versions, key=_minor_version_key)
-
-
-def parse_bool(value: str, name: str) -> bool:
-    """Parse the ``"true"`` / ``"false"`` string of a boolean input.
-
-    Args:
-        value: The string, compared case-insensitively.
-        name: The name of the input, used in the error message.
-
-    Returns:
-        The boolean value.
-
-    Raises:
-        MetadataError: If ``value`` is neither ``"true"`` nor ``"false"``.
-    """
-    lowered = value.strip().lower()
-    if lowered not in {"true", "false"}:
-        msg = f"{name} must be 'true' or 'false', got: {value!r}"
-        raise MetadataError(msg)
-    return lowered == "true"
-
-
-def parse_options(args: argparse.Namespace) -> Options:
-    """Parse the four boolean inputs of the command line, in one place.
-
-    Args:
-        args: The parsed command line, as returned by ``_build_parser``.
-
-    Returns:
-        The parsed booleans.
-
-    Raises:
-        MetadataError: If one of them is neither ``"true"`` nor ``"false"``
-            (the first invalid one, in the order of ``Options``).
-    """
-    return Options(
-        fail_on_missing=parse_bool(args.fail_on_missing, "fail-on-missing"),
-        fail_on_dynamic_version=parse_bool(
-            args.fail_on_dynamic_version, "fail-on-dynamic-version"
-        ),
-        strict=parse_bool(args.strict, "strict"),
-        step_summary=parse_bool(args.step_summary, "step-summary"),
-    )
 
 
 def check_no_missing_dependency(

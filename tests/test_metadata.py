@@ -9,14 +9,10 @@ import pytest
 from helpers import extract, requires_licenses, write_pyproject
 
 import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
 from extract_pyproject_metadata.cli import (
-    MetadataError,
     _build_system,
-    _check_array,
-    _check_str,
-    _check_string_array,
     _extra_names,
-    _get_table,
     _license_warnings,
     _required_name,
     _required_version,
@@ -26,8 +22,9 @@ from extract_pyproject_metadata.cli import (
     _valid_version,
     extract_metadata,
     load_pyproject,
-    parse_string_array,
 )
+from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.inputs import parse_string_array
 
 
 def test_load_pyproject(tmp_path: Path) -> None:
@@ -758,7 +755,7 @@ def test_compact_json(value: object, expected: str) -> None:
 
 @pytest.mark.parametrize("value", [[], ["a"], ["a", "B_c>=1"]])
 def test_check_string_array_returns_the_strings(value: list[str]) -> None:
-    assert _check_string_array(value, "[x]", "p.toml") == value
+    assert check_string_array(value, "[x]", "p.toml") == value
 
 
 
@@ -772,7 +769,7 @@ def test_check_string_array_returns_the_strings(value: list[str]) -> None:
 )
 def test_check_string_array_wrong_types(value: object, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        _check_string_array(value, "[x]", "p.toml")
+        check_string_array(value, "[x]", "p.toml")
 
 
 
@@ -912,26 +909,26 @@ def test_extract_metadata_normalized_name(tmp_path: Path, name: str, expected: s
 
 
 def test_get_table() -> None:
-    assert _get_table({"project": {"name": "a"}}, "project", "[project]", "p.toml") == {"name": "a"}
+    assert get_table({"project": {"name": "a"}}, "project", "[project]", "p.toml") == {"name": "a"}
 
 
 
 @pytest.mark.parametrize("container", [{}, {"other": 1}])
 def test_get_table_absent_is_empty(container: dict) -> None:
-    assert _get_table(container, "project", "[project]", "p.toml") == {}
+    assert get_table(container, "project", "[project]", "p.toml") == {}
 
 
 
 @pytest.mark.parametrize("value", [1, "text", [], [{"a": 1}]])
 def test_get_table_not_a_table(value: object) -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\] must be a table, got: "):
-        _get_table({"project": value}, "project", "[project]", "p.toml")
+        get_table({"project": value}, "project", "[project]", "p.toml")
 
 
 
 @pytest.mark.parametrize("value", ["text", ""])
 def test_check_str(value: str) -> None:
-    assert _check_str(value, "[x]", "p.toml") == value
+    assert check_str(value, "[x]", "p.toml") == value
 
 
 
@@ -940,19 +937,19 @@ def test_check_str(value: str) -> None:
 )
 def test_check_str_not_a_string(value: object, shown: str) -> None:
     with pytest.raises(MetadataError, match=rf"^p.toml: \[x\] must be a string, got: {shown}$"):
-        _check_str(value, "[x]", "p.toml")
+        check_str(value, "[x]", "p.toml")
 
 
 
 def test_check_array() -> None:
-    assert _check_array(["a", 1], "[x]", "p.toml") == ["a", 1]
+    assert check_array(["a", 1], "[x]", "p.toml") == ["a", 1]
 
 
 
 @pytest.mark.parametrize("value", [{}, "text", 1])
 def test_check_array_not_an_array(value: object) -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[x\] must be an array, got: "):
-        _check_array(value, "[x]", "p.toml")
+        check_array(value, "[x]", "p.toml")
 
 
 

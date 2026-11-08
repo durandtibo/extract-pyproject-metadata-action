@@ -25,7 +25,6 @@ from packaging.requirements import InvalidRequirement, Requirement
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.cli import (
-    MetadataError,
     _candidate_requirements,
     _conflict_warnings,
     _dynamic_dependency_fields,
@@ -44,6 +43,7 @@ from extract_pyproject_metadata.cli import (
     load_pyproject,
     parse_dependencies,
 )
+from extract_pyproject_metadata.errors import MetadataError
 
 
 def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None:

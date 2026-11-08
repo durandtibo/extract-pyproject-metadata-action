@@ -18,11 +18,8 @@ from helpers import (
 )
 
 import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import (
-    DEFAULT_PYTHON_CANDIDATES,
-    Metadata,
-    Report,
-)
+from extract_pyproject_metadata.cli import DEFAULT_PYTHON_CANDIDATES
+from extract_pyproject_metadata.types import Metadata, Report
 
 
 def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
