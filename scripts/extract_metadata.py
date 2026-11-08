@@ -12,7 +12,8 @@ Usage:
 
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
-    {"name": ..., "normalized_name": ..., "version": ..., "description": ...,
+    {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
+     "description": ...,
      "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
@@ -22,7 +23,7 @@ characters are kept as they are, as in the action outputs):
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``description``, ``requires-python``,
+outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``requires-python``,
 ``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
@@ -108,6 +109,7 @@ class Metadata(TypedDict):
     name: str
     normalized_name: str
     version: str
+    normalized_version: str
     description: str
     requires_python: str
     extras: list[str]
@@ -181,9 +183,10 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``description``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
-        ``[project].dynamic`` and has no static value. ``requires_python``
+        ``[project].dynamic`` and has no static value (so is ``normalized_version``,
+        the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
         is ``[project].requires-python`` as written, or an empty string if it is
         not declared. ``description`` is ``[project].description`` as written,
         or an empty string if it is not declared. ``extras`` lists the ``extra_values`` first, then the
@@ -254,9 +257,10 @@ def extract_metadata(
     if not isinstance(version, str):
         msg = f"{pyproject_path}: [project].version must be a string, got: {version!r}"
         raise MetadataError(msg)
+    normalized_version = ""
     if "version" in project:
         try:
-            Version(version)
+            normalized_version = str(Version(version))
         except InvalidVersion as exc:
             msg = (
                 f"{pyproject_path}: [project].version is not a valid PEP 440 version: "
@@ -299,6 +303,7 @@ def extract_metadata(
         name=name,
         normalized_name=canonicalize_name(name),
         version=version,
+        normalized_version=normalized_version,
         description=description,
         requires_python=requires_python,
         extras=list(unique_extras.values()),
@@ -942,6 +947,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "name": metadata["name"],
         "normalized-name": metadata["normalized_name"],
         "version": metadata["version"],
+        "normalized-version": metadata["normalized_version"],
         "description": metadata["description"],
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),

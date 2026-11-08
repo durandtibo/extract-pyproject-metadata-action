@@ -225,6 +225,29 @@ jobs:
           print_success "normalized-name test passed"
 
       # -----------------------------------------------------------------------
+      # Test 11b: normalized-version output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test normalized-version output
+        id: test-normalized-version
+        uses: ./
+        with:
+          pyproject-path: test-data/normalized-version/pyproject.toml
+
+      - name: 🧪 Test normalized-version output with a dynamic version
+        id: test-normalized-version-dynamic
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+
+      - name: ✓ Verify normalized-version
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "version" "1.0-RC1" "${{ steps.test-normalized-version.outputs.version }}"
+          assert_equal "normalized-version" "1.0rc1" "${{ steps.test-normalized-version.outputs.normalized-version }}"
+          assert_equal "normalized-version" "" "${{ steps.test-normalized-version-dynamic.outputs.normalized-version }}"
+          print_success "normalized-version test passed"
+
+      # -----------------------------------------------------------------------
       # Test 12: requires-python output
       # -----------------------------------------------------------------------
       - name: 🧪 Test requires-python output

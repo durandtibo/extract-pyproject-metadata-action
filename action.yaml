@@ -84,6 +84,11 @@ outputs:
   version:
     description: Project version, as declared in [project].version
     value: ${{ steps.metadata.outputs.version }}
+  normalized-version:
+    description: >
+      Project version in the canonical form of PEP 440 (e.g. "1.0rc1" for
+      "1.0-RC1"; empty if the version is dynamic)
+    value: ${{ steps.metadata.outputs.normalized-version }}
   description:
     description: >
       Project description, as declared in [project].description (empty if not
