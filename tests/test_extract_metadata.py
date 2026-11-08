@@ -1383,3 +1383,62 @@ def test_dependency_one_warning_per_conflicting_marker(tmp_path: Path) -> None:
 )
 def test_conflict_warnings(matches: list[tuple[str, str | None]], expected: list[str]) -> None:
     assert _conflict_warnings("a", matches, matches[0][0], "p.toml") == expected
+
+
+@pytest.mark.parametrize(
+    ("optional_dependencies", "expected"),
+    [
+        ('Foo_Bar = []\n"foo-bar" = []', ["Foo_Bar"]),
+        ('"foo-bar" = []\nFoo_Bar = []', ["foo-bar"]),
+        ('Foo = []\nfoo = []\nFOO = []', ["Foo"]),
+        ('"a.b" = []\n"a-b" = []\n"a__b" = []', ["a.b"]),
+    ],
+)
+def test_extract_metadata_extras_spellings_of_the_same_extra_are_one(
+    tmp_path: Path, optional_dependencies: str, expected: list[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        f'[project]\nname = "p"\nversion = "1"\n[project.optional-dependencies]\n{optional_dependencies}\n',
+    )
+
+    assert extract(path)["extras"] == expected
+
+
+@pytest.mark.parametrize(
+    ("extra_values_json", "expected"),
+    [
+        ('["Foo-Bar"]', ["Foo-Bar", "baz"]),
+        ('["FOO_BAR", "foo.bar"]', ["FOO_BAR", "baz"]),
+        ('["", "Baz"]', ["", "Baz", "foo_bar"]),
+        ('["Baz", ""]', ["Baz", "", "foo_bar"]),
+    ],
+)
+def test_extract_metadata_extra_values_are_deduplicated_per_pep_685(
+    tmp_path: Path, extra_values_json: str, expected: list[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "p"\nversion = "1"\n[project.optional-dependencies]\nfoo_bar = []\nbaz = []\n',
+    )
+
+    assert extract(path, extra_values_json)["extras"] == expected
+
+
+def test_extract_metadata_extras_are_sorted_by_normalized_name(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "p"
+        version = "1"
+
+        [project.optional-dependencies]
+        Zeta = []
+        alpha = []
+        Beta = []
+        "gamma_x" = []
+        """,
+    )
+
+    assert extract(path)["extras"] == ["alpha", "Beta", "gamma_x", "Zeta"]

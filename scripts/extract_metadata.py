@@ -91,8 +91,9 @@ def extract_metadata(
         A dict with keys ``name``, ``version``, and ``extras``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``extras``
-        lists the ``extra_values`` first, then the sorted extras, without
-        duplicates.
+        lists the ``extra_values`` first, then the extras sorted by normalized
+        name. Names are compared per PEP 685 (like package names), so
+        spellings of the same extra are duplicates: the first one is kept.
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
@@ -141,7 +142,7 @@ def extract_metadata(
             f"got: {optional_dependencies!r}"
         )
         raise MetadataError(msg)
-    extras = sorted(optional_dependencies)
+    extras = sorted(optional_dependencies, key=canonicalize_name)
 
     try:
         extra_values = json.loads(extra_values_json)
@@ -156,11 +157,16 @@ def extract_metadata(
         msg = f"extra-values must be a JSON array of strings, got: {extra_values_json!r}"
         raise MetadataError(msg)
 
-    # dict.fromkeys removes duplicates and keeps the first occurrence's position.
+    # Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
+    # "foo-bar" are one extra. The first spelling of each is kept, at the
+    # position of its first occurrence.
+    unique_extras: dict[str, str] = {}
+    for extra in extra_values + extras:
+        unique_extras.setdefault(canonicalize_name(extra), extra)
     return {
         "name": name,
         "version": version,
-        "extras": list(dict.fromkeys(extra_values + extras)),
+        "extras": list(unique_extras.values()),
     }
 
 
