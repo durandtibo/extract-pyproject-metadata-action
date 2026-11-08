@@ -3829,6 +3829,15 @@ def _readme_table_names(heading: str) -> list[str]:
     return re.findall(r"^\| `([a-z-]+)`", section, flags=re.MULTILINE)
 
 
+def test_action_yaml_separates_the_inputs_with_a_blank_line() -> None:
+    lines = ACTION_PATH.read_text(encoding="utf-8").splitlines()
+    inputs = lines[lines.index("inputs:") : lines.index("outputs:")]
+    starts = [index for index, line in enumerate(inputs) if re.match(r"^  [a-z][a-z-]*:\s*$", line)]
+
+    assert len(starts) == len(_action_section_keys("inputs"))
+    assert [inputs[index - 1] for index in starts[1:]] == [""] * (len(starts) - 1)
+
+
 def test_action_section_keys_finds_the_inputs_and_outputs() -> None:
     assert "pyproject-path" in _action_section_keys("inputs")
     assert "normalized-name" in _action_section_keys("outputs")
