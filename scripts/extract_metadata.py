@@ -121,14 +121,8 @@ def extract_metadata(
             table, or
             ``extra_values_json`` is not a JSON array of strings.
     """
-    project = data.get("project", {})
-    if not isinstance(project, dict):
-        msg = f"{pyproject_path}: [project] must be a table, got: {project!r}"
-        raise MetadataError(msg)
-    dynamic = project.get("dynamic", [])
-    if not isinstance(dynamic, list):
-        msg = f"{pyproject_path}: [project].dynamic must be an array, got: {dynamic!r}"
-        raise MetadataError(msg)
+    project = _get_table(data, "project", "[project]", pyproject_path)
+    dynamic = _check_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
     try:
         name = project["name"]
     except KeyError as exc:
@@ -170,13 +164,9 @@ def extract_metadata(
         )
         raise MetadataError(msg)
 
-    optional_dependencies = project.get("optional-dependencies", {})
-    if not isinstance(optional_dependencies, dict):
-        msg = (
-            f"{pyproject_path}: [project].optional-dependencies must be a table, "
-            f"got: {optional_dependencies!r}"
-        )
-        raise MetadataError(msg)
+    optional_dependencies = _get_table(
+        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
+    )
     extras = sorted(optional_dependencies, key=canonicalize_name)
 
     try:
@@ -199,10 +189,7 @@ def extract_metadata(
     for extra in extra_values + extras:
         unique_extras.setdefault(canonicalize_name(extra), extra)
 
-    dependency_groups = data.get("dependency-groups", {})
-    if not isinstance(dependency_groups, dict):
-        msg = f"{pyproject_path}: [dependency-groups] must be a table, got: {dependency_groups!r}"
-        raise MetadataError(msg)
+    dependency_groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     # Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
     unique_groups: dict[str, str] = {}
     for group in sorted(dependency_groups, key=canonicalize_name):
@@ -235,6 +222,28 @@ def _check_array(value: object, label: str, pyproject_path: str) -> list:
     """Return ``value`` if it is an array, and raise ``MetadataError`` otherwise."""
     if not isinstance(value, list):
         msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
+        raise MetadataError(msg)
+    return value
+
+
+def _get_table(container: dict, key: str, label: str, pyproject_path: str) -> dict:
+    """Return ``container[key]`` (an empty table if absent), checking that it is a table.
+
+    Args:
+        container: The table that holds ``key``.
+        key: The key to read.
+        label: The name of the table in error messages, such as ``[project]``.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The table, or an empty dict if ``key`` is absent.
+
+    Raises:
+        MetadataError: If the value is not a table.
+    """
+    value = container.get(key, {})
+    if not isinstance(value, dict):
+        msg = f"{pyproject_path}: {label} must be a table, got: {value!r}"
         raise MetadataError(msg)
     return value
 
@@ -319,29 +328,19 @@ def _candidate_requirements(
             ``[project.optional-dependencies]``, ``[dependency-groups]`` or one
             of their values has the wrong type.
     """
-    project = data.get("project", {})
-    if not isinstance(project, dict):
-        msg = f"{pyproject_path}: [project] must be a table, got: {project!r}"
-        raise MetadataError(msg)
+    project = _get_table(data, "project", "[project]", pyproject_path)
     dependencies = _check_array(
         project.get("dependencies", []), "[project].dependencies", pyproject_path
     )
     reqs = [r for r in dependencies if isinstance(r, str)]
-    optional_dependencies = project.get("optional-dependencies", {})
-    if not isinstance(optional_dependencies, dict):
-        msg = (
-            f"{pyproject_path}: [project].optional-dependencies must be a table, "
-            f"got: {optional_dependencies!r}"
-        )
-        raise MetadataError(msg)
+    optional_dependencies = _get_table(
+        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
+    )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
         extra_reqs = _check_array(extra_reqs, label, pyproject_path)
         reqs.extend(r for r in extra_reqs if isinstance(r, str))
-    groups = data.get("dependency-groups", {})
-    if not isinstance(groups, dict):
-        msg = f"{pyproject_path}: [dependency-groups] must be a table, got: {groups!r}"
-        raise MetadataError(msg)
+    groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     for gname in groups:
         reqs.extend(_flatten_group(groups, gname, pyproject_path=pyproject_path, warnings=warnings))
     return reqs
