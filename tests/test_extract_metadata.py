@@ -83,7 +83,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
 
     metadata = extract(path)
 
-    assert metadata == {"name": "coola", "version": "1.2.3", "extras": []}
+    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "1.2.3", "extras": []}
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -221,14 +221,14 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
 
     metadata = extract_metadata(load_pyproject(str(path)), "[]", str(path), warnings)
 
-    assert metadata == {"name": "coola", "version": "", "extras": []}
+    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "extras": []}
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
 
 def test_extract_metadata_dynamic_version_without_warnings_list(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
 
-    assert extract(path) == {"name": "coola", "version": "", "extras": []}
+    assert extract(path) == {"name": "coola", "normalized_name": "coola", "version": "", "extras": []}
 
 
 def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> None:
@@ -271,6 +271,7 @@ def test_main_dynamic_version_warning_in_json(
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out) == {
         "name": "coola",
+        "normalized_name": "coola",
         "version": "",
         "extras": [],
         "dependency_specifiers": {},
@@ -377,7 +378,14 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert json.loads(captured.out) == {"name": "coola", "version": "1.2.3", "extras": [], "dependency_specifiers": {}, "warnings": []}
+    assert json.loads(captured.out) == {
+        "name": "coola",
+        "normalized_name": "coola",
+        "version": "1.2.3",
+        "extras": [],
+        "dependency_specifiers": {},
+        "warnings": [],
+    }
 
 
 def test_main_parses_the_file_once(
@@ -439,6 +447,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
 
     assert json.loads(result.stdout) == {
         "name": "coola",
+        "normalized_name": "coola",
         "version": "1.2.3",
         "extras": ["", "numpy"],
         "dependency_specifiers": {},
@@ -593,6 +602,7 @@ def test_dependency_invalid_input(tmp_path: Path, value: str) -> None:
 
 METADATA = {
     "name": "coola",
+    "normalized_name": "coola",
     "version": "1.2.3",
     "extras": ["", "numpy"],
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
@@ -603,6 +613,7 @@ METADATA = {
 def test_format_outputs() -> None:
     assert format_outputs(METADATA) == {
         "name": "coola",
+        "normalized-name": "coola",
         "version": "1.2.3",
         "extras": '["","numpy"]',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
@@ -719,6 +730,7 @@ def test_main_github_output_writes_outputs_and_annotations(
     assert exit_code == 0
     assert parse_github_output(output.read_text(encoding="utf-8")) == {
         "name": "p",
+        "normalized-name": "p",
         "version": "1",
         "extras": '["","a"]',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
@@ -790,6 +802,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
 
     assert parse_github_output(output.read_text(encoding="utf-8")) == {
         "name": "coola",
+        "normalized-name": "coola",
         "version": "1.2.3",
         "extras": '["","numpy"]',
         "dependency-specifiers": "{}",
@@ -812,6 +825,7 @@ def test_main_github_output_multiline_name_cannot_inject_outputs_or_commands(
     assert exit_code == 0
     assert parse_github_output(output.read_text(encoding="utf-8")) == {
         "name": "evil\n::error::boom\nversion=hacked",
+        "normalized-name": "evil\n::error::boom\nversion=hacked",
         "version": "1",
         "extras": "[]",
         "dependency-specifiers": "{}",
@@ -1005,6 +1019,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
 
     assert json.loads(result.stdout) == {
         "name": "coola",
+        "normalized_name": "coola",
         "version": "1.2.3",
         "extras": [],
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
@@ -1538,3 +1553,37 @@ def test_main_invalid_version_returns_one(
     assert exit_code == 1
     assert "is not a valid PEP 440 version: 'latest'" in captured.err
     assert captured.out == ""
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("coola", "coola"),
+        ("Coola", "coola"),
+        ("My_Package.Name", "my-package-name"),
+        ("a--b__c..d", "a-b-c-d"),
+        ("a-._b", "a-b"),
+        ("Zope.Interface", "zope-interface"),
+        ("pkg2", "pkg2"),
+        ("ÄB", "äb"),
+    ],
+)
+def test_extract_metadata_normalized_name(tmp_path: Path, name: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
+
+    metadata = extract(path)
+
+    assert metadata["name"] == name
+    assert metadata["normalized_name"] == expected
+
+
+def test_main_github_output_normalized_name(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "My_Package.Name"\nversion = "1"\n')
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+
+    assert exit_code == 0
+    outputs = parse_github_output(output.read_text(encoding="utf-8"))
+    assert outputs["name"] == "My_Package.Name"
+    assert outputs["normalized-name"] == "my-package-name"

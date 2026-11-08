@@ -218,3 +218,19 @@ jobs:
             exit 1
           fi
           print_success "invalid dependencies correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 11: normalized-name output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test normalized-name output
+        id: test-normalized-name
+        uses: ./
+        with:
+          pyproject-path: test-data/normalized-name/pyproject.toml
+
+      - name: ✓ Verify normalized-name
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "My_Package.Name" "${{ steps.test-normalized-name.outputs.name }}"
+          assert_equal "normalized-name" "my-package-name" "${{ steps.test-normalized-name.outputs.normalized-name }}"
+          print_success "normalized-name test passed"
