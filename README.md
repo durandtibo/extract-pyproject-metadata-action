@@ -18,8 +18,8 @@ environment of the caller.
 
 > [!NOTE]
 > The action supports **Linux and macOS** runners only. **Windows runners are
-> not supported**: the integration tests do not run on them, and the step
-> expects `python3` and a POSIX `bash`.
+> not supported**: the step expects `python3` and a POSIX `bash`, and fails
+> with an explicit error on them.
 
 ## Usage
 
@@ -188,6 +188,7 @@ markers.
 
 The action's step fails (non-zero exit) when:
 
+- It runs on a Windows runner (`RUNNER_OS` is `Windows`), which is not supported.
 - The `python3` on `PATH` is older than 3.11 (or missing), or `packaging` cannot be
   installed.
 - `pyproject-path` does not point to an existing file.
