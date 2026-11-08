@@ -109,6 +109,21 @@ def test_load_pyproject(tmp_path: Path) -> None:
     assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
 
 
+def test_load_pyproject_utf8_bom(tmp_path: Path) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_bytes(b'\xef\xbb\xbf[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
+
+
+def test_load_pyproject_bom_only_at_the_start(tmp_path: Path) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_bytes(b'[project]\n\xef\xbb\xbfname = "coola"\n')
+
+    with pytest.raises(MetadataError, match="pyproject.toml is not valid TOML"):
+        load_pyproject(str(path))
+
+
 def test_load_pyproject_missing_file(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
