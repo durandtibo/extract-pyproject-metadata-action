@@ -37,6 +37,7 @@ from extract_metadata import (  # noqa: E402
     escape_annotation,
     escape_annotation_property,
     format_error,
+    format_error_summary,
     extract_metadata,
     extract_project_dependencies,
     format_outputs,
@@ -1136,6 +1137,30 @@ def test_format_step_summary_lists_the_warnings() -> None:
     )
 
 
+def test_format_error_summary() -> None:
+    summary = format_error_summary("p.toml: [project].name | bad\nsecond line")
+
+    assert summary == (
+        "### ❌ Project metadata\n"
+        "\n"
+        "- <code>p&#46;toml&#58; &#91;project&#93;&#46;name &#124; bad</code>\n"
+        "- <code>second line</code>\n"
+    )
+
+
+def test_format_error_summary_removes_the_bullet_of_a_line() -> None:
+    assert format_error_summary("head:\n- first\n- second") == (
+        "### ❌ Project metadata\n\n"
+        "- <code>head&#58;</code>\n- <code>first</code>\n- <code>second</code>\n"
+    )
+
+
+def test_format_error_summary_skips_blank_lines() -> None:
+    assert format_error_summary("a\n\n  \nb") == (
+        "### ❌ Project metadata\n\n- <code>a</code>\n- <code>b</code>\n"
+    )
+
+
 def test_write_step_summary_appends(tmp_path: Path) -> None:
     summary = tmp_path / "summary.md"
     summary.write_text("before\n")
@@ -1197,6 +1222,61 @@ def test_main_step_summary_writes_the_job_summary(
     assert "#### ⚠️ Warnings" in text
     assert "<code>dup has different specifiers" in text
     capsys.readouterr()
+
+
+def test_main_step_summary_reports_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
+
+    exit_code = main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"])
+
+    assert exit_code == 1
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("### ❌ Project metadata\n")
+    assert "missing required key" in text
+    assert "&#91;project&#93;&#46;name" in text
+    assert "missing required key" in capsys.readouterr().err
+
+
+def test_main_step_summary_lists_the_warnings_of_a_strict_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    exit_code = main(
+        ["extract_metadata.py", "--step-summary", "true", "--strict", "true", str(path), "[]"]
+    )
+
+    assert exit_code == 1
+    text = summary.read_text(encoding="utf-8")
+    assert "there are 1 warning&#40;s&#41;&#58;</code>\n- <code>" in text
+    assert "<code>&#45;" not in text
+    assert "[project].version is dynamic" not in text  # escaped, not raw
+
+
+def test_main_step_summary_off_writes_nothing_on_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert not summary.exists()
+
+
+def test_main_step_summary_misconfiguration_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"]) == 1
 
 
 def test_main_step_summary_is_off_by_default(

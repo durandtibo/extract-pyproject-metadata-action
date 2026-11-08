@@ -34,6 +34,8 @@ because GitHub only parses workflow commands there.
 With ``--step-summary true``, also appends a Markdown table of the outputs
 and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
 environment variable (the job summary of GitHub), whichever the other options.
+When the run fails, the error message is appended instead (unless
+``--step-summary`` or ``GITHUB_STEP_SUMMARY`` is itself the problem).
 
 With ``--strict true``, any warning is an error instead: the outputs are not
 written and the message lists the warnings.
@@ -969,6 +971,27 @@ def format_step_summary(report: Report, outputs: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def format_error_summary(message: str) -> str:
+    """Build the Markdown of the job summary when the action fails.
+
+    Args:
+        message: The message of the ``MetadataError``. Each line (the error
+            of ``--strict`` lists one warning per line, each starting with
+            ``"- "``) becomes a list item.
+
+    Returns:
+        A heading and a list of the lines of the message, escaped by
+        ``_html_cell`` like the values of ``format_step_summary``.
+    """
+    lines = ["### ❌ Project metadata", ""]
+    lines.extend(
+        f"- {_html_cell(line.strip().removeprefix('- '))}"
+        for line in message.split("\n")
+        if line.strip()
+    )
+    return "\n".join(lines) + "\n"
+
+
 def write_step_summary(summary_path: str, markdown: str) -> None:
     """Append ``markdown`` to the job summary file, followed by a blank line."""
     with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
@@ -1172,12 +1195,15 @@ def main(argv: list[str]) -> int:
     except SystemExit as exc:  # argparse exits on bad arguments and on --help
         return exc.code if isinstance(exc.code, int) else 2
 
+    summary_path: str | None = None
     try:
         summary_path = resolve_step_summary(args.step_summary, os.environ)
         report = build_report(args)
     except MetadataError as exc:
         annotate = args.github_output is not None
         print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)
+        if summary_path is not None:
+            write_step_summary(summary_path, format_error_summary(str(exc)))
         return 1
 
     if args.github_output is None:
