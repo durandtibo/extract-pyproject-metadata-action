@@ -118,6 +118,31 @@ Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
 used as given).
 
+## Environment markers
+
+The action never evaluates environment markers: the runner's Python and
+platform are not taken into account. When a package appears in several
+requirements, the **first** one wins, in this search order:
+`[project].dependencies`, then `[project.optional-dependencies]` (in file
+order), then `[dependency-groups]` (in file order, `include-group` expanded in
+place). The marker itself is not part of the output.
+
+```toml
+[project]
+dependencies = [
+  "numpy>=1.20; python_version < '3.12'",
+  "numpy>=1.26; python_version >= '3.12'",
+]
+```
+
+With `dependencies: '["numpy"]'`, `dependency-specifiers` is
+`{"numpy":">=1.20"}` on every runner, including a Python 3.12 one. Requirements
+with different markers are expected to differ, so they do not trigger a
+warning; two requirements with the same marker and different specifiers do. If
+a workflow needs the specifier that applies to a given Python version, read it
+from the file in a step of its own, or declare the package once without
+markers.
+
 ## Failure modes
 
 The action's step fails (non-zero exit) when:
