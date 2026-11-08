@@ -124,6 +124,9 @@ except ImportError:  # packaging before 24.2 cannot validate license expressions
     InvalidLicenseExpression = None  # type: ignore[assignment,misc]
     canonicalize_license_expression = None  # type: ignore[assignment]
 
+# The UTF-8 byte order mark that some editors write at the start of a file.
+UTF8_BOM = b"\xef\xbb\xbf"
+
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
 
@@ -203,7 +206,8 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         pyproject_path: Path to the pyproject.toml file.
 
     Returns:
-        The parsed TOML document.
+        The parsed TOML document. A UTF-8 byte order mark at the start of the
+        file is ignored.
 
     Raises:
         MetadataError: If the file is missing, cannot be read (for example for
@@ -215,7 +219,9 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         raise MetadataError(msg)
     try:
         with path.open("rb") as f:
-            return tomllib.load(f)
+            content = f.read()
+        # Some editors (on Windows) start a UTF-8 file with a byte order mark, which TOML rejects.
+        return tomllib.loads(content.removeprefix(UTF8_BOM).decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
         msg = f"{pyproject_path} is not valid TOML: {exc}"
         raise MetadataError(msg) from exc
