@@ -7,3 +7,7 @@ authors = [
   { name = "Ada Lovelace", email = "ada@example.com" },
   { name = "Bob" },
 ]
+
+[project.urls]
+Homepage = "https://example.com"
+"Source Code" = "https://example.com/src"

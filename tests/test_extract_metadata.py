@@ -130,6 +130,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -352,6 +353,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -460,6 +462,7 @@ def test_main_dynamic_version_warning_in_json(
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -581,6 +584,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -660,6 +664,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -811,6 +816,7 @@ METADATA = {
     "readme": "",
     "license": "",
     "authors": [],
+    "urls": {},
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -833,6 +839,7 @@ def test_format_outputs() -> None:
         "readme": "",
         "license": "",
         "authors": '[]',
+        "urls": '{}',
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -962,6 +969,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "readme": "",
         "license": "",
         "authors": '[]',
+        "urls": '{}',
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -1002,6 +1010,7 @@ def test_build_report(tmp_path: Path) -> None:
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -1141,6 +1150,7 @@ def test_format_step_summary_without_warnings() -> None:
         readme="",
         license="",
         authors=[],
+        urls={},
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -1165,6 +1175,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `readme` |  |\n"
         "| `license` |  |\n"
         "| `authors` | <code>&#91;&#93;</code> |\n"
+        "| `urls` | <code>&#123;&#125;</code> |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -1187,6 +1198,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         readme="",
         license="",
         authors=[],
+        urls={},
         requires_python="",
         extras=[],
         groups=[],
@@ -1563,6 +1575,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "readme": "",
         "license": "",
         "authors": '[]',
+        "urls": '{}',
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -1824,6 +1837,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "readme": "",
         "license": "",
         "authors": [],
+        "urls": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -2998,6 +3012,7 @@ def test_format_outputs_python_matrix() -> None:
         readme="",
         license="",
         authors=[],
+        urls={},
         requires_python="",
         extras=[],
         groups=[],
@@ -3022,6 +3037,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         readme="",
         license="",
         authors=[],
+        urls={},
         requires_python=">=4",
         extras=[],
         groups=[],
@@ -3098,6 +3114,7 @@ def test_format_outputs_normalized_version() -> None:
         readme="",
         license="",
         authors=[],
+        urls={},
         requires_python="",
         extras=[],
         groups=[],
@@ -3320,6 +3337,86 @@ def test_main_invalid_authors_returns_one(
     assert "[project].authors[0] must be a table" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("urls", "expected"),
+    [
+        ("", {}),
+        ("[project.urls]", {}),
+        ('[project.urls]\nHomepage = "https://a.org"', {"Homepage": "https://a.org"}),
+        (
+            '[project.urls]\nSource = "https://a.org/s"\n"Bug Tracker" = "https://a.org/b"\n'
+            'Homepage = "https://a.org"',
+            {"Source": "https://a.org/s", "Bug Tracker": "https://a.org/b", "Homepage": "https://a.org"},
+        ),
+        ('[project.urls]\nHomepage = ""', {"Homepage": ""}),
+    ],
+)
+def test_extract_metadata_urls(tmp_path: Path, urls: str, expected: dict[str, str]) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{urls}\n')
+
+    assert extract(path)["urls"] == expected
+
+
+def test_extract_metadata_urls_keep_the_order_of_the_file(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\n[project.urls]\nZ = "z"\nA = "a"\nM = "m"\n',
+    )
+
+    assert list(extract(path)["urls"]) == ["Z", "A", "M"]
+
+
+@pytest.mark.parametrize(
+    ("urls", "match"),
+    [
+        ("urls = 1", r"\[project\.urls\] must be a table, got: 1"),
+        ('urls = ["https://a.org"]', r"\[project\.urls\] must be a table"),
+        ("[project.urls]\nHomepage = 1", r"\[project\.urls\]\.Homepage must be a string, got: 1"),
+        (
+            '[project.urls]\nHomepage = ["https://a.org"]',
+            r"\[project\.urls\]\.Homepage must be a string",
+        ),
+    ],
+)
+def test_extract_metadata_urls_must_be_a_table_of_strings(
+    tmp_path: Path, urls: str, match: str
+) -> None:
+    # An inline "urls = ..." must come before any table header.
+    content = f'[project]\nname = "a"\nversion = "1"\n{urls}\n'
+    path = write_pyproject(tmp_path, content)
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_main_urls_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\n[project.urls]\nHomepage = "https://a.org"\nDocs = "https://a.org/d"\n',
+    )
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["urls"] == {
+        "Homepage": "https://a.org",
+        "Docs": "https://a.org/d",
+    }
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert (
+        parse_github_output(output.read_text(encoding="utf-8"))["urls"]
+        == '{"Homepage":"https://a.org","Docs":"https://a.org/d"}'
+    )
+
+
+def test_main_invalid_urls_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nurls = 1\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "[project.urls] must be a table" in capsys.readouterr().err
+
+
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "<3.13"\n'
@@ -3536,6 +3633,7 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "readme",
         "license",
         "authors",
+        "urls",
         "python-matrix",
     }
 
