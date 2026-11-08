@@ -307,7 +307,8 @@ def extract_dependency_specifiers(
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
         warnings: List to which warning messages are appended (for example
-            when a package has different specifiers in several places, a
+            when a package has different specifiers (with the same environment
+            marker) in several places, a
             requirement string cannot be parsed and is ignored,
             ``include-group`` entries form a cycle, or an ``include-group``
             names a group that does not exist). Invalid requirements and
@@ -325,10 +326,10 @@ def extract_dependency_specifiers(
             type.
     """
     deps = _parse_dependencies(dependencies_json)
-    found: dict[str, list[str]] = {}
     # Like invalid requirements below, structure warnings are only worth
     # reporting when the caller looks something up.
     candidates = _candidate_requirements(data, pyproject_path, warnings if deps else None)
+    found: dict[str, list[tuple[str, str | None]]] = {}
     for raw in candidates:
         try:
             req = Requirement(raw)
@@ -338,22 +339,53 @@ def extract_dependency_specifiers(
             if deps and warnings is not None:
                 warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
             continue
-        found.setdefault(canonicalize_name(req.name), []).append(str(req.specifier))
+        marker = None if req.marker is None else str(req.marker)
+        found.setdefault(canonicalize_name(req.name), []).append((str(req.specifier), marker))
 
     result: dict = {}
     for dep in deps:
-        specs = found.get(canonicalize_name(dep))
-        if not specs:
+        matches = found.get(canonicalize_name(dep))
+        if not matches:
             result[dep] = None
             continue
-        if len(set(specs)) > 1:
-            if warnings is not None:
-                warnings.append(
-                    f"{dep} has different specifiers in {pyproject_path}: "
-                    f"{sorted(set(specs))}; using {specs[0]!r}"
-                )
-        result[dep] = specs[0]
+        specifier = matches[0][0]
+        if warnings is not None:
+            warnings.extend(_conflict_warnings(dep, matches, specifier, pyproject_path))
+        result[dep] = specifier
     return result
+
+
+def _conflict_warnings(
+    dep: str, matches: list[tuple[str, str | None]], used: str, pyproject_path: str
+) -> list[str]:
+    """Describe the requirements of ``dep`` that disagree on the specifier.
+
+    Requirements with different environment markers (for example one per Python
+    version) are expected to have different specifiers, so only requirements
+    with the same marker are compared.
+
+    Args:
+        dep: The requested package name, as written by the caller.
+        matches: The ``(specifier, marker)`` of each requirement of the package,
+            in search order. ``marker`` is ``None`` when there is none.
+        used: The specifier the lookup returns.
+        pyproject_path: Path of the file, used in the messages.
+
+    Returns:
+        One message per marker (``None`` included) with more than one specifier.
+    """
+    by_marker: dict[str | None, set[str]] = {}
+    for specifier, marker in matches:
+        by_marker.setdefault(marker, set()).add(specifier)
+    messages = []
+    for marker, specs in by_marker.items():
+        if len(specs) > 1:
+            where = "" if marker is None else f" for marker {marker!r}"
+            messages.append(
+                f"{dep} has different specifiers{where} in {pyproject_path}: "
+                f"{sorted(specs)}; using {used!r}"
+            )
+    return messages
 
 
 def escape_annotation(message: str) -> str:
