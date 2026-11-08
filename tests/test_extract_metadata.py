@@ -20,7 +20,6 @@ from extract_metadata import (  # noqa: E402
     _conflict_warnings,
     _flatten_group,
     _get_table,
-    _parse_dependencies,
     escape_annotation,
     escape_annotation_property,
     extract_metadata,
@@ -28,6 +27,7 @@ from extract_metadata import (  # noqa: E402
     load_pyproject,
     main,
     parse_bool,
+    parse_string_array,
     write_github_output,
 )
 
@@ -42,12 +42,16 @@ def write_pyproject(tmp_path: Path, content: str) -> Path:
 
 def extract(path: Path, extra_values_json: str = "[]") -> dict:
     """Load ``path`` and extract its metadata."""
-    return extract_metadata(load_pyproject(str(path)), extra_values_json, str(path))
+    return extract_metadata(
+        load_pyproject(str(path)), parse_string_array(extra_values_json, "extra-values"), str(path)
+    )
 
 
 def specifiers(path: Path, dependencies_json: str) -> dict:
     """Load ``path`` and extract the specifiers of the requested dependencies."""
-    return extract_dependency_specifiers(load_pyproject(str(path)), dependencies_json, str(path))
+    return extract_dependency_specifiers(
+        load_pyproject(str(path)), parse_string_array(dependencies_json, "dependencies"), str(path)
+    )
 
 
 def test_load_pyproject(tmp_path: Path) -> None:
@@ -72,7 +76,7 @@ def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
 
 def test_extract_metadata_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
-        extract_metadata({"project": {"version": "1"}}, "[]", "custom/pyproject.toml")
+        extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
 
 
 def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
@@ -223,7 +227,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
     )
     warnings: list[str] = []
 
-    metadata = extract_metadata(load_pyproject(str(path)), "[]", str(path), warnings)
+    metadata = extract_metadata(load_pyproject(str(path)), [], str(path), warnings)
 
     assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
@@ -242,7 +246,7 @@ def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> No
     )
     warnings: list[str] = []
 
-    metadata = extract_metadata(load_pyproject(str(path)), "[]", str(path), warnings)
+    metadata = extract_metadata(load_pyproject(str(path)), [], str(path), warnings)
 
     assert metadata["version"] == "1.2.3"
     assert warnings == []
@@ -525,7 +529,7 @@ def test_dependency_duplicate_adds_a_warning(tmp_path: Path) -> None:
     warnings: list[str] = []
 
     result = extract_dependency_specifiers(
-        load_pyproject(str(path)), '["dup"]', str(path), warnings
+        load_pyproject(str(path)), ["dup"], str(path), warnings
     )
 
     assert result == {"dup": ">=1"}
@@ -536,7 +540,7 @@ def test_dependency_no_duplicate_adds_no_warning(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
     warnings: list[str] = []
 
-    extract_dependency_specifiers(load_pyproject(str(path)), '["nospec"]', str(path), warnings)
+    extract_dependency_specifiers(load_pyproject(str(path)), ["nospec"], str(path), warnings)
 
     assert warnings == []
 
@@ -581,7 +585,7 @@ def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
     warnings: list[str] = []
 
     result = extract_dependency_specifiers(
-        load_pyproject(str(path)), '["good", "dev-pkg", "missing"]', str(path), warnings
+        load_pyproject(str(path)), ["good", "dev-pkg", "missing"], str(path), warnings
     )
 
     assert result == {"good": ">=1", "dev-pkg": ">=2", "missing": None}
@@ -597,7 +601,7 @@ def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
     path = write_pyproject(tmp_path, INVALID_TOML)
     warnings: list[str] = []
 
-    result = extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
+    result = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path), warnings)
 
     assert result == {}
     assert warnings == []
@@ -938,25 +942,20 @@ def test_candidate_requirements_ignores_non_string_entries() -> None:
     ("value", "expected"),
     [("[]", []), ('["a"]', ["a"]), ('["a", "B_c"]', ["a", "B_c"]), ('["a", "a"]', ["a", "a"])],
 )
-def test_parse_dependencies(value: str, expected: list[str]) -> None:
-    assert _parse_dependencies(value) == expected
+def test_parse_string_array(value: str, expected: list[str]) -> None:
+    assert parse_string_array(value, "dependencies") == expected
 
 
-@pytest.mark.parametrize(
-    ("value", "match"),
-    [
-        ("not json", "dependencies is not valid JSON"),
-        ("", "dependencies is not valid JSON"),
-        ('{"a": 1}', "dependencies must be a JSON array of strings"),
-        ('"a"', "dependencies must be a JSON array of strings"),
-        ("[1]", "dependencies must be a JSON array of strings"),
-        ('["a", null]', "dependencies must be a JSON array of strings"),
-        ('[["a"]]', "dependencies must be a JSON array of strings"),
-    ],
-)
-def test_parse_dependencies_invalid(value: str, match: str) -> None:
-    with pytest.raises(MetadataError, match=match):
-        _parse_dependencies(value)
+@pytest.mark.parametrize("value", ["not json", ""])
+def test_parse_string_array_invalid_json(value: str) -> None:
+    with pytest.raises(MetadataError, match=r"^extra-values is not valid JSON: "):
+        parse_string_array(value, "extra-values")
+
+
+@pytest.mark.parametrize("value", ['{"a": 1}', '"a"', "1", "null", "[1]", '["a", null]', '[["a"]]'])
+def test_parse_string_array_not_an_array_of_strings(value: str) -> None:
+    with pytest.raises(MetadataError, match=r"^extra-values must be a JSON array of strings, got: "):
+        parse_string_array(value, "extra-values")
 
 
 def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
@@ -1096,7 +1095,7 @@ def test_dependency_malformed_tables_raise_even_when_nothing_is_requested(tmp_pa
 
 def test_dependency_malformed_table_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject\.toml: \[dependency-groups\] must"):
-        extract_dependency_specifiers({"dependency-groups": 1}, "[]", "custom/pyproject.toml")
+        extract_dependency_specifiers({"dependency-groups": 1}, [], "custom/pyproject.toml")
 
 
 def test_flatten_group_group_must_be_an_array() -> None:
@@ -1220,7 +1219,7 @@ def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
     warnings: list[str] = []
 
     result = extract_dependency_specifiers(
-        load_pyproject(str(path)), '["x", "y"]', str(path), warnings
+        load_pyproject(str(path)), ["x", "y"], str(path), warnings
     )
 
     assert result == {"x": ">=1", "y": ">=2"}
@@ -1233,7 +1232,7 @@ def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
     path = write_pyproject(tmp_path, '[dependency-groups]\na = [{include-group = "a"}]\n')
     warnings: list[str] = []
 
-    result = extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
+    result = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path), warnings)
 
     assert result == {}
     assert warnings == []
@@ -1300,7 +1299,7 @@ def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None
     )
     warnings: list[str] = []
 
-    result = extract_dependency_specifiers(load_pyproject(str(path)), '["x"]', str(path), warnings)
+    result = extract_dependency_specifiers(load_pyproject(str(path)), ["x"], str(path), warnings)
 
     assert result == {"x": ">=1"}
     assert warnings == [
@@ -1314,7 +1313,7 @@ def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requeste
     path = write_pyproject(tmp_path, '[dependency-groups]\ndev = [{include-group = "tset"}]\n')
     warnings: list[str] = []
 
-    extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
+    extract_dependency_specifiers(load_pyproject(str(path)), [], str(path), warnings)
 
     assert warnings == []
 
@@ -1339,7 +1338,7 @@ def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
     warnings: list[str] = []
 
     result = extract_dependency_specifiers(
-        load_pyproject(str(path)), '["numpy"]', str(path), warnings
+        load_pyproject(str(path)), ["numpy"], str(path), warnings
     )
 
     assert result == {"numpy": ">=1.20"}
@@ -1353,7 +1352,7 @@ def test_dependency_same_marker_different_specifiers_warns_with_the_marker(
     warnings: list[str] = []
 
     result = extract_dependency_specifiers(
-        load_pyproject(str(path)), '["same"]', str(path), warnings
+        load_pyproject(str(path)), ["same"], str(path), warnings
     )
 
     assert result == {"same": ">=1"}
@@ -1368,7 +1367,7 @@ def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
     warnings: list[str] = []
 
     result = extract_dependency_specifiers(
-        load_pyproject(str(path)), '["mixed"]', str(path), warnings
+        load_pyproject(str(path)), ["mixed"], str(path), warnings
     )
 
     assert result == {"mixed": ">=1"}
@@ -1382,7 +1381,7 @@ def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path
     )
     warnings: list[str] = []
 
-    extract_dependency_specifiers(load_pyproject(str(path)), '["a"]', str(path), warnings)
+    extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path), warnings)
 
     assert warnings == []
 
@@ -1400,7 +1399,7 @@ def test_dependency_one_warning_per_conflicting_marker(tmp_path: Path) -> None:
     )
     warnings: list[str] = []
 
-    extract_dependency_specifiers(load_pyproject(str(path)), '["a"]', str(path), warnings)
+    extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path), warnings)
 
     assert warnings == [
         f"a has different specifiers for marker 'os_name == \"nt\"' in {path}: "

@@ -83,7 +83,7 @@ def load_pyproject(pyproject_path: str) -> dict:
 
 def extract_metadata(
     data: dict,
-    extra_values_json: str,
+    extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
     warnings: list[str] | None = None,
 ) -> dict:
@@ -91,8 +91,9 @@ def extract_metadata(
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
-        extra_values_json: JSON array of extra values to prepend to the
-            extras read from ``[project.optional-dependencies]``.
+        extra_values: Extra values to prepend to the extras read from
+            ``[project.optional-dependencies]``, as returned by
+            ``parse_string_array``.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
         warnings: List to which warning messages are appended (for example
@@ -118,8 +119,7 @@ def extract_metadata(
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``requires-python`` that is not a string, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
-            table, or
-            ``extra_values_json`` is not a JSON array of strings.
+            table.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
     dynamic = _check_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
@@ -169,19 +169,6 @@ def extract_metadata(
     )
     extras = sorted(optional_dependencies, key=canonicalize_name)
 
-    try:
-        extra_values = json.loads(extra_values_json)
-    except json.JSONDecodeError as exc:
-        msg = f"extra-values is not valid JSON: {extra_values_json!r}"
-        raise MetadataError(msg) from exc
-
-    if not isinstance(extra_values, list):
-        msg = f"extra-values must be a JSON array, got: {extra_values_json!r}"
-        raise MetadataError(msg)
-    if not all(isinstance(value, str) for value in extra_values):
-        msg = f"extra-values must be a JSON array of strings, got: {extra_values_json!r}"
-        raise MetadataError(msg)
-
     # Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
     # "foo-bar" are one extra. The first spelling of each is kept, at the
     # position of its first occurrence.
@@ -205,17 +192,28 @@ def extract_metadata(
     }
 
 
-def _parse_dependencies(dependencies_json: str) -> list[str]:
-    """Parse the ``dependencies`` input into a list of package names."""
+def parse_string_array(raw: str, input_name: str) -> list[str]:
+    """Parse the JSON array of strings of an action input.
+
+    Args:
+        raw: The value of the input.
+        input_name: The name of the input, used in the error messages.
+
+    Returns:
+        The strings, in order, duplicates included.
+
+    Raises:
+        MetadataError: If ``raw`` is not valid JSON or not an array of strings.
+    """
     try:
-        deps = json.loads(dependencies_json)
+        values = json.loads(raw)
     except json.JSONDecodeError as exc:
-        msg = f"dependencies is not valid JSON: {dependencies_json!r}"
+        msg = f"{input_name} is not valid JSON: {raw!r}"
         raise MetadataError(msg) from exc
-    if not isinstance(deps, list) or not all(isinstance(d, str) for d in deps):
-        msg = f"dependencies must be a JSON array of strings, got: {dependencies_json!r}"
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+        msg = f"{input_name} must be a JSON array of strings, got: {raw!r}"
         raise MetadataError(msg)
-    return deps
+    return values
 
 
 def _check_array(value: object, label: str, pyproject_path: str) -> list:
@@ -348,7 +346,7 @@ def _candidate_requirements(
 
 def extract_dependency_specifiers(
     data: dict,
-    dependencies_json: str,
+    dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
     warnings: list[str] | None = None,
 ) -> dict:
@@ -356,7 +354,8 @@ def extract_dependency_specifiers(
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
-        dependencies_json: JSON array of package names to look up.
+        dependencies: Package names to look up, as returned by
+            ``parse_string_array``.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
         warnings: List to which warning messages are appended (for example
@@ -365,7 +364,7 @@ def extract_dependency_specifiers(
             requirement string cannot be parsed and is ignored,
             ``include-group`` entries form a cycle, or an ``include-group``
             names a group that does not exist). Invalid requirements and
-            include-group problems are only reported when ``dependencies_json``
+            include-group problems are only reported when ``dependencies``
             is not empty.
 
     Returns:
@@ -373,12 +372,11 @@ def extract_dependency_specifiers(
         the requirement has no specifier, or ``None`` if it was not found.
 
     Raises:
-        MetadataError: If ``dependencies_json`` is not a JSON array of strings,
-            or if ``[project].dependencies``, ``[project.optional-dependencies]``
+        MetadataError: If ``[project].dependencies``, ``[project.optional-dependencies]``
             or ``[dependency-groups]`` (or one of their values) has the wrong
             type.
     """
-    deps = _parse_dependencies(dependencies_json)
+    deps = dependencies
     # Like invalid requirements below, structure warnings are only worth
     # reporting when the caller looks something up.
     candidates = _candidate_requirements(data, pyproject_path, warnings if deps else None)
@@ -585,10 +583,12 @@ def main(argv: list[str]) -> int:
     try:
         fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
         data = load_pyproject(args.pyproject_path)
+        extra_values = parse_string_array(args.extra_values, "extra-values")
+        dependencies = parse_string_array(args.dependencies, "dependencies")
         warnings: list[str] = []
-        metadata = extract_metadata(data, args.extra_values, args.pyproject_path, warnings)
+        metadata = extract_metadata(data, extra_values, args.pyproject_path, warnings)
         metadata["dependency_specifiers"] = extract_dependency_specifiers(
-            data, args.dependencies, args.pyproject_path, warnings
+            data, dependencies, args.pyproject_path, warnings
         )
         if fail_on_missing:
             check_no_missing_dependency(metadata["dependency_specifiers"], args.pyproject_path)
