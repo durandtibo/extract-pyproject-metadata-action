@@ -5,7 +5,7 @@ extras and dependency groups.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--fail-on-dynamic-version true|false]
+        [--fail-on-dynamic-version true|false] [--step-summary true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
@@ -27,6 +27,10 @@ delimiter so that values may contain line breaks) and prints to stdout one
 the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout
 because GitHub only parses workflow commands there.
+
+With ``--step-summary true``, also appends a Markdown table of the outputs
+and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
+environment variable (the job summary of GitHub), whichever the other options.
 
 With ``--fail-on-missing true``, a requested dependency that is not found
 is an error instead of a ``null`` specifier.
@@ -54,11 +58,13 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import os
 import re
 import sys
+import string
 import tomllib
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -832,6 +838,75 @@ def format_summary(outputs: dict[str, str]) -> str:
     return f"📦 {fields}"
 
 
+def _html_cell(value: str) -> str:
+    """Escape ``value`` for a cell of a Markdown table, shown as code.
+
+    Every ASCII punctuation character is replaced by its numeric character
+    reference, so that nothing in a value from the file can be interpreted as
+    Markdown or HTML (a ``|`` ends the cell, ``<`` starts a tag, ``_`` is
+    emphasis...). Line breaks are escaped as in the summary line of the log.
+    """
+    escaped = "".join(
+        f"&#{ord(char)};" if char in string.punctuation else char for char in _single_line(value)
+    )
+    return f"<code>{escaped}</code>" if escaped else ""
+
+
+def format_step_summary(report: Report, outputs: dict[str, str]) -> str:
+    """Build the Markdown of the job summary.
+
+    Args:
+        report: The report built by ``build_report``.
+        outputs: The action outputs, as returned by ``format_outputs``.
+
+    Returns:
+        A heading, a table with one row per output and, if there are warnings,
+        a list of them. Values are escaped by ``_html_cell``.
+    """
+    lines = [
+        "### 📦 Project metadata",
+        "",
+        "| Output | Value |",
+        "| --- | --- |",
+    ]
+    lines.extend(f"| `{key}` | {_html_cell(value)} |" for key, value in outputs.items())
+    if report["warnings"]:
+        lines.extend(["", "#### ⚠️ Warnings", ""])
+        lines.extend(f"- {_html_cell(warning)}" for warning in report["warnings"])
+    return "\n".join(lines) + "\n"
+
+
+def write_step_summary(summary_path: str, markdown: str) -> None:
+    """Append ``markdown`` to the job summary file, followed by a blank line."""
+    with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
+        f.write(f"{markdown}\n")
+
+
+def resolve_step_summary(value: str, environ: Mapping[str, str]) -> str | None:
+    """Return the path of the job summary file, or None if it is not requested.
+
+    Args:
+        value: The ``--step-summary`` option, ``"true"`` or ``"false"``.
+        environ: The environment variables.
+
+    Returns:
+        The value of ``GITHUB_STEP_SUMMARY`` when ``value`` is ``"true"``,
+        None when it is ``"false"``.
+
+    Raises:
+        MetadataError: If ``value`` is neither ``"true"`` nor ``"false"``, or
+            is ``"true"`` and ``GITHUB_STEP_SUMMARY`` is not set (the action
+            is not running in a GitHub workflow).
+    """
+    if not parse_bool(value, "step-summary"):
+        return None
+    summary_path = environ.get("GITHUB_STEP_SUMMARY", "")
+    if not summary_path:
+        msg = "step-summary is 'true' but the environment variable GITHUB_STEP_SUMMARY is not set"
+        raise MetadataError(msg)
+    return summary_path
+
+
 def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
     """Append outputs to a ``$GITHUB_OUTPUT`` file.
 
@@ -873,6 +948,12 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
         metavar="BOOL",
         default="false",
         help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
+    )
+    parser.add_argument(
+        "--step-summary",
+        metavar="BOOL",
+        default="false",
+        help="'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY (default: false)",
     )
     parser.add_argument(
         "--python-candidates",
@@ -985,6 +1066,7 @@ def main(argv: list[str]) -> int:
         return exc.code if isinstance(exc.code, int) else 2
 
     try:
+        summary_path = resolve_step_summary(args.step_summary, os.environ)
         report = build_report(args)
     except MetadataError as exc:
         annotate = args.github_output is not None
@@ -995,6 +1077,8 @@ def main(argv: list[str]) -> int:
         print(json.dumps(report))
     else:
         emit_github_output(report, args.pyproject_path, args.github_output)
+    if summary_path is not None:
+        write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     return 0
 
 
