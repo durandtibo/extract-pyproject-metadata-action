@@ -855,6 +855,72 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
     return parser
 
 
+def build_report(args: argparse.Namespace) -> Report:
+    """Read the pyproject.toml and the inputs of the command line, and build the report.
+
+    Args:
+        args: The parsed command line, as returned by ``_build_parser``.
+
+    Returns:
+        The report: the metadata, the Python versions, the dependency
+        specifiers and the warnings (without duplicates).
+
+    Raises:
+        MetadataError: If an input or the pyproject.toml is invalid, the version
+            is dynamic with ``--fail-on-dynamic-version true``, or a dependency
+            is not found with ``--fail-on-missing true``.
+    """
+    fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
+    fail_on_dynamic_version = parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version")
+    data = load_pyproject(args.pyproject_path)
+    extra_values = parse_string_array(args.extra_values, "extra-values")
+    dependencies = parse_string_array(args.dependencies, "dependencies")
+    python_candidates = parse_python_candidates(args.python_candidates)
+    metadata, warnings = extract_metadata(
+        data, extra_values, args.pyproject_path, fail_on_dynamic_version
+    )
+    specifiers, specifier_warnings = extract_dependency_specifiers(
+        data, dependencies, args.pyproject_path
+    )
+    python_versions, python_warnings = compatible_python_versions(
+        metadata["requires_python"], python_candidates, args.pyproject_path
+    )
+    project_dependencies, project_warnings = extract_project_dependencies(
+        data, args.pyproject_path
+    )
+    warnings.extend(python_warnings)
+    warnings.extend(project_warnings)
+    warnings.extend(specifier_warnings)
+    if fail_on_missing:
+        check_no_missing_dependency(
+            specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
+        )
+    return Report(
+        **metadata,
+        python_versions=python_versions,
+        project_dependencies=project_dependencies,
+        dependency_specifiers=specifiers,
+        warnings=list(dict.fromkeys(warnings)),
+    )
+
+
+def emit_github_output(report: Report, pyproject_path: str, output_path: str) -> None:
+    """Write the outputs of the action and print the workflow commands and the summary.
+
+    Args:
+        report: The report built by ``build_report``.
+        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
+            warning annotations.
+        output_path: Path of the ``$GITHUB_OUTPUT`` file.
+    """
+    outputs = format_outputs(report)
+    file = escape_annotation_property(pyproject_path)
+    for warning in report["warnings"]:
+        print(f"::warning file={file}::{escape_annotation(warning)}")
+    print(format_summary(outputs))
+    write_github_output(output_path, outputs)
+
+
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit code."""
     try:
@@ -863,55 +929,15 @@ def main(argv: list[str]) -> int:
         return exc.code if isinstance(exc.code, int) else 2
 
     try:
-        fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
-        fail_on_dynamic_version = parse_bool(
-            args.fail_on_dynamic_version, "fail-on-dynamic-version"
-        )
-        data = load_pyproject(args.pyproject_path)
-        extra_values = parse_string_array(args.extra_values, "extra-values")
-        dependencies = parse_string_array(args.dependencies, "dependencies")
-        python_candidates = parse_python_candidates(args.python_candidates)
-        metadata, warnings = extract_metadata(
-            data, extra_values, args.pyproject_path, fail_on_dynamic_version
-        )
-        specifiers, specifier_warnings = extract_dependency_specifiers(
-            data, dependencies, args.pyproject_path
-        )
-        python_versions, python_warnings = compatible_python_versions(
-            metadata["requires_python"], python_candidates, args.pyproject_path
-        )
-        project_dependencies, project_warnings = extract_project_dependencies(
-            data, args.pyproject_path
-        )
-        warnings.extend(python_warnings)
-        warnings.extend(project_warnings)
-        warnings.extend(specifier_warnings)
-        warnings = list(dict.fromkeys(warnings))
-        if fail_on_missing:
-            check_no_missing_dependency(
-                specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
-            )
-        report = Report(
-            **metadata,
-            python_versions=python_versions,
-            project_dependencies=project_dependencies,
-            dependency_specifiers=specifiers,
-            warnings=warnings,
-        )
+        report = build_report(args)
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     if args.github_output is None:
         print(json.dumps(report))
-        return 0
-
-    outputs = format_outputs(report)
-    for warning in warnings:
-        file = escape_annotation_property(args.pyproject_path)
-        print(f"::warning file={file}::{escape_annotation(warning)}")
-    print(format_summary(outputs))
-    write_github_output(args.github_output, outputs)
+    else:
+        emit_github_output(report, args.pyproject_path, args.github_output)
     return 0
 
 
