@@ -3754,6 +3754,21 @@ def test_action_yaml_every_input_has_a_default() -> None:
     assert inputs.count("    default:") == len(_action_section_keys("inputs"))
 
 
+def test_the_format_of_the_boolean_inputs_is_stated_once_in_the_readme() -> None:
+    readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
+
+    assert readme.count("the case and the surrounding spaces are ignored") == 1
+    assert "case and surrounding spaces are ignored" not in readme
+    assert "surrounding" not in ACTION_PATH.read_text(encoding="utf-8")
+
+
+def test_the_readme_lists_the_boolean_inputs_of_parse_options() -> None:
+    readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
+    names = ", ".join(f"`{name}`" for name in ("fail-on-dynamic-version", "fail-on-missing", "strict"))
+
+    assert f"{names} and `step-summary` are boolean inputs" in readme
+
+
 def test_action_section_keys_finds_the_inputs_and_outputs() -> None:
     assert "pyproject-path" in _action_section_keys("inputs")
     assert "normalized-name" in _action_section_keys("outputs")
