@@ -38,6 +38,7 @@ from extract_metadata import (  # noqa: E402
     _extra_names,
     _flatten_group,
     _group_names,
+    _license_warnings,
     _required_name,
     _required_version,
     _static_and_dynamic_warnings,
@@ -556,6 +557,65 @@ def test_main_returns_one_for_an_invalid_build_system(
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     assert f"{path}: [build-system].requires must be an array, got: 'x'" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "license_",
+    ["MIT", "Apache-2.0 OR MIT", "apache-2.0 or mit", "GPL-3.0-or-later WITH Classpath-exception-2.0", "LicenseRef-Foo", ""],
+)
+def test_license_warnings_valid_expression(license_: str) -> None:
+    assert _license_warnings(license_, "p.toml") == []
+
+
+@pytest.mark.parametrize("license_", ["MIT License", "MIT AND", "GPL v3", "(MIT"])
+def test_license_warnings_invalid_expression(license_: str) -> None:
+    warnings = _license_warnings(license_, "p.toml")
+
+    assert len(warnings) == 1
+    assert warnings[0].startswith(
+        "p.toml: [project].license is not a valid SPDX license expression (PEP 639): "
+    )
+    assert repr(license_) in warnings[0]
+
+
+@pytest.mark.parametrize("license_", [{"text": "MIT License"}, {"file": "LICENSE"}, 1, None, ["MIT"]])
+def test_license_warnings_ignores_what_is_not_an_expression(license_: object) -> None:
+    assert _license_warnings(license_, "p.toml") == []
+
+
+def test_license_warnings_cannot_check_with_an_old_packaging(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(extract_metadata_module, "canonicalize_license_expression", None)
+
+    assert _license_warnings("MIT License", "p.toml") == []
+
+
+def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPatch) -> None:
+    # packaging before 24.2 has no ``packaging.licenses``: importing it raises ImportError.
+    monkeypatch.setitem(sys.modules, "packaging.licenses", None)
+
+    namespace = runpy.run_path(str(SCRIPT_PATH), run_name="extract_metadata_without_licenses")
+
+    assert namespace["canonicalize_license_expression"] is None
+    assert namespace["_license_warnings"]("MIT License", "p.toml") == []
+
+
+def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n')
+
+    metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
+
+    assert metadata["license"] == "MIT License"
+    assert len(warnings) == 1
+    assert warnings[0].startswith(f"{path}: [project].license is not a valid SPDX license expression")
+
+
+def test_main_strict_fails_on_an_invalid_license_expression(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n')
+
+    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert "not a valid SPDX license expression" in capsys.readouterr().err
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:

@@ -117,6 +117,12 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+try:
+    from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
+except ImportError:  # packaging before 24.2 cannot validate license expressions
+    InvalidLicenseExpression = None
+    canonicalize_license_expression = None
+
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
 
@@ -252,7 +258,8 @@ def extract_metadata(
         or an empty string if it is not declared. ``readme`` is the path of the readme
         file (a string ``[project].readme``, or the ``file`` of a table), or an empty
         string if there is none or the readme is inline (``text``). ``license`` is the
-        SPDX expression of ``[project].license`` or the ``text`` of its table, or an empty
+        SPDX expression of ``[project].license`` (a warning if it is not a valid one, when
+        ``packaging`` can check it) or the ``text`` of its table, or an empty
         string if there is none or the license is a ``file``. ``license_files`` is the array of
         ``[project].license-files`` (the patterns as written), empty if there is none. ``authors`` is the list of
         the authors of ``[project].authors`` (``name`` and ``email`` only), empty if
@@ -301,6 +308,7 @@ def extract_metadata(
 
     readme = _readme_path(project.get("readme", ""), pyproject_path)
     license_ = _license_text(project.get("license", ""), pyproject_path)
+    warnings.extend(_license_warnings(project.get("license", ""), pyproject_path))
     authors = _authors(project.get("authors", []), pyproject_path)
     urls = _urls(project, pyproject_path)
     scripts = _string_table(project, "scripts", pyproject_path)
@@ -610,6 +618,32 @@ def _license_text(license_: object, pyproject_path: str) -> str:
     file = _check_str(license_.get("text", ""), "[project].license.text", pyproject_path)
     _check_str(license_.get("file", ""), "[project].license.file", pyproject_path)
     return file
+
+
+def _license_warnings(license_: object, pyproject_path: str) -> list[str]:
+    """Describe a ``[project].license`` that is not a valid SPDX license expression.
+
+    Only an expression (a string, PEP 639) is checked: not the table of PEP 621, and not an
+    empty string. The check needs ``packaging`` 24.2 or later; with an older one, nothing is
+    checked.
+
+    Args:
+        license_: The value of ``[project].license``.
+        pyproject_path: Path of the file, used in the message.
+
+    Returns:
+        One warning if ``license_`` is a string that is not a valid expression, none otherwise.
+    """
+    if canonicalize_license_expression is None or not isinstance(license_, str) or not license_:
+        return []
+    try:
+        canonicalize_license_expression(license_)
+    except InvalidLicenseExpression as exc:
+        return [
+            f"{pyproject_path}: [project].license is not a valid SPDX license expression "
+            f"(PEP 639): {exc}"
+        ]
+    return []
 
 
 def _authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
