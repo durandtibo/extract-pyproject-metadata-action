@@ -212,6 +212,9 @@ The action's step fails (non-zero exit) when:
 - `[project].dependencies` or a value of `[project.optional-dependencies]` or
   `[dependency-groups]` is not an array, `[dependency-groups]` is not a table,
   or an `include-group` value is not a string.
+- An entry of a `[dependency-groups]` group is neither a string nor a table whose
+  only key is `include-group` (for example a typo such as
+  `{include_group = "lint"}`). It used to be ignored silently.
 - `extra-values` is not valid JSON, or is not a JSON array of strings.
 - `dependencies` is not a JSON array of strings.
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and

@@ -882,7 +882,6 @@ def test_single_line(value: str, expected: str) -> None:
         ({"a": [{"include-group": "B-C"}], "b_c": ["y"]}, "a", ["y"]),
         ({"a": [{"include-group": "missing"}, "x"]}, "a", ["x"]),
         ({"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": ["z"]}, "a", ["z"]),
-        ({"a": [1, None, {"other": "b"}, "x"]}, "a", ["x"]),
     ],
 )
 def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
@@ -1107,6 +1106,36 @@ def test_dependency_malformed_table_error_names_the_file() -> None:
 def test_flatten_group_group_must_be_an_array() -> None:
     with pytest.raises(MetadataError, match=r"custom\.toml: \[dependency-groups\]\.a must be an array"):
         _flatten_group({"a": "x"}, "a", pyproject_path="custom.toml")
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [{"include_group": "b"}, {}, {"include-group": "b", "extra": 1}, 1, None, ["x"], 1.5],
+)
+def test_flatten_group_unknown_entry(entry: object) -> None:
+    with pytest.raises(
+        MetadataError,
+        match=r"p\.toml: \[dependency-groups\]\.a entries must be strings or "
+        r"\{'include-group': <name>\} tables, got: ",
+    ):
+        _flatten_group({"a": ["x", entry], "b": ["y"]}, "a", pyproject_path="p.toml")
+
+
+def test_flatten_group_unknown_entry_in_an_included_group() -> None:
+    with pytest.raises(MetadataError, match=r"\[dependency-groups\]\.b entries must be"):
+        _flatten_group({"a": [{"include-group": "b"}], "b": [{"typo": 1}]}, "a")
+
+
+def test_main_unknown_group_entry_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "coola"\nversion = "1"\n\n[dependency-groups]\ndev = [{include_group = "a"}]\n',
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 1
+    assert "[dependency-groups].dev entries must be strings or" in capsys.readouterr().err
 
 
 def test_flatten_group_include_group_must_be_a_string() -> None:

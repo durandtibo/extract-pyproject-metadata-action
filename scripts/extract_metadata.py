@@ -335,8 +335,10 @@ def _flatten_group(
         A tuple ``(requirements, warnings)``, without duplicate warnings.
 
     Raises:
-        MetadataError: If a group is not an array or an ``include-group`` value
-            is not a string.
+        MetadataError: If a group is not an array, an ``include-group`` value
+            is not a string, or an entry is neither a string nor a table whose
+            only key is ``include-group`` (for example a typo such as
+            ``include_group``).
     """
     key = canonicalize_name(name)
     if key in seen:
@@ -350,7 +352,7 @@ def _flatten_group(
         for entry in _check_array(entries, label, pyproject_path):
             if isinstance(entry, str):
                 out.append(entry)
-            elif isinstance(entry, dict) and "include-group" in entry:
+            elif isinstance(entry, dict) and set(entry) == {"include-group"}:
                 included = entry["include-group"]
                 if not isinstance(included, str):
                     msg = (
@@ -370,6 +372,12 @@ def _flatten_group(
                 )
                 out.extend(included_reqs)
                 warnings.extend(included_warnings)
+            else:
+                msg = (
+                    f"{pyproject_path}: {label} entries must be strings or "
+                    f"{{'include-group': <name>}} tables, got: {entry!r}"
+                )
+                raise MetadataError(msg)
     return out, list(dict.fromkeys(warnings))
 
 
