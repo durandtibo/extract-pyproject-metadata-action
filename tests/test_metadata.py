@@ -8,24 +8,22 @@ from pathlib import Path
 import pytest
 from helpers import extract, requires_licenses, write_pyproject
 
-import extract_pyproject_metadata.cli as extract_metadata_module
+import extract_pyproject_metadata.license as license_module
 import extract_pyproject_metadata.output.github as output_github_module
 from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
-from extract_pyproject_metadata.cli import (
-    _build_system,
-    _extra_names,
-    _license_warnings,
+from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.fields import read_build_system, read_extra_names, read_string_table
+from extract_pyproject_metadata.inputs import parse_string_array
+from extract_pyproject_metadata.license import license_warnings
+from extract_pyproject_metadata.metadata import (
     _required_name,
     _required_version,
     _static_and_dynamic_warnings,
-    _string_table,
     _valid_name,
     _valid_version,
     extract_metadata,
-    load_pyproject,
 )
-from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import parse_string_array
+from extract_pyproject_metadata.pyproject import load_pyproject
 
 
 def test_load_pyproject(tmp_path: Path) -> None:
@@ -280,19 +278,19 @@ def test_extract_metadata_scripts_must_be_a_table_of_strings(
 
 
 def test_string_table() -> None:
-    assert _string_table({"x": {"b": "1", "a": "2"}}, "x", "p.toml") == {"b": "1", "a": "2"}
+    assert read_string_table({"x": {"b": "1", "a": "2"}}, "x", "p.toml") == {"b": "1", "a": "2"}
 
 
 
 def test_string_table_absent() -> None:
-    assert _string_table({}, "x", "p.toml") == {}
+    assert read_string_table({}, "x", "p.toml") == {}
 
 
 
 def test_string_table_returns_a_copy() -> None:
     project = {"x": {"a": "1"}}
 
-    _string_table(project, "x", "p.toml")["b"] = "2"
+    read_string_table(project, "x", "p.toml")["b"] = "2"
 
     assert project == {"x": {"a": "1"}}
 
@@ -300,13 +298,13 @@ def test_string_table_returns_a_copy() -> None:
 
 def test_string_table_not_a_table() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\] must be a table, got: 1$"):
-        _string_table({"x": 1}, "x", "p.toml")
+        read_string_table({"x": 1}, "x", "p.toml")
 
 
 
 def test_string_table_not_a_string() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\]\.a must be a string, got: 1$"):
-        _string_table({"x": {"a": 1}}, "x", "p.toml")
+        read_string_table({"x": {"a": 1}}, "x", "p.toml")
 
 
 
@@ -324,14 +322,14 @@ def test_string_table_not_a_string() -> None:
     ],
 )
 def test_build_system(data: dict, expected: tuple[str, list[str]]) -> None:
-    assert _build_system(data, "p.toml") == expected
+    assert read_build_system(data, "p.toml") == expected
 
 
 
 def test_build_system_returns_a_copy_of_requires() -> None:
     data = {"build-system": {"requires": ["a"]}}
 
-    _build_system(data, "p.toml")[1].append("b")
+    read_build_system(data, "p.toml")[1].append("b")
 
     assert data == {"build-system": {"requires": ["a"]}}
 
@@ -348,7 +346,7 @@ def test_build_system_returns_a_copy_of_requires() -> None:
 )
 def test_build_system_wrong_type(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        _build_system(data, "p.toml")
+        read_build_system(data, "p.toml")
 
 
 
@@ -379,14 +377,14 @@ def test_extract_metadata_without_build_system(tmp_path: Path) -> None:
     ["MIT", "Apache-2.0 OR MIT", "apache-2.0 or mit", "GPL-3.0-or-later WITH Classpath-exception-2.0", "LicenseRef-Foo", ""],
 )
 def test_license_warnings_valid_expression(license_: str) -> None:
-    assert _license_warnings(license_, "p.toml") == []
+    assert license_warnings(license_, "p.toml") == []
 
 
 
 @requires_licenses
 @pytest.mark.parametrize("license_", ["MIT License", "MIT AND", "GPL v3", "(MIT"])
 def test_license_warnings_invalid_expression(license_: str) -> None:
-    warnings = _license_warnings(license_, "p.toml")
+    warnings = license_warnings(license_, "p.toml")
 
     assert len(warnings) == 1
     assert warnings[0].startswith(
@@ -398,14 +396,14 @@ def test_license_warnings_invalid_expression(license_: str) -> None:
 
 @pytest.mark.parametrize("license_", [{"text": "MIT License"}, {"file": "LICENSE"}, 1, None, ["MIT"]])
 def test_license_warnings_ignores_what_is_not_an_expression(license_: object) -> None:
-    assert _license_warnings(license_, "p.toml") == []
+    assert license_warnings(license_, "p.toml") == []
 
 
 
 def test_license_warnings_cannot_check_with_an_old_packaging(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(extract_metadata_module, "canonicalize_license_expression", None)
+    monkeypatch.setattr(license_module, "canonicalize_license_expression", None)
 
-    assert _license_warnings("MIT License", "p.toml") == []
+    assert license_warnings("MIT License", "p.toml") == []
 
 
 
@@ -1066,7 +1064,7 @@ def test_valid_version_invalid() -> None:
 def test_extra_names() -> None:
     project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
 
-    assert _extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
+    assert read_extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
 
 
 
