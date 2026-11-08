@@ -45,6 +45,7 @@ from extract_metadata import (  # noqa: E402
     format_step_summary,
     format_summary,
     load_pyproject,
+    highest_python_version,
     lowest_python_version,
     main,
     parse_bool,
@@ -452,6 +453,8 @@ def test_main_dynamic_version_warning_in_json(
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
+    "python_max": "3.14",
+        "python_max": "3.14",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
@@ -567,6 +570,8 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
+    "python_max": "3.14",
+        "python_max": "3.14",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
@@ -640,6 +645,8 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
+    "python_max": "3.14",
+        "python_max": "3.14",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
@@ -785,6 +792,7 @@ METADATA = {
     "groups": ["dev", "test"],
     "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "python_min": "3.10",
+    "python_max": "3.14",
     "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "warnings": [],
@@ -802,6 +810,7 @@ def test_format_outputs() -> None:
         "groups": '["dev","test"]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
+        "python-max": "3.14",
         "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
     }
@@ -925,13 +934,14 @@ def test_main_github_output_writes_outputs_and_annotations(
         "groups": '["base","dev","other"]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
+        "python-max": "3.14",
         "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         "📦 name=p version=1 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 extras=["","a"] '
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 python-max=3.14 extras=["","a"] '
         'groups=["base","dev","other"] '
         'project-dependencies={"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"} '
         'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
@@ -959,6 +969,8 @@ def test_build_report(tmp_path: Path) -> None:
         "groups": ["base", "dev", "other"],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
+    "python_max": "3.14",
+        "python_max": "3.14",
         "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
         "dependency_specifiers": {"dup": ">=1", "missing": None},
         "warnings": [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"],
@@ -1092,6 +1104,7 @@ def test_format_step_summary_without_warnings() -> None:
         groups=[],
         python_versions=["3.12"],
         python_min="3.12",
+        python_max="3.12",
         project_dependencies={},
         dependency_specifiers={},
         warnings=[],
@@ -1111,6 +1124,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `groups` | <code>&#91;&#93;</code> |\n"
         "| `python-versions` | <code>&#91;&#34;3&#46;12&#34;&#93;</code> |\n"
         "| `python-min` | <code>3&#46;12</code> |\n"
+        "| `python-max` | <code>3&#46;12</code> |\n"
         "| `project-dependencies` | <code>&#123;&#125;</code> |\n"
         "| `dependency-specifiers` | <code>&#123;&#125;</code> |\n"
     )
@@ -1127,6 +1141,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         groups=[],
         python_versions=[],
         python_min="",
+        python_max="",
         project_dependencies={},
         dependency_specifiers={},
         warnings=["first | one", "second"],
@@ -1498,12 +1513,13 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "groups": "[]",
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "python-min": "3.10",
+        "python-max": "3.14",
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
     }
     assert result.stdout == (
         "📦 name=coola version=1.2.3 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 extras=["","numpy"] groups=[] '
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 python-max=3.14 extras=["","numpy"] groups=[] '
         "project-dependencies={} dependency-specifiers={}\n"
     )
 
@@ -1753,6 +1769,8 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "python_min": "3.10",
+    "python_max": "3.14",
+        "python_max": "3.14",
         "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
@@ -2894,6 +2912,64 @@ def test_lowest_python_version(versions: list[str], expected: str) -> None:
     assert lowest_python_version(versions) == expected
 
 
+@pytest.mark.parametrize(
+    ("versions", "expected"),
+    [
+        ([], ""),
+        (["3.12"], "3.12"),
+        (["3.11", "3.12", "3.13"], "3.13"),
+        (["3.13", "3.11", "3.12"], "3.13"),
+        (["3.10", "3.9"], "3.10"),
+        (["3.10", "3.2", "2.7"], "3.10"),
+        (("3.9", "3.10"), "3.10"),
+    ],
+)
+def test_highest_python_version(versions: list[str], expected: str) -> None:
+    assert highest_python_version(versions) == expected
+
+
+def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "<3.13"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["python_max"] == "3.12"
+
+
+def test_main_python_max_is_empty_without_allowed_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (report["python_versions"], report["python_max"]) == ([], "")
+
+
+def test_main_python_max_compares_versions_as_numbers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert (
+        main(["extract_metadata.py", "--python-candidates", '["3.9","3.10"]', str(path), "[]"]) == 0
+    )
+    assert json.loads(capsys.readouterr().out)["python_max"] == "3.10"
+
+
+def test_main_github_output_python_max(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.14"\n'
+    )
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["python-max"] == "3.13"
+
+
 def test_main_python_min_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
@@ -3359,7 +3435,7 @@ def test_test_requirements_include_the_script_requirements() -> None:
 def test_format_summary() -> None:
     assert format_summary(format_outputs(METADATA)) == (
         "📦 name=coola version=1.2.3 requires-python=>=3.10 "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 extras=["","numpy"] '
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 python-max=3.14 extras=["","numpy"] '
         'groups=["dev","test"] '
         'project-dependencies={"numpy":">=1","Foo_Bar":""} '
         'dependency-specifiers={"numpy":">=1","missing":null}'
