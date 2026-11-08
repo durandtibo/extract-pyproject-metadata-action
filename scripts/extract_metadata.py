@@ -708,8 +708,8 @@ def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
     """Parse a requirement string, once per distinct string.
 
     ``build_report`` reads the requirements of ``[project].dependencies`` twice (for
-    ``project-dependencies`` and for the lookup of ``dependencies``): the cache
-    makes each string parsed only once.
+    ``project-dependencies`` and in the index of all the requirements that the
+    lookups of ``dependencies`` share): the cache makes each string parsed only once.
 
     Args:
         raw: The requirement string.
@@ -829,13 +829,55 @@ def extract_dependency_specifiers(
             type, or a requirement of ``[project].dependencies`` or of an extra
             is not a string.
     """
-    # Like invalid requirements below, structure warnings are only worth
-    # reporting when the caller looks something up.
+    found, index_warnings = _index_dependencies(data, pyproject_path)
+    return _specifiers_from_index(found, index_warnings, dependencies, pyproject_path)
+
+
+def _index_dependencies(
+    data: dict[str, Any], pyproject_path: str
+) -> tuple[dict[str, list[tuple[str, str | None]]], list[str]]:
+    """Index every requirement of the file by package, once for all the lookups.
+
+    Args:
+        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
+        pyproject_path: Path of the file ``data`` was read from, used only in
+            error and warning messages.
+
+    Returns:
+        A tuple ``(found, warnings)``. ``found`` is the first result of
+        ``_index_requirements`` on the requirements of ``_candidate_requirements``
+        (in search order). ``warnings`` lists the warnings of both: dynamic
+        dependency fields, include-group problems and invalid requirements.
+
+    Raises:
+        MetadataError: Under the same conditions as ``_candidate_requirements``.
+    """
     candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
     found, _, invalid_warnings = _index_requirements(candidates, pyproject_path)
-    # An invalid requirement is only worth a warning when the caller looks
-    # something up: it may be the very entry that was meant to be found.
-    warnings = [*structure_warnings, *invalid_warnings] if dependencies else []
+    return found, [*structure_warnings, *invalid_warnings]
+
+
+def _specifiers_from_index(
+    found: dict[str, list[tuple[str, str | None]]],
+    index_warnings: list[str],
+    dependencies: list[str],
+    pyproject_path: str,
+) -> tuple[dict[str, str | None], list[str]]:
+    """Look up the specifier of each requested package in an index of the requirements.
+
+    Args:
+        found: The index, as returned by ``_index_dependencies``.
+        index_warnings: The warnings returned with the index. They are only
+            worth reporting when ``dependencies`` is not empty: an invalid
+            requirement may be the very entry that was meant to be found.
+        dependencies: Package names to look up.
+        pyproject_path: Path of the file, used in the warning messages.
+
+    Returns:
+        A tuple ``(specifiers, warnings)``, as returned by
+        ``extract_dependency_specifiers``.
+    """
+    warnings = list(index_warnings) if dependencies else []
 
     result: dict[str, str | None] = {}
     for dep in dependencies:
@@ -878,8 +920,22 @@ def extract_dependency_requirements(
     Raises:
         MetadataError: Under the same conditions as ``extract_dependency_specifiers``.
     """
-    candidates, _ = _candidate_requirements(data, pyproject_path)
-    found, _, _ = _index_requirements(candidates, pyproject_path)
+    found, _ = _index_dependencies(data, pyproject_path)
+    return _requirements_from_index(found, dependencies)
+
+
+def _requirements_from_index(
+    found: dict[str, list[tuple[str, str | None]]], dependencies: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """List the requirements of each requested package in an index of the requirements.
+
+    Args:
+        found: The index, as returned by ``_index_dependencies``.
+        dependencies: Package names to look up.
+
+    Returns:
+        The mapping returned by ``extract_dependency_requirements``.
+    """
     return {
         dep: [
             {"specifier": specifier, "marker": marker or ""}
@@ -1400,13 +1456,15 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
     metadata, warnings = extract_metadata(
         data, extra_values, args.pyproject_path, options.fail_on_dynamic_version
     )
-    specifiers, specifier_warnings = extract_dependency_specifiers(
-        data, dependencies, args.pyproject_path
+    # The requirements of the file are read and parsed once, for both lookups.
+    found, index_warnings = _index_dependencies(data, args.pyproject_path)
+    specifiers, specifier_warnings = _specifiers_from_index(
+        found, index_warnings, dependencies, args.pyproject_path
     )
     python_versions, python_warnings = compatible_python_versions(
         metadata["requires_python"], python_candidates, args.pyproject_path
     )
-    requirements = extract_dependency_requirements(data, dependencies, args.pyproject_path)
+    requirements = _requirements_from_index(found, dependencies)
     project_dependencies, project_warnings = extract_project_dependencies(
         data, args.pyproject_path
     )
