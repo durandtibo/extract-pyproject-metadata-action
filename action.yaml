@@ -113,22 +113,27 @@ runs:
       run: |
         set -euo pipefail
 
-        # The script needs "packaging" and, before Python 3.11, "tomli". If
-        # either is missing, install them in a private virtual environment
-        # instead of pip-installing into the caller's Python: that would modify
-        # the caller's environment and fails on "externally managed" Pythons
-        # (PEP 668). --system-site-packages reuses whatever is already there.
-        # The venv is created in a new directory on every run, so a stale or
-        # broken one left by an earlier run (self-hosted runners keep
-        # $RUNNER_TEMP between jobs) is never reused.
+        # The script needs "packaging" and, before Python 3.11, "tomli"
+        # (scripts/requirements.txt). If either is missing, install them in a
+        # private virtual environment instead of pip-installing into the
+        # caller's Python: that would modify the caller's environment and fails
+        # on "externally managed" Pythons (PEP 668). --system-site-packages
+        # reuses whatever is already there. The venv is created in a new
+        # directory on every run, so a stale or broken one left by an earlier
+        # run (self-hosted runners keep $RUNNER_TEMP between jobs) is never
+        # reused.
         python=python3
-        if ! python3 -c "import packaging, tomllib" 2>/dev/null &&
-          ! python3 -c "import packaging, tomli" 2>/dev/null; then
+        if ! python3 -c '
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli
+        import packaging' 2>/dev/null; then
           if venv="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/extract-pyproject-metadata-venv.XXXXXX")" &&
             python3 -m venv --system-site-packages "$venv"; then
             python="$venv/bin/python"
             "$python" -m pip install --quiet --disable-pip-version-check \
-              packaging 'tomli; python_version < "3.11"' || python=""
+              -r "$GITHUB_ACTION_PATH/scripts/requirements.txt" || python=""
           else
             python=""
           fi

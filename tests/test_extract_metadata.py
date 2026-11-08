@@ -2333,3 +2333,20 @@ def test_main_invalid_fail_on_dynamic_version_returns_one(
 
     assert exit_code == 1
     assert "fail-on-dynamic-version must be 'true' or 'false'" in capsys.readouterr().err
+
+
+def test_script_requirements_list_the_dependencies_of_the_script() -> None:
+    requirements = (Path(__file__).resolve().parents[1] / "scripts" / "requirements.txt").read_text(
+        encoding="utf-8"
+    )
+    lines = [line for line in requirements.splitlines() if line and not line.startswith("#")]
+
+    assert lines == ["packaging>=23.0", 'tomli>=2.0.1; python_version < "3.11"']
+
+
+def test_test_requirements_include_the_script_requirements() -> None:
+    requirements = (Path(__file__).resolve().parents[1] / "requirements-test.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "-r scripts/requirements.txt" in requirements.splitlines()
