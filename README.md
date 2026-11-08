@@ -14,6 +14,11 @@ stdlib `tomllib`, the `tomli` backport) is missing, the action installs it in a
 private virtual environment under `$RUNNER_TEMP`. It never modifies the Python
 environment of the caller.
 
+> [!NOTE]
+> The action supports **Linux and macOS** runners only. **Windows runners are
+> not supported**: the integration tests do not run on them, and the step
+> expects `python3` and a POSIX `bash`.
+
 ## Usage
 
 ```yaml
