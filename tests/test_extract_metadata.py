@@ -2447,7 +2447,8 @@ class RunResult:
     def __init__(self, process: subprocess.CompletedProcess[str], log: Path, temp: Path) -> None:
         self.process = process
         self.calls = [line.split("\x1f")[:-1] for line in log.read_text().splitlines()] if log.exists() else []
-        self.venvs = sorted(temp.glob("extract-pyproject-metadata-venv.*"))
+        self.venvs = sorted(temp.glob("extract-pyproject-metadata-venv.*"))  # the ones left after the run
+        self.created_venvs = [Path(call[-1]) for call in self.calls if call[:3] == ["python3", "-m", "venv"]]
 
 
 def run_run_sh(tmp_path: Path, args: list[str], **env: str) -> RunResult:
@@ -2461,6 +2462,7 @@ def run_run_sh(tmp_path: Path, args: list[str], **env: str) -> RunResult:
     temp = tmp_path / "runner-temp"
     temp.mkdir(exist_ok=True)
     log = tmp_path / "calls.log"
+    log.unlink(missing_ok=True)  # only the calls of this run
     process = subprocess.run(  # noqa: S603
         ["/bin/bash", str(RUN_PATH), *args],  # noqa: S607
         capture_output=True,
@@ -2493,16 +2495,16 @@ def test_run_sh_installs_the_requirements_in_a_private_venv_when_they_are_missin
     result = run_run_sh(tmp_path, ["--flag", "a b", "[]"], STUB_PROBE_STATUS="1")
 
     assert result.process.returncode == 0
-    assert len(result.venvs) == 1
-    venv_python = str(result.venvs[0] / "bin" / "python")
+    assert len(result.created_venvs) == 1
+    venv = result.created_venvs[0]
+    assert venv.parent == tmp_path / "runner-temp"
     assert result.calls == [
         ["python3", "version"],
         ["python3", "probe"],
-        ["python3", "-m", "venv", "--system-site-packages", str(result.venvs[0])],
+        ["python3", "-m", "venv", "--system-site-packages", str(venv)],
         ["venv-python", "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", str(REQUIREMENTS_PATH)],
         ["venv-python", str(SCRIPT_PATH), "--flag", "a b", "[]"],
     ]
-    assert Path(venv_python).exists()
 
 
 @pytest.mark.parametrize("probe_status", ["0", "1"])
@@ -2514,10 +2516,39 @@ def test_run_sh_exits_with_the_status_of_the_script(tmp_path: Path, probe_status
 
 
 def test_run_sh_uses_a_new_venv_on_every_run(tmp_path: Path) -> None:
-    run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
-    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+    first = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+    second = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
 
-    assert len(result.venvs) == 2
+    assert len(first.created_venvs) == len(second.created_venvs) == 1
+    assert first.created_venvs != second.created_venvs
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},  # success
+        {"STUB_SCRIPT_STATUS": "3"},  # the script fails
+        {"STUB_PIP_STATUS": "1"},  # the requirements cannot be installed
+        {"STUB_VENV_STATUS": "1"},  # the venv cannot be created
+    ],
+)
+def test_run_sh_removes_the_venv_when_it_ends(tmp_path: Path, env: dict[str, str]) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", **env)
+
+    assert len(result.created_venvs) == 1
+    assert result.venvs == []
+    assert not result.created_venvs[0].exists()
+
+
+def test_run_sh_does_not_remove_other_files_of_the_temporary_directory(tmp_path: Path) -> None:
+    (tmp_path / "runner-temp").mkdir()
+    (tmp_path / "runner-temp" / "other-file").write_text("keep")
+    (tmp_path / "runner-temp" / "extract-pyproject-metadata-venv.old").mkdir()  # left by an earlier run
+
+    run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+
+    assert (tmp_path / "runner-temp" / "other-file").read_text() == "keep"
+    assert (tmp_path / "runner-temp" / "extract-pyproject-metadata-venv.old").is_dir()
 
 
 def test_run_sh_fails_with_a_clear_message_when_the_venv_cannot_be_created(tmp_path: Path) -> None:
@@ -2528,7 +2559,7 @@ def test_run_sh_fails_with_a_clear_message_when_the_venv_cannot_be_created(tmp_p
     assert result.calls == [
         ["python3", "version"],
         ["python3", "probe"],
-        ["python3", "-m", "venv", "--system-site-packages", str(result.venvs[0])],
+        ["python3", "-m", "venv", "--system-site-packages", str(result.created_venvs[0])],
     ]
     assert all(str(SCRIPT_PATH) not in call for call in result.calls)
 

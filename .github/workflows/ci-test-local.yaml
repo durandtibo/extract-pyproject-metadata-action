@@ -505,10 +505,11 @@ jobs:
         run: |
           source scripts/test-helper.sh
           assert_equal "outcome" "failure" "${{ steps.test-no-index.outcome }}"
+          assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "missing packaging correctly failed"
 
       # -----------------------------------------------------------------------
-      # packaging is missing: it is installed in a private venv
+      # packaging is missing: it is installed in a private venv, removed afterwards
       # -----------------------------------------------------------------------
       - name: 🧪 Test without packaging
         id: test-no-packaging
@@ -524,15 +525,14 @@ jobs:
             print_error "the Python on PATH must not be modified"
             exit 1
           fi
+          assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "bootstrap test passed"
 
       # -----------------------------------------------------------------------
-      # packaging is available: no venv is created
+      # packaging is available: the Python on PATH is used
       # -----------------------------------------------------------------------
       - name: Install packaging in the Python on PATH
-        run: |
-          python -m pip install --quiet packaging
-          echo "VENVS_BEFORE=$(source scripts/test-helper.sh; count_venvs)" >> "$GITHUB_ENV"
+        run: python -m pip install --quiet packaging
 
       - name: 🧪 Test with packaging
         id: test-packaging
@@ -540,12 +540,11 @@ jobs:
         with:
           pyproject-path: test-data/minimal/pyproject.toml
 
-      - name: ✓ Verify no venv is created when packaging is available
+      - name: ✓ Verify the action works when packaging is available
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "minimal-pkg" "${{ steps.test-packaging.outputs.name }}"
-          assert_equal "venvs" "$VENVS_BEFORE" "$(count_venvs)"
-          print_success "no venv test passed"
+          print_success "packaging available test passed"
 
   # Only Python 3.11 or later is supported: the action must fail with an explicit error
   test-old-python:
