@@ -301,9 +301,7 @@ def extract_metadata(
             f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
         )
         raise MetadataError(msg)
-    if not isinstance(version, str):
-        msg = f"{pyproject_path}: [project].version must be a string, got: {version!r}"
-        raise MetadataError(msg)
+    _check_str(version, "[project].version", pyproject_path)
     normalized_version = ""
     if "version" in project:
         try:
@@ -315,23 +313,16 @@ def extract_metadata(
             )
             raise MetadataError(msg) from exc
 
-    description = project.get("description", "")
-    if not isinstance(description, str):
-        msg = f"{pyproject_path}: [project].description must be a string, got: {description!r}"
-        raise MetadataError(msg)
+    description = _check_str(project.get("description", ""), "[project].description", pyproject_path)
 
     readme = _readme_path(project.get("readme", ""), pyproject_path)
     license_ = _license_text(project.get("license", ""), pyproject_path)
     authors = _authors(project.get("authors", []), pyproject_path)
     urls = _urls(project, pyproject_path)
 
-    requires_python = project.get("requires-python", "")
-    if not isinstance(requires_python, str):
-        msg = (
-            f"{pyproject_path}: [project].requires-python must be a string, "
-            f"got: {requires_python!r}"
-        )
-        raise MetadataError(msg)
+    requires_python = _check_str(
+        project.get("requires-python", ""), "[project].requires-python", pyproject_path
+    )
 
     optional_dependencies = _get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
@@ -390,11 +381,7 @@ def _readme_path(readme: object, pyproject_path: str) -> str:
     if not isinstance(readme, dict):
         msg = f"{pyproject_path}: [project].readme must be a string or a table, got: {readme!r}"
         raise MetadataError(msg)
-    file = readme.get("file", "")
-    if not isinstance(file, str):
-        msg = f"{pyproject_path}: [project].readme.file must be a string, got: {file!r}"
-        raise MetadataError(msg)
-    return file
+    return _check_str(readme.get("file", ""), "[project].readme.file", pyproject_path)
 
 
 def _license_text(license_: object, pyproject_path: str) -> str:
@@ -420,12 +407,9 @@ def _license_text(license_: object, pyproject_path: str) -> str:
     if not isinstance(license_, dict):
         msg = f"{pyproject_path}: [project].license must be a string or a table, got: {license_!r}"
         raise MetadataError(msg)
-    for key in ("text", "file"):
-        value = license_.get(key, "")
-        if not isinstance(value, str):
-            msg = f"{pyproject_path}: [project].license.{key} must be a string, got: {value!r}"
-            raise MetadataError(msg)
-    return license_.get("text", "")
+    file = _check_str(license_.get("text", ""), "[project].license.text", pyproject_path)
+    _check_str(license_.get("file", ""), "[project].license.file", pyproject_path)
+    return file
 
 
 def _authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
@@ -454,10 +438,7 @@ def _authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
         for key in ("name", "email"):
             if key not in author:
                 continue
-            if not isinstance(author[key], str):
-                msg = f"{pyproject_path}: {label}.{key} must be a string, got: {author[key]!r}"
-                raise MetadataError(msg)
-            entry[key] = author[key]
+            entry[key] = _check_str(author[key], f"{label}.{key}", pyproject_path)
         result.append(entry)
     return result
 
@@ -479,9 +460,7 @@ def _urls(project: dict[str, Any], pyproject_path: str) -> dict[str, str]:
     """
     urls = _get_table(project, "urls", "[project.urls]", pyproject_path)
     for label, url in urls.items():
-        if not isinstance(url, str):
-            msg = f"{pyproject_path}: [project.urls].{label} must be a string, got: {url!r}"
-            raise MetadataError(msg)
+        _check_str(url, f"[project.urls].{label}", pyproject_path)
     return dict(urls)
 
 
@@ -507,6 +486,26 @@ def parse_string_array(raw: str, input_name: str) -> list[str]:
         msg = f"{input_name} must be a JSON array of strings, got: {raw!r}"
         raise MetadataError(msg)
     return values
+
+
+def _check_str(value: object, label: str, pyproject_path: str) -> str:
+    """Return ``value`` if it is a string, and raise ``MetadataError`` otherwise.
+
+    Args:
+        value: The value read from the file.
+        label: The name of the key in the error message, such as ``[project].description``.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        ``value``, unchanged.
+
+    Raises:
+        MetadataError: If ``value`` is not a string.
+    """
+    if not isinstance(value, str):
+        msg = f"{pyproject_path}: {label} must be a string, got: {value!r}"
+        raise MetadataError(msg)
+    return value
 
 
 def _check_array(value: object, label: str, pyproject_path: str) -> list[Any]:

@@ -29,6 +29,7 @@ from extract_metadata import (  # noqa: E402
     extract_dependency_specifiers,
     _candidate_requirements,
     _check_array,
+    _check_str,
     _check_string_array,
     _conflict_warnings,
     _dynamic_dependency_fields,
@@ -2831,6 +2832,19 @@ def test_get_table_absent_is_empty(container: dict) -> None:
 def test_get_table_not_a_table(value: object) -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\] must be a table, got: "):
         _get_table({"project": value}, "project", "[project]", "p.toml")
+
+
+@pytest.mark.parametrize("value", ["text", ""])
+def test_check_str(value: str) -> None:
+    assert _check_str(value, "[x]", "p.toml") == value
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"), [(1, "1"), (None, "None"), (["a"], "\\['a'\\]"), ({"a": 1}, "\\{'a': 1\\}")]
+)
+def test_check_str_not_a_string(value: object, shown: str) -> None:
+    with pytest.raises(MetadataError, match=rf"^p.toml: \[x\] must be a string, got: {shown}$"):
+        _check_str(value, "[x]", "p.toml")
 
 
 def test_check_array() -> None:
