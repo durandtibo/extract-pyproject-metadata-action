@@ -15,8 +15,8 @@ fixtures used by the integration workflows.
   `.venv/bin/pytest`.
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
-- The script must keep working on Python < 3.11 (`tomli` fallback) and must
-  only depend on `packaging` (and `tomli` on old Pythons).
+- Only Python >= 3.11 is supported (the script uses `tomllib`). The script must
+  only depend on `packaging`.
 - Workflows cannot be run locally. Say so in the PR instead of claiming they
   pass.
 

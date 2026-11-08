@@ -8,9 +8,10 @@ straight from `[project]`, `[project.optional-dependencies]` and
 steps, ...) from drifting out of sync with what `pip install` actually
 installs.
 
-Requires the repository to already be checked out and a Python 3 interpreter
-available on `PATH`. If the `packaging` package (or, on Python < 3.11 without
-stdlib `tomllib`, the `tomli` backport) is missing, the action installs it in a
+Requires the repository to already be checked out and a **Python 3.11 or
+later** interpreter (`python3`) available on `PATH`, for example set up with
+`actions/setup-python`; the action fails with a clear message otherwise. If the
+`packaging` package is missing, the action installs it in a
 private virtual environment under `$RUNNER_TEMP`, with the versions listed in
 `scripts/requirements.txt`. It never modifies the Python
 environment of the caller.
@@ -187,6 +188,8 @@ markers.
 
 The action's step fails (non-zero exit) when:
 
+- The `python3` on `PATH` is older than 3.11 (or missing), or `packaging` cannot be
+  installed.
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
