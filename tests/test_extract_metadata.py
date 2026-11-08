@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import importlib.util
+import json
 import re
 import runpy
 import shutil
@@ -16,20 +16,15 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import extract_metadata as extract_metadata_module  # noqa: E402
-from extract_metadata import (  # noqa: E402
-    Metadata,
-    Options,
-    MetadataError,
-    Report,
-    build_report,
-    emit_github_output,
+import extract_metadata as extract_metadata_module
+from extract_metadata import (
     DEFAULT_PYTHON_CANDIDATES,
-    check_no_missing_dependency,
-    extract_dependency_requirements,
-    extract_dependency_specifiers,
-    _candidate_requirements,
+    Metadata,
+    MetadataError,
+    Options,
+    Report,
     _build_system,
+    _candidate_requirements,
     _check_array,
     _check_str,
     _check_string_array,
@@ -37,33 +32,38 @@ from extract_metadata import (  # noqa: E402
     _dynamic_dependency_fields,
     _extra_names,
     _flatten_group,
+    _get_table,
     _group_names,
+    _index_dependencies,
+    _index_requirements,
     _license_warnings,
+    _lookup_key,
     _required_name,
     _required_version,
+    _requirements_from_index,
+    _scoped_requirements,
+    _specifiers_from_index,
     _static_and_dynamic_warnings,
     _string_table,
     _valid_name,
     _valid_version,
-    _index_dependencies,
-    _index_requirements,
-    _scoped_requirements,
-    _lookup_key,
-    _requirements_from_index,
-    _specifiers_from_index,
-    _get_table,
+    build_report,
+    check_no_missing_dependency,
     compatible_python_versions,
+    emit_github_output,
     escape_annotation,
     escape_annotation_property,
-    format_error,
-    format_error_summary,
+    extract_dependency_requirements,
+    extract_dependency_specifiers,
     extract_metadata,
     extract_project_dependencies,
+    format_error,
+    format_error_summary,
     format_outputs,
     format_step_summary,
     format_summary,
-    load_pyproject,
     highest_python_version,
+    load_pyproject,
     lowest_python_version,
     main,
     parse_bool,
@@ -112,14 +112,14 @@ def test_load_pyproject(tmp_path: Path) -> None:
 def test_load_pyproject_missing_file(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
-    with pytest.raises(MetadataError, match="pyproject.toml not found at: .*does-not-exist.toml"):
+    with pytest.raises(MetadataError, match=r"pyproject.toml not found at: .*does-not-exist.toml"):
         load_pyproject(str(missing))
 
 
 def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, "this is not [valid toml")
 
-    with pytest.raises(MetadataError, match="pyproject.toml is not valid TOML"):
+    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid TOML"):
         load_pyproject(str(path))
 
 
@@ -127,7 +127,7 @@ def test_load_pyproject_invalid_utf8(tmp_path: Path) -> None:
     path = tmp_path / "pyproject.toml"
     path.write_bytes(b'[project]\nname = "caf\xe9"\n')
 
-    with pytest.raises(MetadataError, match="pyproject.toml is not valid UTF-8"):
+    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid UTF-8"):
         load_pyproject(str(path))
 
 
@@ -156,12 +156,12 @@ def test_main_returns_one_for_an_invalid_utf8_file(
 
 
 def test_write_github_output_unwritable_file(tmp_path: Path) -> None:
-    with pytest.raises(MetadataError, match="cannot write the outputs to .*: "):
+    with pytest.raises(MetadataError, match=r"cannot write the outputs to .*: "):
         write_github_output(str(tmp_path), {"name": "coola"})
 
 
 def test_write_step_summary_unwritable_file(tmp_path: Path) -> None:
-    with pytest.raises(MetadataError, match="cannot write the job summary to .*: "):
+    with pytest.raises(MetadataError, match=r"cannot write the job summary to .*: "):
         write_step_summary(str(tmp_path), "# Title\n")
 
 
@@ -204,7 +204,7 @@ def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
 
 def test_extract_metadata_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
-        _, warnings = extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
+        extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
 
 
 def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
@@ -905,7 +905,6 @@ def test_main_dynamic_version_warning_in_json(
         "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
-    "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {},
         "dependency_specifiers": {},
@@ -1035,7 +1034,6 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
-    "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {},
         "dependency_specifiers": {},
@@ -1155,7 +1153,6 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
-    "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {},
         "dependency_specifiers": {},
@@ -1552,7 +1549,6 @@ def test_build_report(tmp_path: Path) -> None:
         "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
-    "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
         "dependency_specifiers": {"dup": ">=1", "missing": None},
@@ -2462,7 +2458,6 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
-    "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
@@ -2522,7 +2517,7 @@ def test_dependency_malformed_tables_raise_even_when_nothing_is_requested(tmp_pa
 
 def test_dependency_malformed_table_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject\.toml: \[dependency-groups\] must"):
-        _, warnings = extract_dependency_specifiers({"dependency-groups": 1}, [], "custom/pyproject.toml")
+        extract_dependency_specifiers({"dependency-groups": 1}, [], "custom/pyproject.toml")
 
 
 def test_flatten_group_group_must_be_an_array() -> None:
@@ -4801,7 +4796,7 @@ def test_build_parser_without_docstring(monkeypatch: pytest.MonkeyPatch) -> None
 def test_script_runs_with_stripped_docstrings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603
         [sys.executable, "-OO", str(SCRIPT_PATH), str(path), "[]"],
         capture_output=True,
         text=True,
@@ -5142,7 +5137,7 @@ def run_run_sh(tmp_path: Path, args: list[str], **env: str) -> RunResult:
     log = tmp_path / "calls.log"
     log.unlink(missing_ok=True)  # only the calls of this run
     process = subprocess.run(  # noqa: S603
-        ["/bin/bash", str(RUN_PATH), *args],  # noqa: S607
+        ["/bin/bash", str(RUN_PATH), *args],
         capture_output=True,
         text=True,
         check=False,

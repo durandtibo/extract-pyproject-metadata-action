@@ -31,6 +31,10 @@ jobs:
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
+  # Lint the script and the tests
+  lint:
+    uses: ./.github/workflows/ci-lint.yaml
+
   # Run the integration tests of the local action
   test-local:
     needs: get-matrix

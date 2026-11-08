@@ -104,8 +104,8 @@ import functools
 import json
 import os
 import re
-import sys
 import string
+import sys
 import tomllib
 import uuid
 from collections.abc import Mapping, Sequence
@@ -1025,7 +1025,7 @@ def _lookup_key(dependency: str) -> str:
     return f"{canonicalize_name(name)}@{kind}{colon}{canonicalize_name(scope_name)}"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
     """Parse a requirement string, once per distinct string.
 
