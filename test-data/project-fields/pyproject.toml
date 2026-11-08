@@ -2,3 +2,4 @@
 name = "fields-pkg"
 version = "1.0"
 readme = "docs/README.md"
+license = "MIT"

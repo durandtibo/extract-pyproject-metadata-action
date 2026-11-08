@@ -13,7 +13,7 @@ Usage:
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
-     "description": ..., "readme": ...,
+     "description": ..., "readme": ..., "license": ...,
      "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
@@ -23,7 +23,7 @@ characters are kept as they are, as in the action outputs):
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``requires-python``,
+outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``license``, ``requires-python``,
 ``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
@@ -112,6 +112,7 @@ class Metadata(TypedDict):
     normalized_version: str
     description: str
     readme: str
+    license: str
     requires_python: str
     extras: list[str]
     groups: list[str]
@@ -184,7 +185,7 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value (so is ``normalized_version``,
         the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
@@ -192,7 +193,9 @@ def extract_metadata(
         not declared. ``description`` is ``[project].description`` as written,
         or an empty string if it is not declared. ``readme`` is the path of the readme
         file (a string ``[project].readme``, or the ``file`` of a table), or an empty
-        string if there is none or the readme is inline (``text``). ``extras`` lists the ``extra_values`` first, then the
+        string if there is none or the readme is inline (``text``). ``license`` is the
+        SPDX expression of ``[project].license`` or the ``text`` of its table, or an empty
+        string if there is none or the license is a ``file``. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
@@ -207,7 +210,8 @@ def extract_metadata(
             valid PEP 508 name, a
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``description`` or ``requires-python`` that is not a string, a ``readme`` that
-            is neither a string nor a table with a string ``file``, an
+            is neither a string nor a table with a string ``file``, a ``license`` that
+            is neither a string nor a table with a string ``text`` and ``file``, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
@@ -278,6 +282,7 @@ def extract_metadata(
         raise MetadataError(msg)
 
     readme = _readme_path(project.get("readme", ""), pyproject_path)
+    license_ = _license_text(project.get("license", ""), pyproject_path)
 
     requires_python = project.get("requires-python", "")
     if not isinstance(requires_python, str):
@@ -312,6 +317,7 @@ def extract_metadata(
         normalized_version=normalized_version,
         description=description,
         readme=readme,
+        license=license_,
         requires_python=requires_python,
         extras=list(unique_extras.values()),
         groups=groups,
@@ -346,6 +352,37 @@ def _readme_path(readme: object, pyproject_path: str) -> str:
         msg = f"{pyproject_path}: [project].readme.file must be a string, got: {file!r}"
         raise MetadataError(msg)
     return file
+
+
+def _license_text(license_: object, pyproject_path: str) -> str:
+    """Return the license declared by ``[project].license``.
+
+    Args:
+        license_: The value of ``[project].license``: an SPDX license expression
+            (a string, PEP 639), or the table of PEP 621 with a ``text`` (the
+            name or the text of the license) or a ``file`` (path).
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The expression or the ``text`` as written, or an empty string if
+        ``license_`` is empty, is not declared, or is a table without ``text``
+        (a ``file``).
+
+    Raises:
+        MetadataError: If ``license_`` is neither a string nor a table, or its
+            ``text`` or ``file`` is not a string.
+    """
+    if isinstance(license_, str):
+        return license_
+    if not isinstance(license_, dict):
+        msg = f"{pyproject_path}: [project].license must be a string or a table, got: {license_!r}"
+        raise MetadataError(msg)
+    for key in ("text", "file"):
+        value = license_.get(key, "")
+        if not isinstance(value, str):
+            msg = f"{pyproject_path}: [project].license.{key} must be a string, got: {value!r}"
+            raise MetadataError(msg)
+    return license_.get("text", "")
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -986,6 +1023,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "normalized-version": metadata["normalized_version"],
         "description": metadata["description"],
         "readme": metadata["readme"],
+        "license": metadata["license"],
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),

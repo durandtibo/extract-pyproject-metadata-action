@@ -128,6 +128,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "normalized_version": "1.2.3",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -348,6 +349,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "normalized_version": "",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -454,6 +456,7 @@ def test_main_dynamic_version_warning_in_json(
         "normalized_version": "",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -573,6 +576,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "normalized_version": "1.2.3",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -650,6 +654,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "normalized_version": "1.2.3",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -799,6 +804,7 @@ METADATA = {
     "normalized_version": "1.2.3",
     "description": "",
     "readme": "",
+    "license": "",
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -819,6 +825,7 @@ def test_format_outputs() -> None:
         "normalized-version": "1.2.3",
         "description": "",
         "readme": "",
+        "license": "",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -946,6 +953,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "normalized-version": "1",
         "description": "",
         "readme": "",
+        "license": "",
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -984,6 +992,7 @@ def test_build_report(tmp_path: Path) -> None:
         "normalized_version": "1",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -1121,6 +1130,7 @@ def test_format_step_summary_without_warnings() -> None:
         normalized_version="1.2.3",
         description="",
         readme="",
+        license="",
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -1143,6 +1153,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `normalized-version` | <code>1&#46;2&#46;3</code> |\n"
         "| `description` |  |\n"
         "| `readme` |  |\n"
+        "| `license` |  |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -1163,6 +1174,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         normalized_version="1",
         description="",
         readme="",
+        license="",
         requires_python="",
         extras=[],
         groups=[],
@@ -1537,6 +1549,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "normalized-version": "1.2.3",
         "description": "",
         "readme": "",
+        "license": "",
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -1796,6 +1809,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "normalized_version": "1.2.3",
         "description": "",
         "readme": "",
+        "license": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -2968,6 +2982,7 @@ def test_format_outputs_python_matrix() -> None:
         normalized_version="1",
         description="",
         readme="",
+        license="",
         requires_python="",
         extras=[],
         groups=[],
@@ -2990,6 +3005,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         normalized_version="1",
         description="",
         readme="",
+        license="",
         requires_python=">=4",
         extras=[],
         groups=[],
@@ -3064,6 +3080,7 @@ def test_format_outputs_normalized_version() -> None:
         normalized_version="1.0rc1",
         description="",
         readme="",
+        license="",
         requires_python="",
         extras=[],
         groups=[],
@@ -3148,6 +3165,67 @@ def test_main_invalid_readme_returns_one(
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     assert "[project].readme must be a string or a table" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("license_", "expected"),
+    [
+        ('license = "MIT"', "MIT"),
+        ('license = "Apache-2.0 OR MIT"', "Apache-2.0 OR MIT"),
+        ('license = ""', ""),
+        ('license = {text = "BSD-3-Clause"}', "BSD-3-Clause"),
+        ('license = {text = "Line one\\nline two"}', "Line one\nline two"),
+        ('license = {file = "LICENSE"}', ""),
+        ('license = {file = "LICENSE", text = "MIT"}', "MIT"),
+        ("license = {}", ""),
+        ('dynamic = ["license"]', ""),
+        ("", ""),
+    ],
+)
+def test_extract_metadata_license(tmp_path: Path, license_: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{license_}\n')
+
+    assert extract(path)["license"] == expected
+
+
+@pytest.mark.parametrize(
+    ("license_", "match"),
+    [
+        ("license = 1", r"\[project\]\.license must be a string or a table, got: 1"),
+        ('license = ["MIT"]', r"\[project\]\.license must be a string or a table"),
+        ("license = {text = 1}", r"\[project\]\.license\.text must be a string, got: 1"),
+        ("license = {text = true}", r"\[project\]\.license\.text must be a string, got: True"),
+        ("license = {file = 2}", r"\[project\]\.license\.file must be a string, got: 2"),
+    ],
+)
+def test_extract_metadata_license_must_be_a_string_or_a_table(
+    tmp_path: Path, license_: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{license_}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_main_license_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT"\n')
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["license"] == "MIT"
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["license"] == "MIT"
+
+
+def test_main_invalid_license_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = 1\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "[project].license must be a string or a table" in capsys.readouterr().err
 
 
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -3364,6 +3442,7 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "normalized-version",
         "description",
         "readme",
+        "license",
         "python-matrix",
     }
 
