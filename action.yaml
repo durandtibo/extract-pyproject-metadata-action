@@ -60,19 +60,6 @@ runs:
         set -euo pipefail
         python3 -c "import tomllib" 2>/dev/null || python3 -c "import tomli" 2>/dev/null || pip install --quiet --disable-pip-version-check tomli
         python3 -c "import packaging" 2>/dev/null || pip install --quiet --disable-pip-version-check packaging
-        metadata=$(python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES")
-
-        name=$(jq -r '.name' <<< "$metadata")
-        version=$(jq -r '.version' <<< "$metadata")
-        extras=$(jq -c '.extras' <<< "$metadata")
-        dependency_specifiers=$(jq -c '.dependency_specifiers' <<< "$metadata")
-
-        # Workflow commands are only parsed on stdout; escape them like
-        # @actions/core does so a message cannot span several commands.
-        jq -r '.warnings[] | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A") | "::warning::" + .' <<< "$metadata"
-
-        echo "📦 name=$name version=$version extras=$extras"
-        echo "name=$name" >> "$GITHUB_OUTPUT"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-        echo "extras=$extras" >> "$GITHUB_OUTPUT"
-        echo "dependency-specifiers=$dependency_specifiers" >> "$GITHUB_OUTPUT"
+        python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" \
+          --github-output "$GITHUB_OUTPUT" \
+          -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"
