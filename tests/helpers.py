@@ -14,11 +14,8 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import (
-    extract_dependency_specifiers,
-    extract_metadata,
-    load_pyproject,
-)
+from extract_pyproject_metadata.cli import extract_metadata, load_pyproject
+from extract_pyproject_metadata.dependencies.lookup import extract_dependency_specifiers
 from extract_pyproject_metadata.inputs import parse_string_array
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
