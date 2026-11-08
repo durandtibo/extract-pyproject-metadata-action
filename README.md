@@ -1,10 +1,12 @@
 # extract-pyproject-metadata-action
 
-A composite GitHub Action that reads the project name, version, and
-optional-dependency extra names directly from a `pyproject.toml` file. Reading
-these values straight from `[project]` and `[project.optional-dependencies]`
-keeps downstream workflows (build, test matrices, publish steps, ...) from
-drifting out of sync with what `pip install` actually installs.
+A composite GitHub Action that reads the project name, version,
+optional-dependency extra names and the version specifiers of selected
+dependencies directly from a `pyproject.toml` file. Reading these values
+straight from `[project]`, `[project.optional-dependencies]` and
+`[dependency-groups]` keeps downstream workflows (build, test matrices, publish
+steps, ...) from drifting out of sync with what `pip install` actually
+installs.
 
 Requires the repository to already be checked out and a Python 3 interpreter
 available on `PATH`. If the `packaging` package (or, on Python < 3.11 without
