@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from packaging.requirements import InvalidRequirement, Requirement
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -2195,6 +2196,42 @@ def test_action_yaml_default_of_python_candidates_matches_the_script() -> None:
     action = (Path(__file__).resolve().parents[1] / "action.yaml").read_text(encoding="utf-8")
 
     assert f"default: '{DEFAULT_PYTHON_CANDIDATES}'" in action
+
+
+def test_parse_requirement_valid() -> None:
+    requirement = extract_metadata_module._parse_requirement("Foo_Bar[x]>=1; python_version<'3.12'")
+
+    assert isinstance(requirement, Requirement)
+    assert (requirement.name, str(requirement.specifier)) == ("Foo_Bar", ">=1")
+
+
+def test_parse_requirement_invalid_is_returned_not_raised() -> None:
+    error = extract_metadata_module._parse_requirement("bad requirement!!")
+
+    assert isinstance(error, InvalidRequirement)
+
+
+def test_parse_requirement_is_called_once_per_distinct_string() -> None:
+    parse = extract_metadata_module._parse_requirement
+    parse.cache_clear()
+
+    assert parse("numpy>=1") is parse("numpy>=1")
+    assert parse("bad!!") is parse("bad!!")
+    assert parse.cache_info().misses == 2
+
+
+def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\ndependencies = ["x>=1", "y"]\n\n'
+        '[project.optional-dependencies]\nz = ["w"]\n',
+    )
+    extract_metadata_module._parse_requirement.cache_clear()
+
+    assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
+    # "x>=1", "y" and "w": "x>=1" and "y" are read for both outputs.
+    assert extract_metadata_module._parse_requirement.cache_info().misses == 3
+    assert extract_metadata_module._parse_requirement.cache_info().hits == 2
 
 
 def test_extract_project_dependencies() -> None:

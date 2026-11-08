@@ -51,6 +51,7 @@ expected shape, a Python candidate is not a "major.minor" string,
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import sys
@@ -454,6 +455,28 @@ def _candidate_requirements(
     return reqs, list(dict.fromkeys(warnings))
 
 
+@functools.lru_cache(maxsize=None)
+def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
+    """Parse a requirement string, once per distinct string.
+
+    ``main`` reads the requirements of ``[project].dependencies`` twice (for
+    ``project-dependencies`` and for the lookup of ``dependencies``): the cache
+    makes each string parsed only once.
+
+    Args:
+        raw: The requirement string.
+
+    Returns:
+        The parsed requirement, or the ``InvalidRequirement`` that was raised
+        (returned and not raised, so that the cache keeps it too). The result
+        is shared and must not be modified.
+    """
+    try:
+        return Requirement(raw)
+    except InvalidRequirement as exc:
+        return exc
+
+
 def _index_requirements(
     raws: list[str], pyproject_path: str
 ) -> tuple[dict[str, list[tuple[str, str | None]]], dict[str, str], list[str]]:
@@ -475,10 +498,9 @@ def _index_requirements(
     names: dict[str, str] = {}
     warnings: list[str] = []
     for raw in raws:
-        try:
-            req = Requirement(raw)
-        except InvalidRequirement as exc:
-            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
+        req = _parse_requirement(raw)
+        if isinstance(req, InvalidRequirement):
+            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {req}")
             continue
         key = canonicalize_name(req.name)
         marker = None if req.marker is None else str(req.marker)
