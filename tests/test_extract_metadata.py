@@ -18,6 +18,7 @@ from extract_metadata import (  # noqa: E402
     _flatten_group,
     _parse_dependencies,
     escape_annotation,
+    escape_annotation_property,
     extract_metadata,
     format_outputs,
     load_pyproject,
@@ -722,7 +723,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
-        f"::warning::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
+        f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         '📦 name=p version=1 extras=["","a"]\n'
     )
     assert captured.err == ""
@@ -1216,7 +1217,7 @@ def test_main_include_group_cycle_warning_annotation(
 
     assert exit_code == 0
     assert captured.out.splitlines()[0] == (
-        f"::warning::{path}: [dependency-groups] has an include-group cycle: a -> a"
+        f"::warning file={path}::{path}: [dependency-groups] has an include-group cycle: a -> a"
     )
 
 
@@ -1442,3 +1443,59 @@ def test_extract_metadata_extras_are_sorted_by_normalized_name(tmp_path: Path) -
     )
 
     assert extract(path)["extras"] == ["alpha", "Beta", "gamma_x", "Zeta"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("pyproject.toml", "pyproject.toml"),
+        ("", ""),
+        ("sub dir/pyproject.toml", "sub dir/pyproject.toml"),
+        ("C:\\pyproject.toml", "C%3A\\pyproject.toml"),
+        ("a,b", "a%2Cb"),
+        ("a::b", "a%3A%3Ab"),
+        ("100%", "100%25"),
+        ("a\nb", "a%0Ab"),
+        ("a\r\nb", "a%0D%0Ab"),
+        ("%3A", "%253A"),
+    ],
+)
+def test_escape_annotation_property(value: str, expected: str) -> None:
+    assert escape_annotation_property(value) == expected
+
+
+def test_main_warning_annotation_escapes_the_file_property(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = tmp_path / "a,b:c"
+    directory.mkdir()
+    path = directory / "pyproject.toml"
+    path.write_text('[project]\nname = "p"\ndynamic = ["version"]\n')
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    captured = capsys.readouterr()
+
+    escaped = str(path).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
+    assert exit_code == 0
+    assert captured.out.splitlines()[0] == (
+        f"::warning file={escaped}::{path}: [project].version is dynamic, "
+        "the version output is empty"
+    )
+
+
+def test_main_warning_annotation_names_the_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_pyproject(tmp_path, '[project]\nname = "p"\ndynamic = ["version"]\n')
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), "pyproject.toml", "[]"]
+    )
+
+    assert exit_code == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "::warning file=pyproject.toml::pyproject.toml: [project].version is dynamic, "
+        "the version output is empty"
+    )
