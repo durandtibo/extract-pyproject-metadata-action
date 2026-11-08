@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import extract_metadata as extract_metadata_module  # noqa: E402
 from extract_metadata import (  # noqa: E402
+    Metadata,
     MetadataError,
+    Report,
     check_no_missing_dependency,
     extract_dependency_specifiers,
     _candidate_requirements,
@@ -1926,3 +1928,19 @@ def test_check_array() -> None:
 def test_check_array_not_an_array(value: object) -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[x\] must be an array, got: "):
         _check_array(value, "[x]", "p.toml")
+
+
+def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    assert list(extract(path)) == list(Metadata.__annotations__)
+
+
+def test_report_keys_match_the_json_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+
+    assert list(json.loads(capsys.readouterr().out)) == list(Report.__annotations__)
