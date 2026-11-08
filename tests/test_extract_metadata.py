@@ -129,6 +129,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -350,6 +351,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -457,6 +459,7 @@ def test_main_dynamic_version_warning_in_json(
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -577,6 +580,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -655,6 +659,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -805,6 +810,7 @@ METADATA = {
     "description": "",
     "readme": "",
     "license": "",
+    "authors": [],
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -826,6 +832,7 @@ def test_format_outputs() -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "authors": '[]',
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -954,6 +961,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "description": "",
         "readme": "",
         "license": "",
+        "authors": '[]',
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -993,6 +1001,7 @@ def test_build_report(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -1131,6 +1140,7 @@ def test_format_step_summary_without_warnings() -> None:
         description="",
         readme="",
         license="",
+        authors=[],
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -1154,6 +1164,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `description` |  |\n"
         "| `readme` |  |\n"
         "| `license` |  |\n"
+        "| `authors` | <code>&#91;&#93;</code> |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -1175,6 +1186,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         description="",
         readme="",
         license="",
+        authors=[],
         requires_python="",
         extras=[],
         groups=[],
@@ -1550,6 +1562,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "authors": '[]',
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -1810,6 +1823,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "authors": [],
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -2983,6 +2997,7 @@ def test_format_outputs_python_matrix() -> None:
         description="",
         readme="",
         license="",
+        authors=[],
         requires_python="",
         extras=[],
         groups=[],
@@ -3006,6 +3021,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         description="",
         readme="",
         license="",
+        authors=[],
         requires_python=">=4",
         extras=[],
         groups=[],
@@ -3081,6 +3097,7 @@ def test_format_outputs_normalized_version() -> None:
         description="",
         readme="",
         license="",
+        authors=[],
         requires_python="",
         extras=[],
         groups=[],
@@ -3226,6 +3243,81 @@ def test_main_invalid_license_returns_one(
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     assert "[project].license must be a string or a table" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("authors", "expected"),
+    [
+        ("", []),
+        ("authors = []", []),
+        ('authors = [{name = "Ada"}]', [{"name": "Ada"}]),
+        ('authors = [{email = "ada@example.com"}]', [{"email": "ada@example.com"}]),
+        (
+            'authors = [{email = "a@b.c", name = "Ada"}, {name = "Bob"}]',
+            [{"name": "Ada", "email": "a@b.c"}, {"name": "Bob"}],
+        ),
+        ('authors = [{name = "Ada", url = "x"}]', [{"name": "Ada"}]),
+        ("authors = [{}]", [{}]),
+        ('authors = [{name = "Ada"}, {name = "Ada"}]', [{"name": "Ada"}, {"name": "Ada"}]),
+        ('dynamic = ["authors"]', []),
+    ],
+)
+def test_extract_metadata_authors(
+    tmp_path: Path, authors: str, expected: list[dict[str, str]]
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{authors}\n')
+
+    assert extract(path)["authors"] == expected
+
+
+@pytest.mark.parametrize(
+    ("authors", "match"),
+    [
+        ('authors = "Ada"', r"\[project\]\.authors must be an array, got: 'Ada'"),
+        ('authors = {name = "Ada"}', r"\[project\]\.authors must be an array"),
+        ('authors = ["Ada"]', r"\[project\]\.authors\[0\] must be a table, got: 'Ada'"),
+        ('authors = [{name = "a"}, 1]', r"\[project\]\.authors\[1\] must be a table, got: 1"),
+        ("authors = [{name = 1}]", r"\[project\]\.authors\[0\]\.name must be a string, got: 1"),
+        (
+            'authors = [{name = "a", email = ["b"]}]',
+            r"\[project\]\.authors\[0\]\.email must be a string",
+        ),
+    ],
+)
+def test_extract_metadata_authors_must_be_an_array_of_tables(
+    tmp_path: Path, authors: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{authors}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_main_authors_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nauthors = [{name = "Zoé", email = "z@e.org"}]\n',
+    )
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["authors"] == [{"name": "Zoé", "email": "z@e.org"}]
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert (
+        parse_github_output(output.read_text(encoding="utf-8"))["authors"]
+        == '[{"name":"Zoé","email":"z@e.org"}]'
+    )
+
+
+def test_main_invalid_authors_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nauthors = ["Ada"]\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "[project].authors[0] must be a table" in capsys.readouterr().err
 
 
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -3443,6 +3535,7 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "description",
         "readme",
         "license",
+        "authors",
         "python-matrix",
     }
 

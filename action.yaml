@@ -104,6 +104,11 @@ outputs:
       License, from [project].license (an SPDX expression, or the text of the
       table); empty if not declared or a file
     value: ${{ steps.metadata.outputs.license }}
+  authors:
+    description: >
+      JSON array of the authors of [project].authors, each an object with the
+      name and the email it has ("[]" if none)
+    value: ${{ steps.metadata.outputs.authors }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty

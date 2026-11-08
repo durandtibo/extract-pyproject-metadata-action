@@ -616,6 +616,16 @@ jobs:
           assert_equal "license" "" "${{ steps.test-no-project-fields.outputs.license }}"
           print_success "license test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 23: authors output
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify authors
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "authors" '[{"name":"Ada Lovelace","email":"ada@example.com"},{"name":"Bob"}]' '${{ steps.test-project-fields.outputs.authors }}'
+          assert_equal "authors" '[]' '${{ steps.test-no-project-fields.outputs.authors }}'
+          print_success "authors test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest
