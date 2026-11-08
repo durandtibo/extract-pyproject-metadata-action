@@ -12,7 +12,7 @@
 # it is installed in a private virtual environment.
 
 name: Extract pyproject metadata
-description: Read the project name, version, and optional-dependency extra names from pyproject.toml
+description: Read the project name, version, optional-dependency extra names, and dependency version specifiers from pyproject.toml
 
 inputs:
   pyproject-path:
