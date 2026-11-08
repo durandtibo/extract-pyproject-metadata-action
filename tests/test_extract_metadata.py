@@ -124,6 +124,13 @@ def test_load_pyproject_bom_only_at_the_start(tmp_path: Path) -> None:
         load_pyproject(str(path))
 
 
+def test_load_pyproject_nested_too_deeply(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, "[project]\nx = " + "[" * 5000 + "]" * 5000 + "\n")
+
+    with pytest.raises(MetadataError, match="pyproject.toml is nested too deeply to be parsed"):
+        load_pyproject(str(path))
+
+
 def test_load_pyproject_missing_file(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
@@ -2653,6 +2660,65 @@ def test_flatten_group_no_cycle_adds_no_warning() -> None:
 
     assert result == ["y", "y"]
     assert warnings == []
+
+
+def chain_of_groups(length: int) -> dict[str, list]:
+    """Groups ``g0`` to ``g<length-1>``, each including the next one; the last has a requirement."""
+    groups: dict[str, list] = {f"g{i}": [{"include-group": f"g{i + 1}"}] for i in range(length - 1)}
+    groups[f"g{length - 1}"] = ["numpy>=1"]
+    return groups
+
+
+def diamond_of_groups(levels: int) -> dict[str, list]:
+    """Groups that each include the next one twice: ``g0`` expands to ``2**levels`` entries."""
+    groups: dict[str, list] = {
+        f"g{i}": [{"include-group": f"g{i + 1}"}, {"include-group": f"g{i + 1}"}]
+        for i in range(levels)
+    }
+    groups[f"g{levels}"] = ["numpy>=1"]
+    return groups
+
+
+def test_flatten_group_follows_a_chain_up_to_the_depth_limit() -> None:
+    result, warnings = _flatten_group(chain_of_groups(100), "g0")
+
+    assert result == ["numpy>=1"]
+    assert warnings == []
+
+
+def test_flatten_group_rejects_a_chain_deeper_than_the_limit() -> None:
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries are nested more than 100 levels deep"
+    ):
+        _flatten_group(chain_of_groups(101), "g0", pyproject_path="p.toml")
+
+
+def test_flatten_group_rejects_a_chain_longer_than_the_recursion_limit() -> None:
+    with pytest.raises(MetadataError, match="nested more than 100 levels deep"):
+        _flatten_group(chain_of_groups(5000), "g0")
+
+
+def test_flatten_group_expands_a_diamond_within_the_budget() -> None:
+    result, warnings = _flatten_group(diamond_of_groups(10), "g0")
+
+    assert result == ["numpy>=1"] * 1024
+    assert warnings == []
+
+
+def test_flatten_group_rejects_an_exponential_expansion() -> None:
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries expand more than 10000 groups in total"
+    ):
+        _flatten_group(diamond_of_groups(25), "g0", pyproject_path="p.toml")
+
+
+def test_flatten_group_shares_the_budget_between_the_included_groups() -> None:
+    budget = [3]
+
+    with pytest.raises(MetadataError, match="expand more than"):
+        _flatten_group(chain_of_groups(5), "g0", budget=budget)
+
+    assert budget == [-1]
 
 
 def test_candidate_requirements_reports_a_cycle_once() -> None:
