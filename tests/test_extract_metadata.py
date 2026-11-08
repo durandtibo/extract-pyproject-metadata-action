@@ -81,6 +81,13 @@ RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
 REQUIREMENTS_PATH = Path(__file__).resolve().parents[1] / "scripts" / "requirements.txt"
 
 
+# ``packaging.licenses`` (which checks the license expressions) needs packaging 24.2 or later.
+requires_licenses = pytest.mark.skipif(
+    importlib.util.find_spec("packaging.licenses") is None,
+    reason="packaging before 24.2 cannot validate license expressions",
+)
+
+
 def write_pyproject(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "pyproject.toml"
     path.write_text(content)
@@ -589,6 +596,7 @@ def test_license_warnings_valid_expression(license_: str) -> None:
     assert _license_warnings(license_, "p.toml") == []
 
 
+@requires_licenses
 @pytest.mark.parametrize("license_", ["MIT License", "MIT AND", "GPL v3", "(MIT"])
 def test_license_warnings_invalid_expression(license_: str) -> None:
     warnings = _license_warnings(license_, "p.toml")
@@ -621,6 +629,7 @@ def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPa
     assert namespace["_license_warnings"]("MIT License", "p.toml") == []
 
 
+@requires_licenses
 def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n')
 
@@ -631,6 +640,7 @@ def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> No
     assert warnings[0].startswith(f"{path}: [project].license is not a valid SPDX license expression")
 
 
+@requires_licenses
 def test_main_strict_fails_on_an_invalid_license_expression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
