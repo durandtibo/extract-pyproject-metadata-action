@@ -31,6 +31,10 @@ jobs:
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
+  # Lint the script and the tests
+  lint:
+    uses: ./.github/workflows/ci-lint.yaml
+
   # Check the type hints of the script
   type-check:
     uses: ./.github/workflows/ci-type-check.yaml

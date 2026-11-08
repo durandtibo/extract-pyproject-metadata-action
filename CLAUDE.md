@@ -12,7 +12,8 @@ fixtures used by the integration workflows.
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
   `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
-  `.venv/bin/pytest`, `.venv/bin/mypy` (strict, must pass).
+  `.venv/bin/pytest`, `.venv/bin/ruff check scripts tests` (must pass),
+  `.venv/bin/mypy` (strict, must pass).
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
 - Only Python >= 3.11 is supported (the script uses `tomllib`). The script must
@@ -59,9 +60,15 @@ fixtures used by the integration workflows.
 
 ## Tests
 
-- Unit tests are in `tests/test_extract_metadata.py`; write one for every new
-  or changed function, including private ones, and for every bug fixed (check
-  that it fails without the fix).
+- Unit tests are in `tests/`, one module per area: `test_metadata.py` (the
+  fields of the file), `test_dependencies.py`, `test_python_versions.py`,
+  `test_output.py` (outputs, workflow commands, summary), `test_cli.py` (`main`
+  and the options), `test_run_sh.py` and `test_contract.py` (`action.yaml` and
+  `README.md` agree with the script). Put a new test in the module of its area.
+  Write one for every new or changed function, including private ones, and for
+  every bug fixed (check that it fails without the fix).
+- Shared builders and constants are in `tests/helpers.py`, fixtures and the
+  import path of `scripts/` in `tests/conftest.py`.
 - Build `pyproject.toml` contents with `tmp_path` and `write_pyproject`; no
   network, no sleeps.
 - One behaviour per test, with `pytest.mark.parametrize` for the same check on

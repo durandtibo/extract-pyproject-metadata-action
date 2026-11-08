@@ -104,8 +104,8 @@ import functools
 import json
 import os
 import re
-import sys
 import string
+import sys
 import tomllib
 import uuid
 from collections.abc import Mapping, Sequence
@@ -123,6 +123,15 @@ except ImportError:  # packaging before 24.2 cannot validate license expressions
     # Only the None checks of ``_license_warnings`` use these names without the import.
     InvalidLicenseExpression = None  # type: ignore[assignment,misc]
     canonicalize_license_expression = None  # type: ignore[assignment]
+
+# The UTF-8 byte order mark that some editors write at the start of a file.
+UTF8_BOM = b"\xef\xbb\xbf"
+
+# Limits that turn a pathological dependency-groups table into an error instead of a Python
+# traceback (include-group chain deeper than the recursion limit) or a run that never ends
+# (a group that includes the same group twice, 25 levels deep, expands to 2**25 entries).
+_MAX_INCLUDE_DEPTH = 100
+_MAX_GROUP_EXPANSIONS = 10_000
 
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
@@ -1069,7 +1078,7 @@ def _lookup_key(dependency: str) -> str:
     return f"{canonicalize_name(name)}@{kind}{colon}{canonicalize_name(scope_name)}"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
     """Parse a requirement string, once per distinct string.
 
