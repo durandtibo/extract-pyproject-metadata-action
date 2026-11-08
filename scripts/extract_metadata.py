@@ -38,7 +38,9 @@ instead of a warning.
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
 "major.minor" strings) that ``[project].requires-python`` allows.
 
-Exits non-zero with a message on stderr if the file is missing, is not
+Exits non-zero with a message on stderr (with ``--github-output FILE``, an
+``::error file=<path>::`` workflow command, so that GitHub shows an error
+annotation on the file) if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, a
 dependency table ([project].dependencies, [project.optional-dependencies] or
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
@@ -955,6 +957,26 @@ def emit_github_output(report: Report, pyproject_path: str, output_path: str) ->
     write_github_output(output_path, outputs)
 
 
+def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
+    """Format an error message for stderr.
+
+    Args:
+        message: The message of the ``MetadataError``.
+        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
+            annotation.
+        annotate: Whether to build a ``::error file=<path>::`` workflow command
+            (so that GitHub shows an error annotation on the file) instead of
+            the plain message.
+
+    Returns:
+        The line to print on stderr.
+    """
+    if not annotate:
+        return message
+    file = escape_annotation_property(pyproject_path)
+    return f"::error file={file}::{escape_annotation(message)}"
+
+
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit code."""
     try:
@@ -965,7 +987,8 @@ def main(argv: list[str]) -> int:
     try:
         report = build_report(args)
     except MetadataError as exc:
-        print(str(exc), file=sys.stderr)
+        annotate = args.github_output is not None
+        print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)
         return 1
 
     if args.github_output is None:
