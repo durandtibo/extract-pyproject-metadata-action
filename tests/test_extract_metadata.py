@@ -104,6 +104,85 @@ def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
         load_pyproject(str(path))
 
 
+def test_load_pyproject_invalid_utf8(tmp_path: Path) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_bytes(b'[project]\nname = "caf\xe9"\n')
+
+    with pytest.raises(MetadataError, match="pyproject.toml is not valid UTF-8"):
+        load_pyproject(str(path))
+
+
+def test_load_pyproject_unreadable_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    def deny(self: Path, *args: object, **kwargs: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "open", deny)
+
+    with pytest.raises(MetadataError, match=r"pyproject.toml cannot be read: .*Permission denied"):
+        load_pyproject(str(path))
+
+
+def test_main_returns_one_for_an_invalid_utf8_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_bytes(b"\xff\xfe")
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "is not valid UTF-8" in capsys.readouterr().err
+
+
+def test_write_github_output_unwritable_file(tmp_path: Path) -> None:
+    with pytest.raises(MetadataError, match="cannot write the outputs to .*: "):
+        write_github_output(str(tmp_path), {"name": "coola"})
+
+
+def test_write_step_summary_unwritable_file(tmp_path: Path) -> None:
+    with pytest.raises(MetadataError, match="cannot write the job summary to .*: "):
+        write_step_summary(str(tmp_path), "# Title\n")
+
+
+def test_main_returns_one_when_the_outputs_cannot_be_written(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(tmp_path), str(path), "[]"])
+
+    assert exit_code == 1
+    assert "::error file=" in capsys.readouterr().err
+
+
+def test_main_returns_one_when_the_job_summary_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    exit_code = main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"])
+
+    assert exit_code == 1
+    assert "cannot write the job summary" in capsys.readouterr().err
+
+
+def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
+    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
+
+    exit_code = main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "missing required key" in err
+    assert "cannot write the job summary" not in err
+
+
 def test_extract_metadata_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
         _, warnings = extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
