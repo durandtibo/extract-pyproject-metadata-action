@@ -70,16 +70,27 @@ def extract_metadata(
         A dict with keys ``name``, ``version``, and ``extras``.
 
     Raises:
-        MetadataError: If ``[project]`` is missing ``name`` or ``version``, or
-            ``extra_values_json`` is not a JSON array.
+        MetadataError: If ``[project]`` is not a table, is missing ``name`` or
+            ``version``, has a ``name`` that is not a non-empty string or a
+            ``version`` that is not a string, or ``extra_values_json`` is not a
+            JSON array.
     """
     project = data.get("project", {})
+    if not isinstance(project, dict):
+        msg = f"{pyproject_path}: [project] must be a table, got: {project!r}"
+        raise MetadataError(msg)
     try:
         name = project["name"]
         version = project["version"]
     except KeyError as exc:
         msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
         raise MetadataError(msg) from exc
+    if not isinstance(name, str) or not name:
+        msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
+        raise MetadataError(msg)
+    if not isinstance(version, str):
+        msg = f"{pyproject_path}: [project].version must be a string, got: {version!r}"
+        raise MetadataError(msg)
 
     extras = sorted(project.get("optional-dependencies", {}).keys())
 

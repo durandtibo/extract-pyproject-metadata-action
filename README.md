@@ -69,6 +69,9 @@ The action's step fails (non-zero exit) when:
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML.
 - `[project]` is missing the required `name` or `version` key.
+- `[project]` is not a table, `name` is not a non-empty string, or `version` is
+  not a string (for example `version = 1.0` is a TOML float; write
+  `version = "1.0"`).
 - `extra-values` is not valid JSON, or is not a JSON array.
 - `dependencies` is not a JSON array of strings.
 

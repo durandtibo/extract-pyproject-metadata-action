@@ -142,6 +142,34 @@ def test_extract_metadata_missing_name(tmp_path: Path) -> None:
         extract(path)
 
 
+@pytest.mark.parametrize(
+    ("project", "match"),
+    [
+        ('name = 1\nversion = "1.2.3"', r"\[project\]\.name must be a non-empty string, got: 1"),
+        ('name = ""\nversion = "1.2.3"', r"\[project\]\.name must be a non-empty string, got: ''"),
+        ('name = ["a"]\nversion = "1.2.3"', r"\[project\]\.name must be a non-empty string"),
+        ('name = "coola"\nversion = 1.0', r"\[project\]\.version must be a string, got: 1\.0"),
+        ('name = "coola"\nversion = 1', r"\[project\]\.version must be a string, got: 1"),
+        ('name = "coola"\nversion = true', r"\[project\]\.version must be a string, got: True"),
+    ],
+)
+def test_extract_metadata_name_and_version_must_be_strings(
+    tmp_path: Path, project: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f"[project]\n{project}\n")
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+@pytest.mark.parametrize("content", ["project = 1", 'project = "coola"', "project = []"])
+def test_extract_metadata_project_must_be_a_table(tmp_path: Path, content: str) -> None:
+    path = write_pyproject(tmp_path, content)
+
+    with pytest.raises(MetadataError, match=r"\[project\] must be a table"):
+        extract(path)
+
+
 def test_extract_metadata_missing_version(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
