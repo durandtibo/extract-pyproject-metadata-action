@@ -15,6 +15,8 @@
 # (self-hosted runners keep $RUNNER_TEMP between jobs), whether it succeeds or
 # not.
 #
+# On failure, the pip output (for example a network error) is shown before the error.
+#
 # The exit code is the one of extract_metadata.py, or 1 on a Windows runner, if
 # the python3 on PATH is older than 3.11 or if the requirements cannot be
 # installed.
@@ -53,7 +55,7 @@ if ! python3 -c 'import packaging' 2>/dev/null; then
 		python=""
 	fi
 	if [ -z "$python" ]; then
-		echo "::error::Could not install the 'packaging' Python package. Install it in the Python on PATH (e.g. 'pip install packaging') before using this action." >&2
+		echo "::error::Could not install the 'packaging' Python package (the install needs access to a package index). Check the network and the pip configuration, or install it in the Python on PATH (e.g. 'pip install packaging') before using this action." >&2
 		exit 1
 	fi
 fi
