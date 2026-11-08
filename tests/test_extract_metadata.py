@@ -20,6 +20,7 @@ from extract_metadata import (  # noqa: E402
     _candidate_requirements,
     _check_array,
     _conflict_warnings,
+    _dynamic_dependency_fields,
     _flatten_group,
     _get_table,
     escape_annotation,
@@ -1891,3 +1892,78 @@ def test_extract_metadata_invalid_names(tmp_path: Path, name: str) -> None:
 
     with pytest.raises(MetadataError, match=r"\[project\]\.name is not a valid project name"):
         extract(path)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({}, []),
+        ({"project": {}}, []),
+        ({"project": {"dynamic": ["version"]}}, []),
+        ({"project": {"dynamic": ["dependencies"]}}, ["dependencies"]),
+        ({"project": {"dynamic": ["optional-dependencies"]}}, ["optional-dependencies"]),
+        (
+            {"project": {"dynamic": ["optional-dependencies", "dependencies"]}},
+            ["dependencies", "optional-dependencies"],
+        ),
+        ({"project": {"dynamic": ["dependencies"], "dependencies": ["a"]}}, []),
+        ({"project": {"dynamic": "dependencies"}}, []),
+        ({"project": 1}, []),
+    ],
+)
+def test_dynamic_dependency_fields(data: dict, expected: list[str]) -> None:
+    assert _dynamic_dependency_fields(data) == expected
+
+
+def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
+    data = {"project": {"name": "a", "dynamic": ["dependencies"]}}
+
+    result, warnings = extract_dependency_specifiers(data, ["numpy"], "p.toml")
+
+    assert result == {"numpy": None}
+    assert warnings == [
+        "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it"
+    ]
+
+
+def test_dependency_dynamic_fields_add_one_warning_each() -> None:
+    data = {"project": {"dynamic": ["dependencies", "optional-dependencies"]}}
+
+    _, warnings = extract_dependency_specifiers(data, ["numpy"], "p.toml")
+
+    assert warnings == [
+        "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
+        "p.toml: [project].optional-dependencies is dynamic, it cannot be read, so no requirement is found in it",
+    ]
+
+
+def test_dependency_dynamic_dependencies_does_not_warn_when_nothing_is_requested() -> None:
+    data = {"project": {"dynamic": ["dependencies"]}}
+
+    assert extract_dependency_specifiers(data, [], "p.toml") == ({}, [])
+
+
+def test_dependency_static_value_wins_over_dynamic_without_warning() -> None:
+    data = {"project": {"dynamic": ["dependencies"], "dependencies": ["numpy>=1"]}}
+
+    assert extract_dependency_specifiers(data, ["numpy"], "p.toml") == ({"numpy": ">=1"}, [])
+
+
+def test_check_no_missing_dependency_points_out_dynamic_fields() -> None:
+    with pytest.raises(
+        MetadataError,
+        match=r"\['numpy'\]; \[project\]\.dependencies is dynamic and cannot be read$",
+    ):
+        check_no_missing_dependency({"numpy": None}, "p.toml", ["dependencies"])
+
+
+def test_main_fail_on_missing_points_out_dynamic_dependencies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\ndynamic = ["dependencies"]\n')
+
+    exit_code = main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["numpy"]'])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.err.endswith("; [project].dependencies is dynamic and cannot be read\n")

@@ -42,6 +42,7 @@ import json
 import re
 import sys
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
@@ -344,6 +345,26 @@ def _flatten_group(
     return out, list(dict.fromkeys(warnings))
 
 
+def _dynamic_dependency_fields(data: dict) -> list[str]:
+    """Return the dependency fields that only the build backend can provide.
+
+    A field is returned when it is listed in ``[project].dynamic`` and has no
+    static value in ``[project]``. Only ``dependencies`` and
+    ``optional-dependencies`` are checked, in this order.
+    """
+    project = data.get("project", {})
+    if not isinstance(project, dict):
+        return []
+    dynamic = project.get("dynamic", [])
+    if not isinstance(dynamic, list):
+        return []
+    return [
+        field
+        for field in ("dependencies", "optional-dependencies")
+        if field in dynamic and field not in project
+    ]
+
+
 def _candidate_requirements(
     data: dict, pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
@@ -351,7 +372,9 @@ def _candidate_requirements(
 
     Returns:
         A tuple ``(requirements, warnings)``. ``warnings`` has one message per
-        include-group cycle and per ``include-group`` that names no group.
+        dependency field that is dynamic (the build backend computes it, so it
+        cannot be read), per include-group cycle and per ``include-group`` that
+        names no group.
 
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
@@ -371,7 +394,11 @@ def _candidate_requirements(
         extra_reqs = _check_array(extra_reqs, label, pyproject_path)
         reqs.extend(r for r in extra_reqs if isinstance(r, str))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
-    warnings: list[str] = []
+    warnings = [
+        f"{pyproject_path}: [project].{field} is dynamic, it cannot be read, so no "
+        "requirement is found in it"
+        for field in _dynamic_dependency_fields(data)
+    ]
     for gname in groups:
         group_reqs, group_warnings = _flatten_group(groups, gname, pyproject_path=pyproject_path)
         reqs.extend(group_reqs)
@@ -492,12 +519,19 @@ def parse_bool(value: str, name: str) -> bool:
     return lowered == "true"
 
 
-def check_no_missing_dependency(specifiers: dict[str, str | None], pyproject_path: str) -> None:
+def check_no_missing_dependency(
+    specifiers: dict[str, str | None],
+    pyproject_path: str,
+    dynamic_fields: Sequence[str] = (),
+) -> None:
     """Raise if a requested dependency was not found.
 
     Args:
         specifiers: The mapping returned by ``extract_dependency_specifiers``.
         pyproject_path: Path of the file, used in the error message.
+        dynamic_fields: The dependency fields that are dynamic, as returned by
+            ``_dynamic_dependency_fields``. The error message points them out,
+            because a package may be missing only because it cannot be read.
 
     Raises:
         MetadataError: If a package maps to ``None``.
@@ -508,6 +542,8 @@ def check_no_missing_dependency(specifiers: dict[str, str | None], pyproject_pat
             f"{pyproject_path}: dependencies not found in [project].dependencies, "
             f"[project.optional-dependencies] or [dependency-groups]: {missing}"
         )
+        for field in dynamic_fields:
+            msg += f"; [project].{field} is dynamic and cannot be read"
         raise MetadataError(msg)
 
 
@@ -622,7 +658,9 @@ def main(argv: list[str]) -> int:
         )
         warnings.extend(specifier_warnings)
         if fail_on_missing:
-            check_no_missing_dependency(specifiers, args.pyproject_path)
+            check_no_missing_dependency(
+                specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
+            )
         report = Report(**metadata, dependency_specifiers=specifiers, warnings=warnings)
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)

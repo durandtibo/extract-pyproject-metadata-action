@@ -112,7 +112,7 @@ jobs:
 | `requires-python`       | Python version specifier, as declared in `[project].requires-python` (e.g. `>=3.10,<4`), as written. Empty if it is not declared (also if it is listed in `[project].dynamic`).                                                                                                                                                                                                                                                                                                             |
 | `extras`                | JSON array of extra names, sorted by normalized name, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept); names are compared per PEP 685, so `Foo_Bar` and `foo-bar` are the same extra.                                                                                                                                                                                                                                                                  |
 | `groups`                | JSON array of the group names of `[dependency-groups]` (PEP 735), sorted by normalized name, without duplicates. `[]` if there is none.                                                                                                                                                                                                                                                                                                                                                     |
-| `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found (or a failure, with `fail-on-missing`), `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, or if an `include-group` names a group that does not exist. |
+| `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found (or a failure, with `fail-on-missing`), `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, if an `include-group` names a group that does not exist, or if `dependencies` or `optional-dependencies` is listed in `[project].dynamic` without a static value (the build backend computes it, so the action cannot read it and finds nothing in it). |
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
@@ -143,7 +143,8 @@ The action's step fails (non-zero exit) when:
 - `extra-values` is not valid JSON, or is not a JSON array of strings.
 - `dependencies` is not a JSON array of strings.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
-  `dependencies` is not found.
+  `dependencies` is not found (the error says when `[project].dependencies` or
+  `[project].optional-dependencies` is dynamic and so cannot be read).
 
 ## Development
 
