@@ -120,8 +120,18 @@ from packaging.version import InvalidVersion, Version
 try:
     from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 except ImportError:  # packaging before 24.2 cannot validate license expressions
-    InvalidLicenseExpression = None
-    canonicalize_license_expression = None
+    # Only the None checks of ``_license_warnings`` use these names without the import.
+    InvalidLicenseExpression = None  # type: ignore[assignment,misc]
+    canonicalize_license_expression = None  # type: ignore[assignment]
+
+# The UTF-8 byte order mark that some editors write at the start of a file.
+UTF8_BOM = b"\xef\xbb\xbf"
+
+# Limits that turn a pathological dependency-groups table into an error instead of a Python
+# traceback (include-group chain deeper than the recursion limit) or a run that never ends
+# (a group that includes the same group twice, 25 levels deep, expands to 2**25 entries).
+_MAX_INCLUDE_DEPTH = 100
+_MAX_GROUP_EXPANSIONS = 10_000
 
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
@@ -202,11 +212,13 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         pyproject_path: Path to the pyproject.toml file.
 
     Returns:
-        The parsed TOML document.
+        The parsed TOML document. A UTF-8 byte order mark at the start of the
+        file is ignored.
 
     Raises:
         MetadataError: If the file is missing, cannot be read (for example for
-            lack of permission), is not UTF-8 or is not valid TOML.
+            lack of permission), is not UTF-8, is not valid TOML or has arrays or inline
+            tables nested too deeply for the parser.
     """
     path = Path(pyproject_path)
     if not path.is_file():
@@ -214,12 +226,17 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         raise MetadataError(msg)
     try:
         with path.open("rb") as f:
-            return tomllib.load(f)
+            content = f.read()
+        # Some editors (on Windows) start a UTF-8 file with a byte order mark, which TOML rejects.
+        return tomllib.loads(content.removeprefix(UTF8_BOM).decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
         msg = f"{pyproject_path} is not valid TOML: {exc}"
         raise MetadataError(msg) from exc
     except UnicodeDecodeError as exc:
         msg = f"{pyproject_path} is not valid UTF-8: {exc}"
+        raise MetadataError(msg) from exc
+    except RecursionError as exc:  # tomllib recurses on nested arrays and inline tables
+        msg = f"{pyproject_path} is nested too deeply to be parsed"
         raise MetadataError(msg) from exc
     except OSError as exc:
         msg = f"{pyproject_path} cannot be read: {exc}"
@@ -481,7 +498,7 @@ def _valid_version(version: object, is_static: bool, pyproject_path: str) -> tup
         MetadataError: If ``version`` is not a string, or a static version is
             not a valid PEP 440 version.
     """
-    _check_str(version, "[project].version", pyproject_path)
+    version = _check_str(version, "[project].version", pyproject_path)
     if not is_static:
         return version, ""
     try:
@@ -822,6 +839,7 @@ def _flatten_group(
     name: str,
     seen: tuple[str, ...] = (),
     pyproject_path: str = "pyproject.toml",
+    budget: list[int] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Return requirement strings of a dependency group, expanding include-group.
 
@@ -829,11 +847,21 @@ def _flatten_group(
     followed again, with a warning (once per cycle). An ``include-group`` that
     names no group is skipped, with a warning.
 
+    Args:
+        groups: The ``[dependency-groups]`` table.
+        name: The group to expand.
+        seen: The (normalized) groups being expanded, outermost first.
+        pyproject_path: Path of the file, used in the messages.
+        budget: A one-item list with the number of expansions left, shared by the recursive
+            calls. ``_MAX_GROUP_EXPANSIONS`` when it is not given.
+
     Returns:
         A tuple ``(requirements, warnings)``, without duplicate warnings.
 
     Raises:
-        MetadataError: If a group is not an array, an ``include-group`` value
+        MetadataError: If the ``include-group`` entries are nested deeper than
+            ``_MAX_INCLUDE_DEPTH`` or expand more than ``_MAX_GROUP_EXPANSIONS``
+            times in total, if a group is not an array, an ``include-group`` value
             is not a string, or an entry is neither a string nor a table whose
             only key is ``include-group`` (for example a typo such as
             ``include_group``).
@@ -841,6 +869,22 @@ def _flatten_group(
     key = canonicalize_name(name)
     if key in seen:
         return [], [_cycle_message(seen[seen.index(key) :], pyproject_path)]
+    if len(seen) >= _MAX_INCLUDE_DEPTH:
+        msg = (
+            f"{pyproject_path}: [dependency-groups] include-group entries are nested more than "
+            f"{_MAX_INCLUDE_DEPTH} levels deep, at group {name!r}"
+        )
+        raise MetadataError(msg)
+    if budget is None:
+        budget = [_MAX_GROUP_EXPANSIONS]
+    budget[0] -= 1
+    if budget[0] < 0:
+        msg = (
+            f"{pyproject_path}: [dependency-groups] include-group entries expand more than "
+            f"{_MAX_GROUP_EXPANSIONS} groups in total, at group {name!r}: a group is included "
+            "several times by several groups"
+        )
+        raise MetadataError(msg)
     out: list[str] = []
     warnings: list[str] = []
     for gname, entries in groups.items():
@@ -866,7 +910,7 @@ def _flatten_group(
                         "does not match any group"
                     )
                 included_reqs, included_warnings = _flatten_group(
-                    groups, included, (*seen, key), pyproject_path
+                    groups, included, (*seen, key), pyproject_path, budget
                 )
                 out.extend(included_reqs)
                 warnings.extend(included_warnings)

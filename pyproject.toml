@@ -25,3 +25,8 @@ ignore = [
   "S101", # assert is how pytest tests check
   "S108", # fake /tmp paths in the tests
 ]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["scripts/extract_metadata.py"]

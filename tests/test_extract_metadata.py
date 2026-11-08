@@ -81,6 +81,13 @@ RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
 REQUIREMENTS_PATH = Path(__file__).resolve().parents[1] / "scripts" / "requirements.txt"
 
 
+# ``packaging.licenses`` (which checks the license expressions) needs packaging 24.2 or later.
+requires_licenses = pytest.mark.skipif(
+    importlib.util.find_spec("packaging.licenses") is None,
+    reason="packaging before 24.2 cannot validate license expressions",
+)
+
+
 def write_pyproject(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "pyproject.toml"
     path.write_text(content)
@@ -107,6 +114,28 @@ def test_load_pyproject(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
     assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
+
+
+def test_load_pyproject_utf8_bom(tmp_path: Path) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_bytes(b'\xef\xbb\xbf[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
+
+
+def test_load_pyproject_bom_only_at_the_start(tmp_path: Path) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_bytes(b'[project]\n\xef\xbb\xbfname = "coola"\n')
+
+    with pytest.raises(MetadataError, match="pyproject.toml is not valid TOML"):
+        load_pyproject(str(path))
+
+
+def test_load_pyproject_nested_too_deeply(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, "[project]\nx = " + "[" * 5000 + "]" * 5000 + "\n")
+
+    with pytest.raises(MetadataError, match="pyproject.toml is nested too deeply to be parsed"):
+        load_pyproject(str(path))
 
 
 def test_load_pyproject_missing_file(tmp_path: Path) -> None:
@@ -567,6 +596,7 @@ def test_license_warnings_valid_expression(license_: str) -> None:
     assert _license_warnings(license_, "p.toml") == []
 
 
+@requires_licenses
 @pytest.mark.parametrize("license_", ["MIT License", "MIT AND", "GPL v3", "(MIT"])
 def test_license_warnings_invalid_expression(license_: str) -> None:
     warnings = _license_warnings(license_, "p.toml")
@@ -599,6 +629,7 @@ def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPa
     assert namespace["_license_warnings"]("MIT License", "p.toml") == []
 
 
+@requires_licenses
 def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n')
 
@@ -609,6 +640,7 @@ def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> No
     assert warnings[0].startswith(f"{path}: [project].license is not a valid SPDX license expression")
 
 
+@requires_licenses
 def test_main_strict_fails_on_an_invalid_license_expression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -2633,6 +2665,65 @@ def test_flatten_group_no_cycle_adds_no_warning() -> None:
 
     assert result == ["y", "y"]
     assert warnings == []
+
+
+def chain_of_groups(length: int) -> dict[str, list]:
+    """Groups ``g0`` to ``g<length-1>``, each including the next one; the last has a requirement."""
+    groups: dict[str, list] = {f"g{i}": [{"include-group": f"g{i + 1}"}] for i in range(length - 1)}
+    groups[f"g{length - 1}"] = ["numpy>=1"]
+    return groups
+
+
+def diamond_of_groups(levels: int) -> dict[str, list]:
+    """Groups that each include the next one twice: ``g0`` expands to ``2**levels`` entries."""
+    groups: dict[str, list] = {
+        f"g{i}": [{"include-group": f"g{i + 1}"}, {"include-group": f"g{i + 1}"}]
+        for i in range(levels)
+    }
+    groups[f"g{levels}"] = ["numpy>=1"]
+    return groups
+
+
+def test_flatten_group_follows_a_chain_up_to_the_depth_limit() -> None:
+    result, warnings = _flatten_group(chain_of_groups(100), "g0")
+
+    assert result == ["numpy>=1"]
+    assert warnings == []
+
+
+def test_flatten_group_rejects_a_chain_deeper_than_the_limit() -> None:
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries are nested more than 100 levels deep"
+    ):
+        _flatten_group(chain_of_groups(101), "g0", pyproject_path="p.toml")
+
+
+def test_flatten_group_rejects_a_chain_longer_than_the_recursion_limit() -> None:
+    with pytest.raises(MetadataError, match="nested more than 100 levels deep"):
+        _flatten_group(chain_of_groups(5000), "g0")
+
+
+def test_flatten_group_expands_a_diamond_within_the_budget() -> None:
+    result, warnings = _flatten_group(diamond_of_groups(10), "g0")
+
+    assert result == ["numpy>=1"] * 1024
+    assert warnings == []
+
+
+def test_flatten_group_rejects_an_exponential_expansion() -> None:
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries expand more than 10000 groups in total"
+    ):
+        _flatten_group(diamond_of_groups(25), "g0", pyproject_path="p.toml")
+
+
+def test_flatten_group_shares_the_budget_between_the_included_groups() -> None:
+    budget = [3]
+
+    with pytest.raises(MetadataError, match="expand more than"):
+        _flatten_group(chain_of_groups(5), "g0", budget=budget)
+
+    assert budget == [-1]
 
 
 def test_candidate_requirements_reports_a_cycle_once() -> None:
