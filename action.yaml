@@ -21,7 +21,6 @@ description: Read the project name, version, optional-dependency extra names, an
 inputs:
   pyproject-path:
     description: Path to pyproject.toml
-    required: false
     default: pyproject.toml
 
   extra-values:
@@ -29,7 +28,6 @@ inputs:
       JSON array of additional values to prepend to the extras read from
       pyproject.toml, for callers that need a non-package value in the list
       too (e.g. '[""]' for a "no extra" baseline, or '["all"]').
-    required: false
     default: "[]"
 
   dependencies:
@@ -37,7 +35,6 @@ inputs:
       JSON array of package names whose version specifier is looked up in
       [project].dependencies, [project.optional-dependencies] and
       [dependency-groups] (e.g. '["invoke-tasklib"]').
-    required: false
     default: "[]"
 
   fail-on-missing:
@@ -45,14 +42,12 @@ inputs:
       Set to "true" to fail when a package listed in dependencies is not found,
       instead of reporting it as null in dependency-specifiers ("true" or
       "false"; the case and surrounding spaces are ignored)
-    required: false
     default: "false"
 
   python-candidates:
     description: >
       JSON array of "major.minor" Python versions to choose from for the
       python-versions output (e.g. '["3.11","3.12"]')
-    required: false
     default: '["3.10","3.11","3.12","3.13","3.14"]'
 
   fail-on-dynamic-version:
@@ -60,7 +55,6 @@ inputs:
       Set to "true" to fail when the version is listed in [project].dynamic,
       instead of reporting an empty version with a warning ("true" or "false";
       the case and surrounding spaces are ignored)
-    required: false
     default: "false"
 
   strict:
@@ -68,7 +62,6 @@ inputs:
       Set to "true" to fail when there is any warning, instead of only
       reporting it ("true" or "false"; the case and surrounding spaces are
       ignored)
-    required: false
     default: "false"
 
   python-executable:
@@ -76,7 +69,6 @@ inputs:
       Python interpreter that runs the action, a command found on PATH or a
       path (it must be Python 3.11 or later), for runners where python3 is not
       the interpreter to use
-    required: false
     default: python3
 
   step-summary:
@@ -84,7 +76,6 @@ inputs:
       Set to "true" to also write the outputs and the warnings to the job
       summary of the workflow run ("true" or "false"; the case and surrounding
       spaces are ignored)
-    required: false
     default: "false"
 
 outputs:
