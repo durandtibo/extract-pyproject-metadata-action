@@ -22,12 +22,11 @@ With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
 ``extras``, ``groups``, ``python-versions``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
-delimiter so that values may contain line breaks)
-and prints to stdout one ``::warning file=<path>::`` workflow command per
-warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
-annotation to the file, followed by a one-line summary of the outputs.
-Warnings are printed
-on stdout because GitHub only parses workflow commands there.
+delimiter so that values may contain line breaks) and prints to stdout one
+``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
+the pyproject path, so that GitHub attaches the annotation to the file,
+followed by a one-line summary of the outputs. Warnings are printed on stdout
+because GitHub only parses workflow commands there.
 
 With ``--fail-on-missing true``, a requested dependency that is not found
 is an error instead of a ``null`` specifier.
@@ -65,8 +64,6 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
-
-
 
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
@@ -581,17 +578,16 @@ def extract_dependency_specifiers(
             type, or a requirement of ``[project].dependencies`` or of an extra
             is not a string.
     """
-    deps = dependencies
     # Like invalid requirements below, structure warnings are only worth
     # reporting when the caller looks something up.
     candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
     found, _, invalid_warnings = _index_requirements(candidates, pyproject_path)
     # An invalid requirement is only worth a warning when the caller looks
     # something up: it may be the very entry that was meant to be found.
-    warnings = [*structure_warnings, *invalid_warnings] if deps else []
+    warnings = [*structure_warnings, *invalid_warnings] if dependencies else []
 
     result: dict[str, str | None] = {}
-    for dep in deps:
+    for dep in dependencies:
         matches = found.get(canonicalize_name(dep))
         if not matches:
             result[dep] = None

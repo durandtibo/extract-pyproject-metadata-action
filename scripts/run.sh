@@ -6,9 +6,9 @@
 # The script needs Python 3.11 or later (for tomllib) and "packaging"
 # (scripts/requirements.txt). If "packaging" is missing from the python3 on
 # PATH, it is installed in a private virtual environment instead of
-# pip-installing into the caller's Python: that would modify the caller's environment and fails
-# on "externally managed" Pythons (PEP 668). --system-site-packages reuses
-# whatever is already there. The venv is created in a new directory on every
+# pip-installing into the caller's Python: that would modify the caller's
+# environment and fails on "externally managed" Pythons (PEP 668).
+# --system-site-packages reuses whatever is already there. The venv is created in a new directory on every
 # run, so a stale or broken one left by an earlier run is never reused, and it
 # is removed when the script ends (self-hosted runners keep $RUNNER_TEMP
 # between jobs), whether it succeeds or not.
