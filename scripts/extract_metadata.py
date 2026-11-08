@@ -1,13 +1,14 @@
 r"""Extract project name, version, and optional-dependency extras from a pyproject.toml.
 
 Usage:
-    extract_metadata.py <pyproject-path> <extra-values-json>
+    extract_metadata.py <pyproject-path> <extra-values-json> [<dependencies-json>]
 
 Prints a single JSON object to stdout:
-    {"name": ..., "version": ..., "extras": [...]}
+    {"name": ..., "version": ..., "extras": [...], "dependency_specifiers": {...}}
 
 Exits non-zero with a message on stderr if the file is missing, is not
-valid TOML, or [project] is missing the required "name"/"version" keys.
+valid TOML, [project] is missing the required "name"/"version" keys, or an
+input is not valid JSON of the expected shape.
 """
 
 from __future__ import annotations
@@ -29,33 +30,49 @@ class MetadataError(Exception):
     """Raised when pyproject.toml cannot be read or is missing required metadata."""
 
 
-def extract_metadata(pyproject_path: str, extra_values_json: str) -> dict:
-    """Read name, version, and sorted extras from a pyproject.toml file.
+def load_pyproject(pyproject_path: str) -> dict:
+    """Read and parse a pyproject.toml file.
 
     Args:
         pyproject_path: Path to the pyproject.toml file.
-        extra_values_json: JSON array of extra values to prepend to the
-            extras read from ``[project.optional-dependencies]``.
 
     Returns:
-        A dict with keys ``name``, ``version``, and ``extras``.
+        The parsed TOML document.
 
     Raises:
-        MetadataError: If the file is missing, is not valid TOML, or
-            ``[project]`` is missing ``name`` or ``version``.
+        MetadataError: If the file is missing or is not valid TOML.
     """
     path = Path(pyproject_path)
     if not path.is_file():
         msg = f"pyproject.toml not found at: {pyproject_path}"
         raise MetadataError(msg)
-
     try:
         with path.open("rb") as f:
-            data = tomllib.load(f)
+            return tomllib.load(f)
     except tomllib.TOMLDecodeError as exc:
         msg = f"{pyproject_path} is not valid TOML: {exc}"
         raise MetadataError(msg) from exc
 
+
+def extract_metadata(
+    data: dict, extra_values_json: str, pyproject_path: str = "pyproject.toml"
+) -> dict:
+    """Read name, version, and sorted extras from a parsed pyproject.toml.
+
+    Args:
+        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
+        extra_values_json: JSON array of extra values to prepend to the
+            extras read from ``[project.optional-dependencies]``.
+        pyproject_path: Path of the file ``data`` was read from, used only in
+            error messages.
+
+    Returns:
+        A dict with keys ``name``, ``version``, and ``extras``.
+
+    Raises:
+        MetadataError: If ``[project]`` is missing ``name`` or ``version``, or
+            ``extra_values_json`` is not a JSON array.
+    """
     project = data.get("project", {})
     try:
         name = project["name"]
@@ -79,20 +96,8 @@ def extract_metadata(pyproject_path: str, extra_values_json: str) -> dict:
     return {"name": name, "version": version, "extras": extra_values + extras}
 
 
-def _load(pyproject_path: str) -> dict:
-    path = Path(pyproject_path)
-    if not path.is_file():
-        msg = f"pyproject.toml not found at: {pyproject_path}"
-        raise MetadataError(msg)
-    try:
-        with path.open("rb") as f:
-            return tomllib.load(f)
-    except tomllib.TOMLDecodeError as exc:
-        msg = f"{pyproject_path} is not valid TOML: {exc}"
-        raise MetadataError(msg) from exc
-
-
 def _parse_dependencies(dependencies_json: str) -> list[str]:
+    """Parse the ``dependencies`` input into a list of package names."""
     try:
         deps = json.loads(dependencies_json)
     except json.JSONDecodeError as exc:
@@ -133,10 +138,25 @@ def _candidate_requirements(data: dict) -> list[str]:
     return reqs
 
 
-def extract_dependency_specifiers(pyproject_path: str, dependencies_json: str) -> dict:
-    """Map each requested package to its specifier string, or None if not found."""
+def extract_dependency_specifiers(
+    data: dict, dependencies_json: str, pyproject_path: str = "pyproject.toml"
+) -> dict:
+    """Map each requested package to its specifier string, or None if not found.
+
+    Args:
+        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
+        dependencies_json: JSON array of package names to look up.
+        pyproject_path: Path of the file ``data`` was read from, used only in
+            warning messages.
+
+    Returns:
+        A dict mapping each requested package name to its specifier, ``""`` if
+        the requirement has no specifier, or ``None`` if it was not found.
+
+    Raises:
+        MetadataError: If ``dependencies_json`` is not a JSON array of strings.
+    """
     deps = _parse_dependencies(dependencies_json)
-    data = _load(pyproject_path)
     found: dict[str, list[str]] = {}
     for raw in _candidate_requirements(data):
         try:
@@ -162,6 +182,7 @@ def extract_dependency_specifiers(pyproject_path: str, dependencies_json: str) -
 
 
 def main(argv: list[str]) -> int:
+    """Run the command line interface and return the process exit code."""
     if len(argv) not in (3, 4):
         print(
             f"Usage: {argv[0]} <pyproject-path> <extra-values-json> [<dependencies-json>]",
@@ -170,9 +191,10 @@ def main(argv: list[str]) -> int:
         return 2
 
     try:
-        metadata = extract_metadata(argv[1], argv[2])
+        data = load_pyproject(argv[1])
+        metadata = extract_metadata(data, argv[2], argv[1])
         metadata["dependency_specifiers"] = extract_dependency_specifiers(
-            argv[1], argv[3] if len(argv) == 4 else "[]"
+            data, argv[3] if len(argv) == 4 else "[]", argv[1]
         )
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)

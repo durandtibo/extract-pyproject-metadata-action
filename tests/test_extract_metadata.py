@@ -9,7 +9,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from extract_metadata import MetadataError, extract_metadata, main  # noqa: E402
+import extract_metadata as extract_metadata_module  # noqa: E402
+from extract_metadata import (  # noqa: E402
+    MetadataError,
+    extract_dependency_specifiers,
+    extract_metadata,
+    load_pyproject,
+    main,
+)
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
 
@@ -18,6 +25,41 @@ def write_pyproject(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "pyproject.toml"
     path.write_text(content)
     return path
+
+
+def extract(path: Path, extra_values_json: str = "[]") -> dict:
+    """Load ``path`` and extract its metadata."""
+    return extract_metadata(load_pyproject(str(path)), extra_values_json, str(path))
+
+
+def specifiers(path: Path, dependencies_json: str) -> dict:
+    """Load ``path`` and extract the specifiers of the requested dependencies."""
+    return extract_dependency_specifiers(load_pyproject(str(path)), dependencies_json, str(path))
+
+
+def test_load_pyproject(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
+
+
+def test_load_pyproject_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.toml"
+
+    with pytest.raises(MetadataError, match="pyproject.toml not found at: .*does-not-exist.toml"):
+        load_pyproject(str(missing))
+
+
+def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, "this is not [valid toml")
+
+    with pytest.raises(MetadataError, match="pyproject.toml is not valid TOML"):
+        load_pyproject(str(path))
+
+
+def test_extract_metadata_error_names_the_file() -> None:
+    with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
+        extract_metadata({"project": {"version": "1"}}, "[]", "custom/pyproject.toml")
 
 
 def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
@@ -30,7 +72,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         """,
     )
 
-    metadata = extract_metadata(str(path), "[]")
+    metadata = extract(path)
 
     assert metadata == {"name": "coola", "version": "1.2.3", "extras": []}
 
@@ -49,7 +91,7 @@ def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
         """,
     )
 
-    metadata = extract_metadata(str(path), "[]")
+    metadata = extract(path)
 
     assert metadata["extras"] == ["numpy", "pandas"]
 
@@ -64,7 +106,7 @@ def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None
         """,
     )
 
-    metadata = extract_metadata(str(path), "[]")
+    metadata = extract(path)
 
     assert metadata["extras"] == []
 
@@ -82,7 +124,7 @@ def test_extract_metadata_extra_values_are_prepended(tmp_path: Path) -> None:
         """,
     )
 
-    metadata = extract_metadata(str(path), '[""]')
+    metadata = extract(path, '[""]')
 
     assert metadata["extras"] == ["", "numpy"]
 
@@ -97,7 +139,7 @@ def test_extract_metadata_missing_name(tmp_path: Path) -> None:
     )
 
     with pytest.raises(MetadataError, match=r"missing required key \[project\]\.name"):
-        extract_metadata(str(path), "[]")
+        extract(path)
 
 
 def test_extract_metadata_missing_version(tmp_path: Path) -> None:
@@ -110,21 +152,7 @@ def test_extract_metadata_missing_version(tmp_path: Path) -> None:
     )
 
     with pytest.raises(MetadataError, match=r"missing required key \[project\]\.version"):
-        extract_metadata(str(path), "[]")
-
-
-def test_extract_metadata_missing_file(tmp_path: Path) -> None:
-    missing = tmp_path / "does-not-exist.toml"
-
-    with pytest.raises(MetadataError, match="not found"):
-        extract_metadata(str(missing), "[]")
-
-
-def test_extract_metadata_invalid_toml(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, "this is not [valid toml")
-
-    with pytest.raises(MetadataError, match="not valid TOML"):
-        extract_metadata(str(path), "[]")
+        extract(path)
 
 
 def test_extract_metadata_invalid_extra_values_json(tmp_path: Path) -> None:
@@ -138,7 +166,7 @@ def test_extract_metadata_invalid_extra_values_json(tmp_path: Path) -> None:
     )
 
     with pytest.raises(MetadataError, match="not valid JSON"):
-        extract_metadata(str(path), "not json")
+        extract(path, "not json")
 
 
 def test_extract_metadata_extra_values_not_a_list(tmp_path: Path) -> None:
@@ -152,7 +180,7 @@ def test_extract_metadata_extra_values_not_a_list(tmp_path: Path) -> None:
     )
 
     with pytest.raises(MetadataError, match="must be a JSON array"):
-        extract_metadata(str(path), '{"not": "a list"}')
+        extract(path, '{"not": "a list"}')
 
 
 def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
@@ -165,7 +193,7 @@ def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
         """,
     )
 
-    metadata = extract_metadata(str(path), "[]")
+    metadata = extract(path)
 
     assert metadata["name"] == "my-package_v2"
     assert metadata["version"] == "1.0.0rc1+build.5"
@@ -186,6 +214,25 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
 
     assert exit_code == 0
     assert json.loads(captured.out) == {"name": "coola", "version": "1.2.3", "extras": [], "dependency_specifiers": {}}
+
+
+def test_main_parses_the_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    calls: list[str] = []
+
+    def counting_load(pyproject_path: str) -> dict:
+        calls.append(pyproject_path)
+        return load_pyproject(pyproject_path)
+
+    monkeypatch.setattr(extract_metadata_module, "load_pyproject", counting_load)
+
+    exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert calls == [str(path)]
 
 
 def test_main_returns_nonzero_on_error(
@@ -248,8 +295,6 @@ def test_cli_end_to_end_error_exit_code(tmp_path: Path) -> None:
     assert "not found" in result.stderr
 
 
-from extract_metadata import extract_dependency_specifiers  # noqa: E402
-
 DEPS_TOML = """
 [project]
 name = "p"
@@ -280,7 +325,7 @@ other = ["dup>=2"]
 )
 def test_dependency_specifiers(tmp_path: Path, name: str, expected: str | None) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
-    assert extract_dependency_specifiers(str(path), json.dumps([name])) == {name: expected}
+    assert specifiers(path, json.dumps([name])) == {name: expected}
 
 
 def test_dependency_include_group_only(tmp_path: Path) -> None:
@@ -288,12 +333,12 @@ def test_dependency_include_group_only(tmp_path: Path) -> None:
         tmp_path,
         '[dependency-groups]\nbase = ["x>=1"]\ndev = [{include-group = "base"}]\n',
     )
-    assert extract_dependency_specifiers(str(path), '["x"]') == {"x": ">=1"}
+    assert specifiers(path, '["x"]') == {"x": ">=1"}
 
 
 def test_dependency_duplicate_warns(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
-    assert extract_dependency_specifiers(str(path), '["dup"]') == {"dup": ">=1"}
+    assert specifiers(path, '["dup"]') == {"dup": ">=1"}
     assert "::warning::" in capsys.readouterr().err
 
 
@@ -301,4 +346,4 @@ def test_dependency_duplicate_warns(tmp_path: Path, capsys: pytest.CaptureFixtur
 def test_dependency_invalid_input(tmp_path: Path, value: str) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
     with pytest.raises(MetadataError):
-        extract_dependency_specifiers(str(path), value)
+        specifiers(path, value)
