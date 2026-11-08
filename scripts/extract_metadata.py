@@ -19,8 +19,10 @@ per warning, followed by a one-line summary. Warnings are printed on stdout
 because GitHub only parses workflow commands there.
 
 Exits non-zero with a message on stderr if the file is missing, is not
-valid TOML, [project] is missing the required "name"/"version" keys, or an
-input is not valid JSON of the expected shape.
+valid TOML, [project] is missing the required "name"/"version" keys, a
+dependency table ([project].dependencies, [project.optional-dependencies] or
+[dependency-groups]) has the wrong type, or an input is not valid JSON of the
+expected shape.
 """
 
 from __future__ import annotations
@@ -175,8 +177,26 @@ def _parse_dependencies(dependencies_json: str) -> list[str]:
     return deps
 
 
-def _flatten_group(groups: dict, name: str, seen: tuple[str, ...] = ()) -> list[str]:
-    """Return requirement strings of a dependency group, expanding include-group."""
+def _check_array(value: object, label: str, pyproject_path: str) -> list:
+    """Return ``value`` if it is an array, and raise ``MetadataError`` otherwise."""
+    if not isinstance(value, list):
+        msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
+        raise MetadataError(msg)
+    return value
+
+
+def _flatten_group(
+    groups: dict,
+    name: str,
+    seen: tuple[str, ...] = (),
+    pyproject_path: str = "pyproject.toml",
+) -> list[str]:
+    """Return requirement strings of a dependency group, expanding include-group.
+
+    Raises:
+        MetadataError: If a group is not an array or an ``include-group`` value
+            is not a string.
+    """
     key = canonicalize_name(name)
     if key in seen:
         return []
@@ -184,23 +204,51 @@ def _flatten_group(groups: dict, name: str, seen: tuple[str, ...] = ()) -> list[
     for gname, entries in groups.items():
         if canonicalize_name(gname) != key:
             continue
-        for entry in entries:
+        label = f"[dependency-groups].{gname}"
+        for entry in _check_array(entries, label, pyproject_path):
             if isinstance(entry, str):
                 out.append(entry)
             elif isinstance(entry, dict) and "include-group" in entry:
-                out.extend(_flatten_group(groups, entry["include-group"], (*seen, key)))
+                included = entry["include-group"]
+                if not isinstance(included, str):
+                    msg = f"{pyproject_path}: {label}: include-group must be a string, got: {included!r}"
+                    raise MetadataError(msg)
+                out.extend(_flatten_group(groups, included, (*seen, key), pyproject_path))
     return out
 
 
-def _candidate_requirements(data: dict) -> list[str]:
-    """All requirement strings, in search order."""
+def _candidate_requirements(data: dict, pyproject_path: str = "pyproject.toml") -> list[str]:
+    """All requirement strings, in search order.
+
+    Raises:
+        MetadataError: If ``[project]``, ``[project].dependencies``,
+            ``[project.optional-dependencies]``, ``[dependency-groups]`` or one
+            of their values has the wrong type.
+    """
     project = data.get("project", {})
-    reqs = [r for r in project.get("dependencies", []) if isinstance(r, str)]
-    for extra_reqs in project.get("optional-dependencies", {}).values():
-        reqs.extend(r for r in extra_reqs if isinstance(r, str))
+    if not isinstance(project, dict):
+        msg = f"{pyproject_path}: [project] must be a table, got: {project!r}"
+        raise MetadataError(msg)
+    dependencies = _check_array(
+        project.get("dependencies", []), "[project].dependencies", pyproject_path
+    )
+    reqs = [r for r in dependencies if isinstance(r, str)]
+    optional_dependencies = project.get("optional-dependencies", {})
+    if not isinstance(optional_dependencies, dict):
+        msg = (
+            f"{pyproject_path}: [project].optional-dependencies must be a table, "
+            f"got: {optional_dependencies!r}"
+        )
+        raise MetadataError(msg)
+    for extra, extra_reqs in optional_dependencies.items():
+        label = f"[project.optional-dependencies].{extra}"
+        reqs.extend(r for r in _check_array(extra_reqs, label, pyproject_path) if isinstance(r, str))
     groups = data.get("dependency-groups", {})
+    if not isinstance(groups, dict):
+        msg = f"{pyproject_path}: [dependency-groups] must be a table, got: {groups!r}"
+        raise MetadataError(msg)
     for gname in groups:
-        reqs.extend(_flatten_group(groups, gname))
+        reqs.extend(_flatten_group(groups, gname, pyproject_path=pyproject_path))
     return reqs
 
 
@@ -216,7 +264,7 @@ def extract_dependency_specifiers(
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies_json: JSON array of package names to look up.
         pyproject_path: Path of the file ``data`` was read from, used only in
-            warning messages.
+            error and warning messages.
         warnings: List to which warning messages are appended (for example
             when a package has different specifiers in several places, or a
             requirement string cannot be parsed and is ignored). Invalid
@@ -228,11 +276,14 @@ def extract_dependency_specifiers(
         the requirement has no specifier, or ``None`` if it was not found.
 
     Raises:
-        MetadataError: If ``dependencies_json`` is not a JSON array of strings.
+        MetadataError: If ``dependencies_json`` is not a JSON array of strings,
+            or if ``[project].dependencies``, ``[project.optional-dependencies]``
+            or ``[dependency-groups]`` (or one of their values) has the wrong
+            type.
     """
     deps = _parse_dependencies(dependencies_json)
     found: dict[str, list[str]] = {}
-    for raw in _candidate_requirements(data):
+    for raw in _candidate_requirements(data, pyproject_path):
         try:
             req = Requirement(raw)
         except InvalidRequirement as exc:

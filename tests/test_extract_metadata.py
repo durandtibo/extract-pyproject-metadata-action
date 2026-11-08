@@ -1007,3 +1007,94 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
     }
+
+
+@pytest.mark.parametrize(
+    ("content", "match"),
+    [
+        ('[project]\ndependencies = "numpy"', r"\[project\]\.dependencies must be an array, got: 'numpy'"),
+        ("[project]\ndependencies = 1", r"\[project\]\.dependencies must be an array, got: 1"),
+        (
+            '[project.optional-dependencies]\nx = "numpy"',
+            r"\[project\.optional-dependencies\]\.x must be an array, got: 'numpy'",
+        ),
+        (
+            "[project.optional-dependencies]\nx = 1",
+            r"\[project\.optional-dependencies\]\.x must be an array, got: 1",
+        ),
+        ("[project]\noptional-dependencies = []", r"\[project\]\.optional-dependencies must be a table"),
+        ("dependency-groups = []", r"\[dependency-groups\] must be a table, got: \[\]"),
+        ('dependency-groups = "dev"', r"\[dependency-groups\] must be a table, got: 'dev'"),
+        ('[dependency-groups]\ndev = "numpy"', r"\[dependency-groups\]\.dev must be an array, got: 'numpy'"),
+        ("[dependency-groups]\ndev = 1", r"\[dependency-groups\]\.dev must be an array, got: 1"),
+        (
+            "[dependency-groups]\ndev = [{include-group = 1}]",
+            r"\[dependency-groups\]\.dev: include-group must be a string, got: 1",
+        ),
+        (
+            '[dependency-groups]\na = [{include-group = "b"}]\nb = "x"',
+            r"\[dependency-groups\]\.b must be an array, got: 'x'",
+        ),
+        ("project = 1", r"\[project\] must be a table, got: 1"),
+    ],
+)
+def test_dependency_malformed_tables_raise_metadata_error(
+    tmp_path: Path, content: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, content)
+
+    with pytest.raises(MetadataError, match=match):
+        specifiers(path, '["numpy"]')
+
+
+def test_dependency_malformed_tables_raise_even_when_nothing_is_requested(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\ndependencies = "numpy"')
+
+    with pytest.raises(MetadataError, match=r"\[project\]\.dependencies must be an array"):
+        specifiers(path, "[]")
+
+
+def test_dependency_malformed_table_error_names_the_file() -> None:
+    with pytest.raises(MetadataError, match=r"custom/pyproject\.toml: \[dependency-groups\] must"):
+        extract_dependency_specifiers({"dependency-groups": 1}, "[]", "custom/pyproject.toml")
+
+
+def test_flatten_group_group_must_be_an_array() -> None:
+    with pytest.raises(MetadataError, match=r"custom\.toml: \[dependency-groups\]\.a must be an array"):
+        _flatten_group({"a": "x"}, "a", pyproject_path="custom.toml")
+
+
+def test_flatten_group_include_group_must_be_a_string() -> None:
+    with pytest.raises(MetadataError, match=r"\.a: include-group must be a string, got: \['b'\]"):
+        _flatten_group({"a": [{"include-group": ["b"]}]}, "a")
+
+
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        ({"project": 1}, r"\[project\] must be a table"),
+        ({"project": {"dependencies": "a"}}, r"\[project\]\.dependencies must be an array"),
+        ({"project": {"optional-dependencies": 1}}, r"optional-dependencies must be a table"),
+        ({"project": {"optional-dependencies": {"x": 1}}}, r"optional-dependencies\]\.x must be an array"),
+        ({"dependency-groups": 1}, r"\[dependency-groups\] must be a table"),
+    ],
+)
+def test_candidate_requirements_wrong_types(data: dict, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _candidate_requirements(data)
+
+
+def test_main_malformed_dependency_table_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\ndev = "numpy"\n'
+    )
+
+    exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "[dependency-groups].dev must be an array" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
