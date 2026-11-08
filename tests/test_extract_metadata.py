@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import importlib.util
 import re
@@ -18,6 +19,8 @@ from extract_metadata import (  # noqa: E402
     Metadata,
     MetadataError,
     Report,
+    build_report,
+    emit_github_output,
     DEFAULT_PYTHON_CANDIDATES,
     check_no_missing_dependency,
     extract_dependency_specifiers,
@@ -767,6 +770,63 @@ def test_main_github_output_writes_outputs_and_annotations(
         'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
     )
     assert captured.err == ""
+
+
+def parse_args(*argv: str) -> argparse.Namespace:
+    """Parse a command line like ``main`` does."""
+    return extract_metadata_module._build_parser("extract_metadata.py").parse_args(list(argv))
+
+
+def test_build_report(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    report = build_report(parse_args(str(path), '[""]', '["dup", "missing"]'))
+
+    assert report == {
+        "name": "p",
+        "normalized_name": "p",
+        "version": "1",
+        "requires_python": "",
+        "extras": ["", "a"],
+        "groups": ["base", "dev", "other"],
+        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
+        "dependency_specifiers": {"dup": ">=1", "missing": None},
+        "warnings": [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("argv", "match"),
+    [
+        (["--fail-on-missing", "maybe", "{path}", "[]"], r"fail-on-missing must be 'true' or 'false'"),
+        (["--fail-on-dynamic-version", "maybe", "{path}", "[]"], r"fail-on-dynamic-version must be"),
+        (["--python-candidates", "[3]", "{path}", "[]"], r"python-candidates must be a JSON array of strings"),
+        (["--fail-on-missing", "true", "{path}", "[]", '["missing"]'], r"dependencies not found"),
+        (["{path}", "nope"], r"extra-values is not valid JSON"),
+        (["{path}", "[]", "nope"], r"dependencies is not valid JSON"),
+        (["missing.toml", "[]"], r"pyproject\.toml not found at: missing\.toml"),
+    ],
+)
+def test_build_report_errors(tmp_path: Path, argv: list[str], match: str) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    argv = [arg.replace("{path}", str(path)) for arg in argv]
+
+    with pytest.raises(MetadataError, match=match):
+        build_report(parse_args(*argv))
+
+
+def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output = tmp_path / "github_output"
+    report = build_report(parse_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["dup"]'))
+
+    emit_github_output(report, "my,file.toml", str(output))
+
+    out_lines = capsys.readouterr().out.splitlines()
+    assert out_lines[0].startswith("::warning file=my%2Cfile.toml::dup has different specifiers")
+    assert out_lines[1].startswith("📦 name=p version=1 ")
+    assert len(out_lines) == 2
+    assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)
 
 
 @pytest.mark.parametrize(
