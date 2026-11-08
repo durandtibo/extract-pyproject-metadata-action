@@ -129,6 +129,9 @@ The action's step fails (non-zero exit) when:
 - `[project]` is not a table, `name` is not a non-empty string, or `version` is
   not a string (for example `version = 1.0` is a TOML float; write
   `version = "1.0"`).
+- `[project].name` is not a valid project name: it may only contain letters,
+  digits, `-`, `_` and `.`, and must start and end with a letter or a digit
+  ([PEP 508](https://peps.python.org/pep-0508/#names)), for example `my pkg`.
 - `[project].version` is not a valid
   [PEP 440](https://peps.python.org/pep-0440/) version (for example `latest`).
 - `[project].requires-python` is not a string.
