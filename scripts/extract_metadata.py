@@ -60,7 +60,10 @@ def load_pyproject(pyproject_path: str) -> dict:
 
 
 def extract_metadata(
-    data: dict, extra_values_json: str, pyproject_path: str = "pyproject.toml"
+    data: dict,
+    extra_values_json: str,
+    pyproject_path: str = "pyproject.toml",
+    warnings: list[str] | None = None,
 ) -> dict:
     """Read name, version, and sorted extras from a parsed pyproject.toml.
 
@@ -69,16 +72,21 @@ def extract_metadata(
         extra_values_json: JSON array of extra values to prepend to the
             extras read from ``[project.optional-dependencies]``.
         pyproject_path: Path of the file ``data`` was read from, used only in
-            error messages.
+            error and warning messages.
+        warnings: List to which warning messages are appended (for example
+            when the version is dynamic).
 
     Returns:
-        A dict with keys ``name``, ``version``, and ``extras``. ``extras``
+        A dict with keys ``name``, ``version``, and ``extras``. ``version`` is
+        an empty string when ``[project].version`` is declared in
+        ``[project].dynamic`` and has no static value. ``extras``
         lists the ``extra_values`` first, then the sorted extras, without
         duplicates.
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
-            ``version``, has a ``name`` that is not a non-empty string, a
+            ``version`` (unless the version is dynamic), has a ``dynamic`` that
+            is not an array, a ``name`` that is not a non-empty string, a
             ``version`` that is not a string or an ``optional-dependencies``
             that is not a table, or ``extra_values_json`` is not a JSON array
             of strings.
@@ -87,12 +95,27 @@ def extract_metadata(
     if not isinstance(project, dict):
         msg = f"{pyproject_path}: [project] must be a table, got: {project!r}"
         raise MetadataError(msg)
+    dynamic = project.get("dynamic", [])
+    if not isinstance(dynamic, list):
+        msg = f"{pyproject_path}: [project].dynamic must be an array, got: {dynamic!r}"
+        raise MetadataError(msg)
     try:
         name = project["name"]
-        version = project["version"]
     except KeyError as exc:
         msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
         raise MetadataError(msg) from exc
+    if "version" in project:
+        version = project["version"]
+    elif "version" in dynamic:
+        # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
+        version = ""
+        if warnings is not None:
+            warnings.append(
+                f"{pyproject_path}: [project].version is dynamic, the version output is empty"
+            )
+    else:
+        msg = f"{pyproject_path} is missing required key [project].version"
+        raise MetadataError(msg)
     if not isinstance(name, str) or not name:
         msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
         raise MetadataError(msg)
@@ -238,8 +261,8 @@ def main(argv: list[str]) -> int:
 
     try:
         data = load_pyproject(argv[1])
-        metadata = extract_metadata(data, argv[2], argv[1])
         warnings: list[str] = []
+        metadata = extract_metadata(data, argv[2], argv[1], warnings)
         metadata["dependency_specifiers"] = extract_dependency_specifiers(
             data, argv[3] if len(argv) == 4 else "[]", argv[1], warnings
         )

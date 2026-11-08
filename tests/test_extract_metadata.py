@@ -199,6 +199,76 @@ def test_extract_metadata_project_must_be_a_table(tmp_path: Path, content: str) 
         extract(path)
 
 
+def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "coola"
+        dynamic = ["version", "readme"]
+        """,
+    )
+    warnings: list[str] = []
+
+    metadata = extract_metadata(load_pyproject(str(path)), "[]", str(path), warnings)
+
+    assert metadata == {"name": "coola", "version": "", "extras": []}
+    assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
+
+
+def test_extract_metadata_dynamic_version_without_warnings_list(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
+
+    assert extract(path) == {"name": "coola", "version": "", "extras": []}
+
+
+def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "coola"\nversion = "1.2.3"\ndynamic = ["version"]\n',
+    )
+    warnings: list[str] = []
+
+    metadata = extract_metadata(load_pyproject(str(path)), "[]", str(path), warnings)
+
+    assert metadata["version"] == "1.2.3"
+    assert warnings == []
+
+
+def test_extract_metadata_missing_version_with_other_dynamic_fields(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["readme"]\n')
+
+    with pytest.raises(MetadataError, match=r"missing required key \[project\]\.version"):
+        extract(path)
+
+
+@pytest.mark.parametrize("value", ['"version"', "1", '{a = "version"}'])
+def test_extract_metadata_dynamic_must_be_an_array(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(
+        tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndynamic = {value}\n'
+    )
+
+    with pytest.raises(MetadataError, match=r"\[project\]\.dynamic must be an array"):
+        extract(path)
+
+
+def test_main_dynamic_version_warning_in_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
+
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "name": "coola",
+        "version": "",
+        "extras": [],
+        "dependency_specifiers": {},
+        "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
+    }
+
+
 def test_extract_metadata_missing_version(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
