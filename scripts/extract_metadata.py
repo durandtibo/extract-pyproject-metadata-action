@@ -4,7 +4,12 @@ Usage:
     extract_metadata.py <pyproject-path> <extra-values-json> [<dependencies-json>]
 
 Prints a single JSON object to stdout:
-    {"name": ..., "version": ..., "extras": [...], "dependency_specifiers": {...}}
+    {"name": ..., "version": ..., "extras": [...], "dependency_specifiers": {...},
+     "warnings": [...]}
+
+"warnings" lists human-readable messages about suspicious but non-fatal
+input. They are not printed to stderr here: the caller (action.yaml) turns
+them into ``::warning::`` annotations, which GitHub only parses on stdout.
 
 Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, or an
@@ -168,7 +173,10 @@ def _candidate_requirements(data: dict) -> list[str]:
 
 
 def extract_dependency_specifiers(
-    data: dict, dependencies_json: str, pyproject_path: str = "pyproject.toml"
+    data: dict,
+    dependencies_json: str,
+    pyproject_path: str = "pyproject.toml",
+    warnings: list[str] | None = None,
 ) -> dict:
     """Map each requested package to its specifier string, or None if not found.
 
@@ -177,6 +185,8 @@ def extract_dependency_specifiers(
         dependencies_json: JSON array of package names to look up.
         pyproject_path: Path of the file ``data`` was read from, used only in
             warning messages.
+        warnings: List to which warning messages are appended (for example
+            when a package has different specifiers in several places).
 
     Returns:
         A dict mapping each requested package name to its specifier, ``""`` if
@@ -201,11 +211,11 @@ def extract_dependency_specifiers(
             result[dep] = None
             continue
         if len(set(specs)) > 1:
-            print(
-                f"::warning::{dep} has different specifiers in {pyproject_path}: "
-                f"{sorted(set(specs))}; using {specs[0]!r}",
-                file=sys.stderr,
-            )
+            if warnings is not None:
+                warnings.append(
+                    f"{dep} has different specifiers in {pyproject_path}: "
+                    f"{sorted(set(specs))}; using {specs[0]!r}"
+                )
         result[dep] = specs[0]
     return result
 
@@ -222,9 +232,11 @@ def main(argv: list[str]) -> int:
     try:
         data = load_pyproject(argv[1])
         metadata = extract_metadata(data, argv[2], argv[1])
+        warnings: list[str] = []
         metadata["dependency_specifiers"] = extract_dependency_specifiers(
-            data, argv[3] if len(argv) == 4 else "[]", argv[1]
+            data, argv[3] if len(argv) == 4 else "[]", argv[1], warnings
         )
+        metadata["warnings"] = warnings
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)
         return 1

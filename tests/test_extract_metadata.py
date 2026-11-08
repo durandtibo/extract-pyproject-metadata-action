@@ -298,7 +298,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert json.loads(captured.out) == {"name": "coola", "version": "1.2.3", "extras": [], "dependency_specifiers": {}}
+    assert json.loads(captured.out) == {"name": "coola", "version": "1.2.3", "extras": [], "dependency_specifiers": {}, "warnings": []}
 
 
 def test_main_parses_the_file_once(
@@ -363,6 +363,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "version": "1.2.3",
         "extras": ["", "numpy"],
         "dependency_specifiers": {},
+        "warnings": [],
     }
 
 
@@ -421,10 +422,46 @@ def test_dependency_include_group_only(tmp_path: Path) -> None:
     assert specifiers(path, '["x"]') == {"x": ">=1"}
 
 
-def test_dependency_duplicate_warns(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_dependency_duplicate_adds_a_warning(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(
+        load_pyproject(str(path)), '["dup"]', str(path), warnings
+    )
+
+    assert result == {"dup": ">=1"}
+    assert warnings == [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"]
+
+
+def test_dependency_no_duplicate_adds_no_warning(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    warnings: list[str] = []
+
+    extract_dependency_specifiers(load_pyproject(str(path)), '["nospec"]', str(path), warnings)
+
+    assert warnings == []
+
+
+def test_dependency_warnings_are_optional(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
     assert specifiers(path, '["dup"]') == {"dup": ">=1"}
-    assert "::warning::" in capsys.readouterr().err
+
+
+def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(["extract_metadata.py", str(path), "[]", '["dup"]'])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert json.loads(captured.out)["warnings"] == [
+        f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"
+    ]
+    assert captured.err == ""
 
 
 @pytest.mark.parametrize("value", ["nope", '{"a": 1}', "[1]"])
