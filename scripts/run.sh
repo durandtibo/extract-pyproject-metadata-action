@@ -20,6 +20,8 @@
 # (self-hosted runners keep $RUNNER_TEMP between jobs), whether it succeeds or
 # not.
 #
+# When it installs "packaging", it first says so in the log, with the requirements.
+#
 # On failure, the pip output (for example a network error) is shown before the error.
 #
 # The exit code is the one of extract_metadata.py, or 1 on a Windows runner, if
@@ -70,6 +72,9 @@ sys.exit(any(s.operator == ">=" and installed < Version(s.version) for s in requ
 
 python="$python_exe"
 if ! "$python_exe" -c "$check_packaging" "$script_dir/requirements.txt" 2>/dev/null; then
+	# The requirements of the file, without the comments and the blank lines, on one line.
+	requirements="$(grep -vE '^[[:space:]]*(#|$)' "$script_dir/requirements.txt" | tr '\n' ' ')"
+	echo "'packaging' is missing or too old in '$python_exe': installing ${requirements% } in a private virtual environment"
 	if venv="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/extract-pyproject-metadata-venv.XXXXXX")" &&
 		"$python_exe" -m venv --system-site-packages "$venv"; then
 		python="$venv/bin/python"
