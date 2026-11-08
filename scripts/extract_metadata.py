@@ -20,7 +20,7 @@ group only (``numpy@extra:fast``); the key of the result is the entry as written
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
-     "description": ..., "readme": ..., "license": ...,
+     "description": ..., "readme": ..., "license": ..., "license_files": [...],
      "authors": [...], "urls": {...},
      "requires_python": ...,
      "extras": [...], "groups": [...],
@@ -40,7 +40,7 @@ With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs to FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that
 values may contain line breaks). They are ``name``, ``normalized-name``,
 ``version``, ``normalized-version``, ``description``, ``readme``, ``license``,
-``authors``, ``urls``, ``requires-python``, ``extras``, ``groups``,
+``license-files``, ``authors``, ``urls``, ``requires-python``, ``extras``, ``groups``,
 ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
 ``project-dependencies``, ``dependency-specifiers`` and
 ``dependency-requirements``. It also prints to stdout one
@@ -149,6 +149,7 @@ class Metadata(TypedDict):
     description: str
     readme: str
     license: str
+    license_files: list[str]
     authors: list[dict[str, str]]
     urls: dict[str, str]
     requires_python: str
@@ -232,7 +233,7 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value (so is ``normalized_version``,
         the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
@@ -242,7 +243,8 @@ def extract_metadata(
         file (a string ``[project].readme``, or the ``file`` of a table), or an empty
         string if there is none or the readme is inline (``text``). ``license`` is the
         SPDX expression of ``[project].license`` or the ``text`` of its table, or an empty
-        string if there is none or the license is a ``file``. ``authors`` is the list of
+        string if there is none or the license is a ``file``. ``license_files`` is the array of
+        ``[project].license-files`` (the patterns as written), empty if there is none. ``authors`` is the list of
         the authors of ``[project].authors`` (``name`` and ``email`` only), empty if
         there is none. ``urls`` maps the labels of ``[project.urls]`` to their URLs, in
         the order of the file, and is empty if there is none. ``extras`` lists the ``extra_values`` first, then the
@@ -261,7 +263,8 @@ def extract_metadata(
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``description`` or ``requires-python`` that is not a string, a ``readme`` that
             is neither a string nor a table with a string ``file``, a ``license`` that
-            is neither a string nor a table with a string ``text`` and ``file``, an
+            is neither a string nor a table with a string ``text`` and ``file``, a
+            ``license-files`` that is not an array of strings, an
             ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` that is not a table of strings, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
@@ -295,6 +298,9 @@ def extract_metadata(
         description=description,
         readme=readme,
         license=license_,
+        license_files=_check_string_array(
+            project.get("license-files", []), "[project].license-files", pyproject_path
+        ),
         authors=authors,
         urls=urls,
         requires_python=requires_python,
@@ -1421,6 +1427,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "description": metadata["description"],
         "readme": metadata["readme"],
         "license": metadata["license"],
+        "license-files": _compact_json(metadata["license_files"]),
         "authors": _compact_json(metadata["authors"]),
         "urls": _compact_json(metadata["urls"]),
         "requires-python": metadata["requires_python"],
