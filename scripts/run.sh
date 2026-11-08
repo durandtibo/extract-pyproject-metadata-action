@@ -9,8 +9,9 @@
 # pip-installing into the caller's Python: that would modify the caller's environment and fails
 # on "externally managed" Pythons (PEP 668). --system-site-packages reuses
 # whatever is already there. The venv is created in a new directory on every
-# run, so a stale or broken one left by an earlier run (self-hosted runners keep
-# $RUNNER_TEMP between jobs) is never reused.
+# run, so a stale or broken one left by an earlier run is never reused, and it
+# is removed when the script ends (self-hosted runners keep $RUNNER_TEMP
+# between jobs), whether it succeeds or not.
 #
 # The exit code is the one of extract_metadata.py, or 1 on a Windows runner, if
 # the python3 on PATH is older than 3.11 or if the requirements cannot be
@@ -31,6 +32,14 @@ if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; 
 	exit 1
 fi
 
+venv=""
+cleanup() {
+	if [ -n "$venv" ]; then
+		rm -rf "$venv"
+	fi
+}
+trap cleanup EXIT
+
 python=python3
 if ! python3 -c 'import packaging' 2>/dev/null; then
 	if venv="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/extract-pyproject-metadata-venv.XXXXXX")" &&
@@ -47,4 +56,4 @@ if ! python3 -c 'import packaging' 2>/dev/null; then
 	fi
 fi
 
-exec "$python" "$script_dir/extract_metadata.py" "$@"
+"$python" "$script_dir/extract_metadata.py" "$@"

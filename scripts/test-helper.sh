@@ -24,7 +24,7 @@ assert_equal() {
 	fi
 }
 
-# Print the number of private virtual environments the action created under $RUNNER_TEMP.
+# Print the number of private virtual environments left under $RUNNER_TEMP (the action removes its own).
 count_venvs() {
 	find "$RUNNER_TEMP" -maxdepth 1 -name 'extract-pyproject-metadata-venv.*' | wc -l | tr -d ' '
 }

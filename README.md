@@ -12,7 +12,8 @@ Requires the repository to already be checked out and a **Python 3.11 or
 later** interpreter (`python3`) available on `PATH`, for example set up with
 `actions/setup-python`; the action fails with a clear message otherwise. If the
 `packaging` package is missing, the action installs it in a
-private virtual environment under `$RUNNER_TEMP`, with the versions listed in
+private virtual environment under `$RUNNER_TEMP` (removed at the end of the
+step), with the versions listed in
 `scripts/requirements.txt`. It never modifies the Python
 environment of the caller.
 
