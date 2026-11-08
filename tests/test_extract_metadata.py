@@ -211,6 +211,34 @@ def test_extract_metadata_extra_values_not_a_list(tmp_path: Path) -> None:
         extract(path, '{"not": "a list"}')
 
 
+@pytest.mark.parametrize("value", ['["a"]', '"numpy"', "1"])
+def test_extract_metadata_optional_dependencies_must_be_a_table(
+    tmp_path: Path, value: str
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        f"""
+        [project]
+        name = "coola"
+        version = "1.2.3"
+        optional-dependencies = {value}
+        """,
+    )
+
+    with pytest.raises(
+        MetadataError, match=r"\[project\]\.optional-dependencies must be a table"
+    ):
+        extract(path)
+
+
+@pytest.mark.parametrize("value", ["[1]", "[null]", '[["a"]]', '["ok", 2]', '[{"a": 1}]'])
+def test_extract_metadata_extra_values_must_be_strings(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    with pytest.raises(MetadataError, match="extra-values must be a JSON array of strings"):
+        extract(path, value)
+
+
 def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,

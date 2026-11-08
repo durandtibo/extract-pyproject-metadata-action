@@ -72,7 +72,8 @@ The action's step fails (non-zero exit) when:
 - `[project]` is not a table, `name` is not a non-empty string, or `version` is
   not a string (for example `version = 1.0` is a TOML float; write
   `version = "1.0"`).
-- `extra-values` is not valid JSON, or is not a JSON array.
+- `[project.optional-dependencies]` is not a table.
+- `extra-values` is not valid JSON, or is not a JSON array of strings.
 - `dependencies` is not a JSON array of strings.
 
 ## Development
