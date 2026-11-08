@@ -6,9 +6,25 @@ import json
 import re
 from pathlib import Path
 
-import extract_metadata as extract_metadata_module
 import pytest
-from extract_metadata import (
+from helpers import (
+    DATA_WITH_REQUIREMENTS,
+    DATA_WITH_SCOPES,
+    DEPS_TOML,
+    GROUPS_TOML,
+    INVALID_TOML,
+    MARKERS_TOML,
+    _parse_error,
+    chain_of_groups,
+    diamond_of_groups,
+    extract,
+    specifiers,
+    write_pyproject,
+)
+from packaging.requirements import InvalidRequirement, Requirement
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
     MetadataError,
     _candidate_requirements,
     _conflict_warnings,
@@ -28,21 +44,6 @@ from extract_metadata import (
     load_pyproject,
     parse_dependencies,
 )
-from helpers import (
-    DATA_WITH_REQUIREMENTS,
-    DATA_WITH_SCOPES,
-    DEPS_TOML,
-    GROUPS_TOML,
-    INVALID_TOML,
-    MARKERS_TOML,
-    _parse_error,
-    chain_of_groups,
-    diamond_of_groups,
-    extract,
-    specifiers,
-    write_pyproject,
-)
-from packaging.requirements import InvalidRequirement, Requirement
 
 
 def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None:

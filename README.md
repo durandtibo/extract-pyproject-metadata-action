@@ -364,7 +364,7 @@ The action's step fails (non-zero exit) when:
 
 ## Development
 
-The logic is in `scripts/extract_metadata.py`, started by `scripts/run.sh`
+The logic is in the package `src/extract_pyproject_metadata/`, started by `scripts/run.sh`
 (which installs the requirements in a private virtual environment when the
 interpreter lacks them); `action.yaml` only wires inputs and outputs. Use a virtual environment:
 
@@ -374,7 +374,7 @@ python -m venv .venv
 .venv/bin/pytest -q --cov
 ```
 
-CI fails if the unit tests do not cover 100% of `scripts/extract_metadata.py`.
+CI fails if the unit tests do not cover 100% of `src/extract_pyproject_metadata`.
 
 Run on its own, without `--github-output`, the script prints one JSON object with
 the outputs (the names use `_` instead of `-`, and `python-matrix` is not in it)

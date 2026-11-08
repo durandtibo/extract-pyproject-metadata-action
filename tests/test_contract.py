@@ -6,21 +6,22 @@ import ast
 import re
 from pathlib import Path
 
-import extract_metadata as extract_metadata_module
 import pytest
-from extract_metadata import (
-    DEFAULT_PYTHON_CANDIDATES,
-    Metadata,
-    Report,
-)
 from helpers import (
     ACTION_PATH,
     README_PATH,
-    SCRIPT_PATH,
+    PACKAGE_PATH,
     _action_section_keys,
     _readme_table_names,
     extract,
     write_pyproject,
+)
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
+    DEFAULT_PYTHON_CANDIDATES,
+    Metadata,
+    Report,
 )
 
 
@@ -94,10 +95,11 @@ def test_module_docstring_lists_the_keys_of_the_json() -> None:
     assert sorted(re.findall(r'"([a-z_]+)":', section)) == sorted(Report.__annotations__)
 
 
-def test_script_defines_each_top_level_name_once() -> None:
+@pytest.mark.parametrize("path", sorted(PACKAGE_PATH.rglob("*.py")), ids=lambda path: path.name)
+def test_module_defines_each_top_level_name_once(path: Path) -> None:
     names = [
         target.id
-        for node in ast.parse(SCRIPT_PATH.read_text(encoding="utf-8")).body
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
         for target in _defined_names(node)
     ]
 

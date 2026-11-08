@@ -26,4 +26,4 @@ jobs:
         run: pip install -r requirements-test.txt
 
       - name: Run ruff
-        run: python -m ruff check scripts tests
+        run: python -m ruff check src scripts tests

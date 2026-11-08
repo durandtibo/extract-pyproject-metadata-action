@@ -9,9 +9,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-import extract_metadata as extract_metadata_module
 import pytest
-from extract_metadata import (
+from helpers import (
+    DATA_WITH_SCOPES,
+    DEPS_TOML,
+    GROUPS_TOML,
+    PACKAGE_PATH,
+    SCRIPT_PATH,
+    _specifier_error,
+    parse_args,
+    parse_github_output,
+    requires_licenses,
+    write_pyproject,
+)
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
     MetadataError,
     Options,
     build_report,
@@ -23,17 +36,6 @@ from extract_metadata import (
     parse_bool,
     parse_options,
     resolve_step_summary,
-)
-from helpers import (
-    DATA_WITH_SCOPES,
-    DEPS_TOML,
-    GROUPS_TOML,
-    SCRIPT_PATH,
-    _specifier_error,
-    parse_args,
-    parse_github_output,
-    requires_licenses,
-    write_pyproject,
 )
 
 
@@ -202,10 +204,15 @@ def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPa
     # packaging before 24.2 has no ``packaging.licenses``: importing it raises ImportError.
     monkeypatch.setitem(sys.modules, "packaging.licenses", None)
 
-    namespace = runpy.run_path(str(SCRIPT_PATH), run_name="extract_metadata_without_licenses")
+    spec = importlib.util.spec_from_file_location("cli_without_licenses", PACKAGE_PATH / "cli.py")
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
 
-    assert namespace["canonicalize_license_expression"] is None
-    assert namespace["_license_warnings"]("MIT License", "p.toml") == []
+    spec.loader.exec_module(module)
+
+    assert module.canonicalize_license_expression is None
+    assert module._license_warnings("MIT License", "p.toml") == []
 
 
 
@@ -2079,6 +2086,20 @@ def test_running_the_script_as_main_exits_with_one_on_an_error(
 
     assert exc_info.value.code == 1
     assert "missing.toml" in capsys.readouterr().err
+
+
+
+def test_running_the_package_with_dash_m_exits_with_the_code_of_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    monkeypatch.setattr(sys, "argv", ["__main__.py", str(path), "[]"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_module("extract_pyproject_metadata", run_name="__main__")
+
+    assert exc_info.value.code == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "coola"
 
 
 

@@ -5,9 +5,11 @@
 import re
 from pathlib import Path
 
-import extract_metadata as extract_metadata_module
 import pytest
-from extract_metadata import (
+from helpers import extract, requires_licenses, write_pyproject
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
     MetadataError,
     _build_system,
     _check_array,
@@ -26,7 +28,6 @@ from extract_metadata import (
     load_pyproject,
     parse_string_array,
 )
-from helpers import extract, requires_licenses, write_pyproject
 
 
 def test_load_pyproject(tmp_path: Path) -> None:

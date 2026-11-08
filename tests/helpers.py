@@ -9,21 +9,20 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import extract_metadata as extract_metadata_module
 import pytest
-from extract_metadata import (
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
     extract_dependency_specifiers,
     extract_metadata,
     load_pyproject,
     parse_string_array,
 )
-from packaging.requirements import InvalidRequirement, Requirement
-from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
-
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
+PACKAGE_PATH = Path(__file__).resolve().parents[1] / "src" / "extract_pyproject_metadata"
 RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
 
 

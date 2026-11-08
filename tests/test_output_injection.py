@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import tempfile
 from pathlib import Path
 
@@ -17,10 +16,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-import extract_metadata as extract_metadata_module
-from extract_metadata import (
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.cli import (
     _build_parser,
     build_report,
     format_outputs,

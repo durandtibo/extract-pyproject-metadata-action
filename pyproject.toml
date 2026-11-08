@@ -1,8 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.coverage.run]
-source = ["scripts"]
+source = ["src/extract_pyproject_metadata"]
 
 [tool.coverage.report]
 # The unit tests cover the whole script on every supported Python version.
@@ -31,4 +32,5 @@ ignore = [
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["scripts/extract_metadata.py"]
+files = ["src/extract_pyproject_metadata", "scripts/extract_metadata.py"]
+mypy_path = "src"
