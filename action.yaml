@@ -104,6 +104,11 @@ outputs:
       Lowest of the python-versions, compared as numbers (empty if there is
       none)
     value: ${{ steps.metadata.outputs.python-min }}
+  python-max:
+    description: >
+      Highest of the python-versions, compared as numbers (empty if there is
+      none)
+    value: ${{ steps.metadata.outputs.python-max }}
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}

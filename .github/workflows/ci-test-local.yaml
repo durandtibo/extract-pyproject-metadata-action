@@ -352,6 +352,9 @@ jobs:
           assert_equal "python-min" "3.10" "${{ steps.test-python-versions.outputs.python-min }}"
           assert_equal "python-min" "3.10" "${{ steps.test-python-candidates.outputs.python-min }}"
           assert_equal "python-min" "3.9" "${{ steps.test-python-versions-undeclared.outputs.python-min }}"
+          assert_equal "python-max" "3.14" "${{ steps.test-python-versions.outputs.python-max }}"
+          assert_equal "python-max" "3.12" "${{ steps.test-python-candidates.outputs.python-max }}"
+          assert_equal "python-max" "3.12" "${{ steps.test-python-versions-undeclared.outputs.python-max }}"
           print_success "python-versions test passed"
 
       - name: 🧪 Test invalid python-candidates (should fail)
