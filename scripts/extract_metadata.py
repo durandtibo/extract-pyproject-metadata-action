@@ -11,7 +11,8 @@ Usage:
         [<dependencies-json>]
 
 Without ``--github-output``, prints a single JSON object to stdout:
-    {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
+    {"name": ..., "normalized_name": ..., "version": ..., "description": ...,
+     "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
      "warnings": [...]}
@@ -20,7 +21,7 @@ Without ``--github-output``, prints a single JSON object to stdout:
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
+outputs ``name``, ``normalized-name``, ``version``, ``description``, ``requires-python``,
 ``extras``, ``groups``, ``python-versions``, ``python-min``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
@@ -100,6 +101,7 @@ class Metadata(TypedDict):
     name: str
     normalized_name: str
     version: str
+    description: str
     requires_python: str
     extras: list[str]
     groups: list[str]
@@ -161,11 +163,12 @@ def extract_metadata(
         A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
         messages (for example when the version is dynamic). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``description``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``requires_python``
         is ``[project].requires-python`` as written, or an empty string if it is
-        not declared. ``extras`` lists the ``extra_values`` first, then the
+        not declared. ``description`` is ``[project].description`` as written,
+        or an empty string if it is not declared. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
@@ -178,7 +181,7 @@ def extract_metadata(
             is not an array, a ``name`` that is not a non-empty string or not a
             valid PEP 508 name, a
             ``version`` that is not a string or not a valid PEP 440 version, a
-            ``requires-python`` that is not a string, an
+            ``description`` or ``requires-python`` that is not a string, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
@@ -229,6 +232,11 @@ def extract_metadata(
             )
             raise MetadataError(msg) from exc
 
+    description = project.get("description", "")
+    if not isinstance(description, str):
+        msg = f"{pyproject_path}: [project].description must be a string, got: {description!r}"
+        raise MetadataError(msg)
+
     requires_python = project.get("requires-python", "")
     if not isinstance(requires_python, str):
         msg = (
@@ -259,6 +267,7 @@ def extract_metadata(
         name=name,
         normalized_name=canonicalize_name(name),
         version=version,
+        description=description,
         requires_python=requires_python,
         extras=list(unique_extras.values()),
         groups=groups,
@@ -806,6 +815,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "name": metadata["name"],
         "normalized-name": metadata["normalized_name"],
         "version": metadata["version"],
+        "description": metadata["description"],
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),
@@ -832,7 +842,8 @@ def _single_line(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
 
 
-# The outputs shown in the summary line, in order (normalized-name is derived from name).
+# The outputs shown in the summary line, in order (normalized-name is derived from name, and
+# description may be long).
 _SUMMARY_FIELDS = (
     "name",
     "version",

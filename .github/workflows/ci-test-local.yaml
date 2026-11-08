@@ -532,6 +532,30 @@ jobs:
           assert_equal "outcome" "failure" "${{ steps.test-invalid-strict.outcome }}"
           print_success "invalid strict correctly failed"
 
+      # -----------------------------------------------------------------------
+      # Test 20: description output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test description output
+        id: test-description
+        uses: ./
+        with:
+          pyproject-path: test-data/description/pyproject.toml
+
+      - name: 🧪 Test description output when not declared
+        id: test-no-description
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify description
+        env:
+          DESCRIPTION: ${{ steps.test-description.outputs.description }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "description" 'A package, with a description: "quoted" | piped' "$DESCRIPTION"
+          assert_equal "description" "" "${{ steps.test-no-description.outputs.description }}"
+          print_success "description test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest
