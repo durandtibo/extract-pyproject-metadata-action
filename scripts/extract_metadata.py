@@ -42,6 +42,7 @@ import json
 import sys
 import uuid
 from pathlib import Path
+from typing import TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -55,6 +56,24 @@ except ModuleNotFoundError:  # Python < 3.11
 
 class MetadataError(Exception):
     """Raised when pyproject.toml cannot be read or is missing required metadata."""
+
+
+class Metadata(TypedDict):
+    """The project metadata read by ``extract_metadata``."""
+
+    name: str
+    normalized_name: str
+    version: str
+    requires_python: str
+    extras: list[str]
+    groups: list[str]
+
+
+class Report(Metadata):
+    """The metadata, the dependency specifiers and the warnings built by ``main``."""
+
+    dependency_specifiers: dict[str, str | None]
+    warnings: list[str]
 
 
 def load_pyproject(pyproject_path: str) -> dict:
@@ -86,7 +105,7 @@ def extract_metadata(
     extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
     warnings: list[str] | None = None,
-) -> dict:
+) -> Metadata:
     """Read name, version, and sorted extras from a parsed pyproject.toml.
 
     Args:
@@ -100,7 +119,7 @@ def extract_metadata(
             when the version is dynamic).
 
     Returns:
-        A dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
+        A ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
         ``version``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``requires_python``
@@ -182,14 +201,14 @@ def extract_metadata(
     for group in sorted(dependency_groups, key=canonicalize_name):
         unique_groups.setdefault(canonicalize_name(group), group)
     groups = list(unique_groups.values())
-    return {
-        "name": name,
-        "normalized_name": canonicalize_name(name),
-        "version": version,
-        "requires_python": requires_python,
-        "extras": list(unique_extras.values()),
-        "groups": groups,
-    }
+    return Metadata(
+        name=name,
+        normalized_name=canonicalize_name(name),
+        version=version,
+        requires_python=requires_python,
+        extras=list(unique_extras.values()),
+        groups=groups,
+    )
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -349,7 +368,7 @@ def extract_dependency_specifiers(
     dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
     warnings: list[str] | None = None,
-) -> dict:
+) -> dict[str, str | None]:
     """Map each requested package to its specifier string, or None if not found.
 
     Args:
@@ -393,7 +412,7 @@ def extract_dependency_specifiers(
         marker = None if req.marker is None else str(req.marker)
         found.setdefault(canonicalize_name(req.name), []).append((str(req.specifier), marker))
 
-    result: dict = {}
+    result: dict[str, str | None] = {}
     for dep in deps:
         matches = found.get(canonicalize_name(dep))
         if not matches:
@@ -459,7 +478,7 @@ def parse_bool(value: str, name: str) -> bool:
     return lowered == "true"
 
 
-def check_no_missing_dependency(specifiers: dict, pyproject_path: str) -> None:
+def check_no_missing_dependency(specifiers: dict[str, str | None], pyproject_path: str) -> None:
     """Raise if a requested dependency was not found.
 
     Args:
@@ -496,13 +515,11 @@ def escape_annotation_property(value: str) -> str:
     return escape_annotation(value).replace(":", "%3A").replace(",", "%2C")
 
 
-def format_outputs(metadata: dict) -> dict[str, str]:
+def format_outputs(metadata: Report) -> dict[str, str]:
     """Convert the metadata dict into the string outputs of the action.
 
     Args:
-        metadata: The dict built by ``main``, with keys ``name``,
-            ``normalized_name``, ``version``, ``requires_python``, ``extras``,
-            ``groups`` and ``dependency_specifiers``.
+        metadata: The report built by ``main``.
 
     Returns:
         A dict mapping each output name of ``action.yaml`` to its value, with
@@ -587,21 +604,21 @@ def main(argv: list[str]) -> int:
         dependencies = parse_string_array(args.dependencies, "dependencies")
         warnings: list[str] = []
         metadata = extract_metadata(data, extra_values, args.pyproject_path, warnings)
-        metadata["dependency_specifiers"] = extract_dependency_specifiers(
+        specifiers = extract_dependency_specifiers(
             data, dependencies, args.pyproject_path, warnings
         )
         if fail_on_missing:
-            check_no_missing_dependency(metadata["dependency_specifiers"], args.pyproject_path)
-        metadata["warnings"] = warnings
+            check_no_missing_dependency(specifiers, args.pyproject_path)
+        report = Report(**metadata, dependency_specifiers=specifiers, warnings=warnings)
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     if args.github_output is None:
-        print(json.dumps(metadata))
+        print(json.dumps(report))
         return 0
 
-    outputs = format_outputs(metadata)
+    outputs = format_outputs(report)
     for warning in warnings:
         file = escape_annotation_property(args.pyproject_path)
         print(f"::warning file={file}::{escape_annotation(warning)}")
