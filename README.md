@@ -123,6 +123,9 @@ Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
 used as given).
 
+The step also prints a one-line `📦` summary of the outputs in the log, with line
+breaks in the values escaped, to help debugging a workflow.
+
 ### Python version matrix
 
 `python-versions` can drive a test matrix that follows `requires-python`:

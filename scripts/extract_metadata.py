@@ -25,7 +25,8 @@ outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
 delimiter so that values may contain line breaks)
 and prints to stdout one ``::warning file=<path>::`` workflow command per
 warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
-annotation to the file, followed by a one-line summary. Warnings are printed
+annotation to the file, followed by a one-line summary of the outputs.
+Warnings are printed
 on stdout because GitHub only parses workflow commands there.
 
 With ``--fail-on-missing true``, a requested dependency that is not found
@@ -771,6 +772,35 @@ def _single_line(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
 
 
+# The outputs shown in the summary line, in order (normalized-name is derived from name).
+_SUMMARY_FIELDS = (
+    "name",
+    "version",
+    "requires-python",
+    "python-versions",
+    "extras",
+    "groups",
+    "project-dependencies",
+    "dependency-specifiers",
+)
+
+
+def format_summary(outputs: dict[str, str]) -> str:
+    """Build the one-line summary of the outputs that is printed in the log.
+
+    Args:
+        outputs: The action outputs, as returned by ``format_outputs``.
+
+    Returns:
+        A line that starts with ``📦`` and lists ``name=value`` for the outputs
+        in ``_SUMMARY_FIELDS``. Values come from the file, so line breaks and
+        backslashes are escaped: a value cannot end the line and start a
+        workflow command (``::...``) in the log.
+    """
+    fields = " ".join(f"{field}={_single_line(outputs[field])}" for field in _SUMMARY_FIELDS)
+    return f"📦 {fields}"
+
+
 def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
     """Append outputs to a ``$GITHUB_OUTPUT`` file.
 
@@ -883,12 +913,7 @@ def main(argv: list[str]) -> int:
     for warning in warnings:
         file = escape_annotation_property(args.pyproject_path)
         print(f"::warning file={file}::{escape_annotation(warning)}")
-    # name and version come from the file: keep them on one line so they cannot
-    # start a workflow command in the log.
-    print(
-        f"📦 name={_single_line(outputs['name'])} version={_single_line(outputs['version'])} "
-        f"extras={outputs['extras']}"
-    )
+    print(format_summary(outputs))
     write_github_output(args.github_output, outputs)
     return 0
 

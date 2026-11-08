@@ -31,6 +31,7 @@ from extract_metadata import (  # noqa: E402
     extract_metadata,
     extract_project_dependencies,
     format_outputs,
+    format_summary,
     load_pyproject,
     main,
     parse_bool,
@@ -753,7 +754,11 @@ def test_main_github_output_writes_outputs_and_annotations(
     }
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
-        '📦 name=p version=1 extras=["","a"]\n'
+        "📦 name=p version=1 requires-python= "
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] extras=["","a"] '
+        'groups=["base","dev","other"] '
+        'project-dependencies={"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"} '
+        'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
     )
     assert captured.err == ""
 
@@ -827,7 +832,11 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
     }
-    assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'
+    assert result.stdout == (
+        "📦 name=coola version=1.2.3 requires-python= "
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] extras=["","numpy"] groups=[] '
+        "project-dependencies={} dependency-specifiers={}\n"
+    )
 
 
 def test_main_github_output_multiline_name_is_rejected(
@@ -2350,3 +2359,44 @@ def test_test_requirements_include_the_script_requirements() -> None:
     )
 
     assert "-r scripts/requirements.txt" in requirements.splitlines()
+
+
+def test_format_summary() -> None:
+    assert format_summary(format_outputs(METADATA)) == (
+        "📦 name=coola version=1.2.3 requires-python=>=3.10 "
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] extras=["","numpy"] '
+        'groups=["dev","test"] '
+        'project-dependencies={"numpy":">=1","Foo_Bar":""} '
+        'dependency-specifiers={"numpy":">=1","missing":null}'
+    )
+
+
+def test_format_summary_is_one_line_and_escapes_values() -> None:
+    outputs = {**format_outputs(METADATA), "requires-python": "a\nb\r\n::error::boom\\"}
+
+    summary = format_summary(outputs)
+
+    assert "\n" not in summary
+    assert "\r" not in summary
+    assert "requires-python=a\\nb\\r\\n::error::boom\\\\ " in summary
+
+
+def test_main_github_output_multiline_requires_python_cannot_inject_commands(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nrequires-python = "x\\n::error::boom\\nversion=hacked"\n',
+    )
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    outputs = parse_github_output(output.read_text(encoding="utf-8"))
+    assert outputs["requires-python"] == "x\n::error::boom\nversion=hacked"
+    assert outputs["version"] == "1"
+    assert not any(line.startswith("::error") for line in captured.out.splitlines())
+    assert len(captured.out.splitlines()) == 2  # the warning for the invalid specifier, then the summary
+    assert "requires-python=x\\n::error::boom\\nversion=hacked " in captured.out
