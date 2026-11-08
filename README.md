@@ -204,7 +204,7 @@ The action's step fails (non-zero exit) when:
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
-- `[project].dynamic` is not an array.
+- `[project].dynamic` is not an array of strings (for example `dynamic = [1]`).
 - `name` is listed in `[project].dynamic` and not set in `[project]` (PEP 621 requires
   a static name; the error says so instead of reporting a missing key).
 - `[project]` is not a table, `name` is not a non-empty string, or `version` is
