@@ -125,6 +125,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "normalized_version": "1.2.3",
         "description": "",
         "requires_python": "",
         "extras": [],
@@ -343,6 +344,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "name": "coola",
         "normalized_name": "coola",
         "version": "",
+        "normalized_version": "",
         "description": "",
         "requires_python": "",
         "extras": [],
@@ -447,6 +449,7 @@ def test_main_dynamic_version_warning_in_json(
         "name": "coola",
         "normalized_name": "coola",
         "version": "",
+        "normalized_version": "",
         "description": "",
         "requires_python": "",
         "extras": [],
@@ -564,6 +567,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "normalized_version": "1.2.3",
         "description": "",
         "requires_python": "",
         "extras": [],
@@ -639,6 +643,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "normalized_version": "1.2.3",
         "description": "",
         "requires_python": "",
         "extras": ["", "numpy"],
@@ -786,6 +791,7 @@ METADATA = {
     "name": "coola",
     "normalized_name": "coola",
     "version": "1.2.3",
+    "normalized_version": "1.2.3",
     "description": "",
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
@@ -804,6 +810,7 @@ def test_format_outputs() -> None:
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
+        "normalized-version": "1.2.3",
         "description": "",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
@@ -929,6 +936,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "name": "p",
         "normalized-name": "p",
         "version": "1",
+        "normalized-version": "1",
         "description": "",
         "requires-python": "",
         "extras": '["","a"]',
@@ -965,6 +973,7 @@ def test_build_report(tmp_path: Path) -> None:
         "name": "p",
         "normalized_name": "p",
         "version": "1",
+        "normalized_version": "1",
         "description": "",
         "requires_python": "",
         "extras": ["", "a"],
@@ -1100,6 +1109,7 @@ def test_format_step_summary_without_warnings() -> None:
         name="coola",
         normalized_name="coola",
         version="1.2.3",
+        normalized_version="1.2.3",
         description="",
         requires_python="",
         extras=["", "a"],
@@ -1120,6 +1130,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `name` | <code>coola</code> |\n"
         "| `normalized-name` | <code>coola</code> |\n"
         "| `version` | <code>1&#46;2&#46;3</code> |\n"
+        "| `normalized-version` | <code>1&#46;2&#46;3</code> |\n"
         "| `description` |  |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
@@ -1138,6 +1149,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         name="a",
         normalized_name="a",
         version="1",
+        normalized_version="1",
         description="",
         requires_python="",
         extras=[],
@@ -1510,6 +1522,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
+        "normalized-version": "1.2.3",
         "description": "",
         "requires-python": "",
         "extras": '["","numpy"]',
@@ -1767,6 +1780,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "normalized_version": "1.2.3",
         "description": "",
         "requires_python": "",
         "extras": [],
@@ -2937,6 +2951,7 @@ def test_format_outputs_python_matrix() -> None:
         name="a",
         normalized_name="a",
         version="1",
+        normalized_version="1",
         description="",
         requires_python="",
         extras=[],
@@ -2957,6 +2972,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         name="a",
         normalized_name="a",
         version="1",
+        normalized_version="1",
         description="",
         requires_python=">=4",
         extras=[],
@@ -2991,6 +3007,69 @@ def test_main_json_has_no_python_matrix(tmp_path: Path, capsys: pytest.CaptureFi
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert "python_matrix" not in json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("1.2.3", "1.2.3"),
+        ("1.0", "1.0"),
+        ("1.0-RC1", "1.0rc1"),
+        ("1.0.0.RC.1", "1.0.0rc1"),
+        ("v1.2", "1.2"),
+        ("1.0.post1", "1.0.post1"),
+        ("1.0-1", "1.0.post1"),
+        ("2020.01.05", "2020.1.5"),
+        ("1.0+Local_1", "1.0+local.1"),
+        ("1!2.0.DEV3", "1!2.0.dev3"),
+    ],
+)
+def test_extract_metadata_normalized_version(tmp_path: Path, version: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "{version}"\n')
+
+    metadata = extract(path)
+
+    assert (metadata["version"], metadata["normalized_version"]) == (version, expected)
+
+
+def test_extract_metadata_normalized_version_is_empty_when_the_version_is_dynamic(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    assert extract(path)["normalized_version"] == ""
+
+
+def test_format_outputs_normalized_version() -> None:
+    report = Report(
+        name="a",
+        normalized_name="a",
+        version="1.0-RC1",
+        normalized_version="1.0rc1",
+        description="",
+        requires_python="",
+        extras=[],
+        groups=[],
+        python_versions=[],
+        python_min="",
+        python_max="",
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=[],
+    )
+
+    outputs = format_outputs(report)
+
+    assert (outputs["version"], outputs["normalized-version"]) == ("1.0-RC1", "1.0rc1")
+
+
+def test_main_github_output_normalized_version(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1.0-RC1"\n')
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    values = parse_github_output(output.read_text(encoding="utf-8"))
+    assert (values["version"], values["normalized-version"]) == ("1.0-RC1", "1.0rc1")
 
 
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -3202,7 +3281,7 @@ def test_readme_lists_the_outputs_of_the_log_line() -> None:
 def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
     omitted = set(_action_section_keys("outputs")) - set(extract_metadata_module._SUMMARY_FIELDS)
 
-    assert omitted == {"normalized-name", "description", "python-matrix"}
+    assert omitted == {"normalized-name", "normalized-version", "description", "python-matrix"}
 
 
 def test_readme_default_of_python_candidates_matches_the_script() -> None:
