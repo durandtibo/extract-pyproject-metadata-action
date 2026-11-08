@@ -724,6 +724,15 @@ def _patch_releases(specifier: SpecifierSet, candidate: str) -> set[int]:
     and the next one, so that the bounds of the allowed range are found
     whichever operator is used.
 
+    Why this is enough: a specifier is a conjunction of clauses, and each clause
+    only changes at the patch numbers it names (``>``, ``>=``, ``<``, ``<=``,
+    ``==``, ``!=``, ``~=``, ``===``), so the set of allowed patch numbers is a
+    union of intervals whose ends are a named number or one next to it. If it
+    is not empty, it contains one of ``0``, ``9999``, a named number or its
+    neighbours. The only blind spots are wildcards (``!=3.12.*``), which have
+    no patch number and exclude the whole minor version, and releases of more
+    than three numbers (``3.12.1.5``), which no Python has.
+
     Args:
         specifier: The parsed ``requires-python``.
         candidate: A "major.minor" version, such as ``"3.12"``.
