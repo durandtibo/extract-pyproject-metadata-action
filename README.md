@@ -24,12 +24,24 @@ environment of the caller.
   with:
     pyproject-path: pyproject.toml
     extra-values: '[""]'
+    dependencies: '["numpy", "invoke-tasklib"]'
 
 - run: |
-    echo "name=${{ steps.metadata.outputs.name }}"
-    echo "version=${{ steps.metadata.outputs.version }}"
-    echo "extras=${{ steps.metadata.outputs.extras }}"
+    echo "name=$NAME"
+    echo "version=$VERSION"
+    echo "extras=$EXTRAS"
+    echo "dependency-specifiers=$DEPENDENCY_SPECIFIERS"
+  env:
+    NAME: ${{ steps.metadata.outputs.name }}
+    VERSION: ${{ steps.metadata.outputs.version }}
+    EXTRAS: ${{ steps.metadata.outputs.extras }}
+    DEPENDENCY_SPECIFIERS: ${{ steps.metadata.outputs.dependency-specifiers }}
 ```
+
+Outputs are passed to the shell through `env:` instead of being interpolated in
+the script, so a value from `pyproject.toml` can never be interpreted as shell
+code. The `dependencies` input and `dependency-specifiers` output need a
+release that includes them (later than `v0.2`).
 
 Given a `pyproject.toml` such as:
 
@@ -37,9 +49,10 @@ Given a `pyproject.toml` such as:
 [project]
 name = "coola"
 version = "1.2.3"
+dependencies = ["tqdm>=4"]
 
 [project.optional-dependencies]
-numpy = ["numpy"]
+numpy = ["numpy>=1.20,<3"]
 pandas = ["pandas"]
 ```
 
@@ -48,6 +61,32 @@ the example above outputs:
 - `name`: `coola`
 - `version`: `1.2.3`
 - `extras`: `["","numpy","pandas"]`
+- `dependency-specifiers`: `{"numpy":"<3,>=1.20","invoke-tasklib":null}`
+
+The `extras` output is a JSON array, so it can drive a job matrix:
+
+```yaml
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      extras: ${{ steps.metadata.outputs.extras }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: metadata
+        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+
+  test:
+    needs: metadata
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        extra: ${{ fromJSON(needs.metadata.outputs.extras) }}
+    steps:
+      - run: echo "testing extra $EXTRA"
+        env:
+          EXTRA: ${{ matrix.extra }}
+```
 
 ## Inputs
 
@@ -83,7 +122,18 @@ The action's step fails (non-zero exit) when:
 
 ## Development
 
+The logic is in `scripts/extract_metadata.py`; `action.yaml` only wires inputs
+and outputs. Use a virtual environment:
+
 ```bash
-pip install -r requirements-test.txt
-python -m pytest -v
+python -m venv .venv
+.venv/bin/pip install -r requirements-test.txt
+.venv/bin/pytest -q
 ```
+
+Formatting and linting of the non-Python files (YAML, Markdown, shell, TOML,
+Makefiles) go through the `Makefile`; run `make help` to list the targets, for
+example `make format` and `make lint`.
+
+The integration workflows (`.github/workflows/test-local.yaml` and
+`test-stable.yaml`) can only run on GitHub.
