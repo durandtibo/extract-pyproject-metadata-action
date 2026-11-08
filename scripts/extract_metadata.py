@@ -116,7 +116,7 @@ from packaging.version import InvalidVersion, Version
 SCHEMA_VERSION = 1
 
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
-DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14","3.15"]'
+DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 
 # A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
 # also match before a trailing line break.
