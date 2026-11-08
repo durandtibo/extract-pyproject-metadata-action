@@ -351,6 +351,16 @@ def test_extract_metadata_missing_version_with_other_dynamic_fields(tmp_path: Pa
         extract(path)
 
 
+@pytest.mark.parametrize("value", ["[1]", '["readme", 2]', '[["version"]]', "[true]"])
+def test_extract_metadata_dynamic_must_contain_only_strings(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(
+        tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndynamic = {value}\n'
+    )
+
+    with pytest.raises(MetadataError, match=r"\[project\]\.dynamic must contain only strings"):
+        extract(path)
+
+
 @pytest.mark.parametrize("value", ['"version"', "1", '{a = "version"}'])
 def test_extract_metadata_dynamic_must_be_an_array(tmp_path: Path, value: str) -> None:
     path = write_pyproject(

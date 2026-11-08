@@ -179,7 +179,7 @@ def extract_metadata(
         MetadataError: If ``[project]`` is not a table, is missing ``name`` (also
             when ``name`` is listed in ``dynamic``, which PEP 621 forbids) or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
-            is not an array, a ``name`` that is not a non-empty string or not a
+            is not an array of strings, a ``name`` that is not a non-empty string or not a
             valid PEP 508 name, a
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``description`` or ``requires-python`` that is not a string, an
@@ -187,7 +187,7 @@ def extract_metadata(
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    dynamic = _check_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
+    dynamic = _check_requirements(project.get("dynamic", []), "[project].dynamic", pyproject_path)
     try:
         name = project["name"]
     except KeyError as exc:
@@ -316,7 +316,10 @@ def _check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
 
 
 def _check_requirements(value: object, label: str, pyproject_path: str) -> list[str]:
-    """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise."""
+    """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise.
+
+    Despite its name it is not specific to requirements: ``[project].dynamic`` is checked with it too.
+    """
     entries = _check_array(value, label, pyproject_path)
     for entry in entries:
         if not isinstance(entry, str):
