@@ -10,7 +10,8 @@ Usage:
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
-Without ``--github-output``, prints a single JSON object to stdout:
+Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
+characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "description": ...,
      "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ...,
@@ -1180,7 +1181,8 @@ def main(argv: list[str]) -> int:
         return 1
 
     if args.github_output is None:
-        print(json.dumps(report))
+        # Like the action outputs, keep non-ASCII characters as they are.
+        print(json.dumps(report, ensure_ascii=False))
     else:
         emit_github_output(report, args.pyproject_path, args.github_output)
     if summary_path is not None:

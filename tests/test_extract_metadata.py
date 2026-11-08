@@ -170,6 +170,20 @@ def test_main_description_in_json_and_github_output(
     assert "description=" not in capsys.readouterr().out
 
 
+def test_main_json_keeps_non_ascii_characters(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\ndescription = "Héllo ✓"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+
+    out = capsys.readouterr().out
+    assert '"description": "Héllo ✓"' in out
+    assert "\\u" not in out
+
+
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
