@@ -462,3 +462,114 @@ jobs:
           source scripts/test-helper.sh
           assert_equal "outcome" "failure" "${{ steps.test-windows.outcome }}"
           print_success "Windows correctly rejected"
+
+  # The action installs "packaging" in a private venv when the Python on PATH lacks
+  # it. setup-python's Python has no "packaging" module, but the job removes it
+  # anyway so that the test does not depend on the runner image.
+  test-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Remove packaging from the Python on PATH
+        run: |
+          source scripts/test-helper.sh
+          python -m pip uninstall --yes packaging || true
+          if python -c "import packaging" 2> /dev/null; then
+            print_error "packaging should not be importable"
+            exit 1
+          fi
+          assert_equal "venvs" "0" "$(count_venvs)"
+
+      # -----------------------------------------------------------------------
+      # packaging is missing and cannot be installed: the step fails
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test without packaging and without index (should fail)
+        id: test-no-index
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+        env:
+          PIP_NO_INDEX: "1"
+        continue-on-error: true
+
+      - name: ✓ Verify the step fails when packaging cannot be installed
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-no-index.outcome }}"
+          print_success "missing packaging correctly failed"
+
+      # -----------------------------------------------------------------------
+      # packaging is missing: it is installed in a private venv
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test without packaging
+        id: test-no-packaging
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify packaging is installed in a private venv
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-no-packaging.outputs.name }}"
+          if python -c "import packaging" 2> /dev/null; then
+            print_error "the Python on PATH must not be modified"
+            exit 1
+          fi
+          print_success "bootstrap test passed"
+
+      # -----------------------------------------------------------------------
+      # packaging is available: no venv is created
+      # -----------------------------------------------------------------------
+      - name: Install packaging in the Python on PATH
+        run: |
+          python -m pip install --quiet packaging
+          echo "VENVS_BEFORE=$(source scripts/test-helper.sh; count_venvs)" >> "$GITHUB_ENV"
+
+      - name: 🧪 Test with packaging
+        id: test-packaging
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify no venv is created when packaging is available
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-packaging.outputs.name }}"
+          assert_equal "venvs" "$VENVS_BEFORE" "$(count_venvs)"
+          print_success "no venv test passed"
+
+  # Only Python 3.11 or later is supported: the action must fail with an explicit error
+  test-old-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: 🧪 Test the action with Python 3.10 (should fail)
+        id: test-old-python
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify the action fails with Python 3.10
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-old-python.outcome }}"
+          print_success "Python 3.10 correctly rejected"
