@@ -24,6 +24,8 @@ ignore = [
 "tests/*" = [
   "S101", # assert is how pytest tests check
   "S108", # fake /tmp paths in the tests
+  "S603", # the tests start the script and run.sh with fixed arguments
+  "S607", # ... and a stand-in for python3 found on PATH
 ]
 
 [tool.mypy]
