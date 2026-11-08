@@ -1,7 +1,9 @@
-"""Property-based tests (Hypothesis) of the parsers and the escaping functions.
+"""Property-based tests (Hypothesis) of the parsers and the escaping
+functions.
 
-The examples are derandomized, so a run is reproducible: a failure on CI fails the same way
-locally. The unit tests with literal inputs are in ``tests/unit``.
+The examples are derandomized, so a run is reproducible: a failure on CI
+fails the same way locally. The unit tests with literal inputs are in
+``tests/unit``.
 """
 
 from __future__ import annotations
@@ -10,8 +12,7 @@ import json
 import re
 
 import pytest
-from hypothesis import given, settings
-from hypothesis import strategies as st
+from hypothesis import given, settings, strategies as st
 
 from extract_pyproject_metadata.dependencies.lookup import parse_dependencies
 from extract_pyproject_metadata.errors import MetadataError

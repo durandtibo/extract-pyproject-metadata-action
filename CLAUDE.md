@@ -43,7 +43,18 @@ module above it:
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
   `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
   `.venv/bin/pytest`, `.venv/bin/ruff check src scripts tests` (must pass),
-  `.venv/bin/mypy` (strict, must pass).
+  `.venv/bin/mypy` (strict, must pass), `.venv/bin/ty check` and `.venv/bin/lint-imports` (must pass).
+- The tooling follows [coola](https://github.com/durandtibo/coola). `uv sync
+  --group dev` installs the `dev` dependency group of `pyproject.toml` (the CI
+  still uses `requirements-test.txt`: keep the two lists compatible).
+- `tasks.py` and `invoke.yaml` define the [invoke-tasklib](https://github.com/durandtibo/invoke-tasklib)
+  tasks: `inv --list` shows them, for example `inv check.all` (lint, format,
+  types, imports, unit tests), `inv fix.all`, `inv test.unit --cov`,
+  `inv test.integration`. Run them in the environment (`uv run inv ...`).
+- `pre-commit` (`.pre-commit-config.yaml`) runs ruff, docformatter, shfmt,
+  shellcheck, codespell, ty and import-linter. The layering of the
+  architecture above is an import-linter contract in `pyproject.toml`: update
+  it with the architecture.
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
 - Only Python >= 3.11 is supported (the script uses `tomllib`). The script must

@@ -1,4 +1,5 @@
-"""Extract project metadata and dependency specifiers from a pyproject.toml.
+"""Extract project metadata and dependency specifiers from a
+pyproject.toml.
 
 The command line interface is in ``extract_pyproject_metadata.cli``. Run it with
 ``python scripts/extract_metadata.py`` (what ``scripts/run.sh`` does) or with

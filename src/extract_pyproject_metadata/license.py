@@ -1,4 +1,5 @@
-"""The license of ``[project]``: its text and the validation of an SPDX expression."""
+"""The license of ``[project]``: its text and the validation of an SPDX
+expression."""
 
 from __future__ import annotations
 
@@ -8,9 +9,12 @@ from extract_pyproject_metadata.errors import MetadataError
 try:
     from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 except ImportError:  # packaging before 24.2 cannot validate license expressions
-    # Only the None checks of ``license_warnings`` use these names without the import.
-    InvalidLicenseExpression = None  # type: ignore[assignment,misc]
+    # Only the None check of ``license_warnings`` uses these names without the import.
     canonicalize_license_expression = None  # type: ignore[assignment]
+
+    class InvalidLicenseExpression(ValueError):  # type: ignore[no-redef]  # noqa: N818 (name in packaging)
+        """Stand-in that is never raised."""
+
 
 __all__ = ["license_warnings", "read_license_text"]
 
@@ -44,7 +48,8 @@ def read_license_text(license_: object, pyproject_path: str) -> str:
 
 
 def license_warnings(license_: object, pyproject_path: str) -> list[str]:
-    """Describe a ``[project].license`` that is not a valid SPDX license expression.
+    """Describe a ``[project].license`` that is not a valid SPDX license
+    expression.
 
     Only an expression (a string, PEP 639) is checked: not the table of PEP 621, and not an
     empty string. The check needs ``packaging`` 24.2 or later; with an older one, nothing is
@@ -63,7 +68,9 @@ def license_warnings(license_: object, pyproject_path: str) -> list[str]:
         canonicalize_license_expression(license_)
     except InvalidLicenseExpression as exc:
         return [
-            f"{pyproject_path}: [project].license is not a valid SPDX license expression "
-            f"(PEP 639): {exc}"
+            (
+                f"{pyproject_path}: [project].license is not a valid SPDX license expression "
+                f"(PEP 639): {exc}"
+            )
         ]
     return []

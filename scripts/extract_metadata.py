@@ -1,7 +1,9 @@
-"""Start the command line interface of the ``extract_pyproject_metadata`` package.
+"""Start the command line interface of the
+``extract_pyproject_metadata`` package.
 
 This file is the entry point of ``scripts/run.sh``. The logic is in
-``src/extract_pyproject_metadata``; see ``extract_pyproject_metadata/cli.py`` for the usage.
+``src/extract_pyproject_metadata``; see
+``extract_pyproject_metadata/cli.py`` for the usage.
 """
 
 from __future__ import annotations

@@ -17,7 +17,9 @@ def test_extra_names_without_optional_dependencies() -> None:
 
 
 def test_extra_names_optional_dependencies_must_be_a_table() -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"):
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"
+    ):
         read_extra_names({"optional-dependencies": []}, [], "p.toml")
 
 
@@ -43,7 +45,9 @@ def test_string_table_not_a_table() -> None:
 
 
 def test_string_table_not_a_string() -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\]\.a must be a string, got: 1$"):
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[project\.x\]\.a must be a string, got: 1$"
+    ):
         read_string_table({"x": {"a": 1}}, "x", "p.toml")
 
 
@@ -52,10 +56,19 @@ def test_string_table_not_a_string() -> None:
     [
         ({}, ("", [])),
         ({"build-system": {}}, ("", [])),
-        ({"build-system": {"requires": ["setuptools>=61", "wheel"]}}, ("", ["setuptools>=61", "wheel"])),
+        (
+            {"build-system": {"requires": ["setuptools>=61", "wheel"]}},
+            ("", ["setuptools>=61", "wheel"]),
+        ),
         ({"build-system": {"build-backend": "hatchling.build"}}, ("hatchling.build", [])),
         (
-            {"build-system": {"requires": ["a", "a"], "build-backend": "a.b:c", "backend-path": ["."]}},
+            {
+                "build-system": {
+                    "requires": ["a", "a"],
+                    "build-backend": "a.b:c",
+                    "backend-path": ["."],
+                }
+            },
             ("a.b:c", ["a", "a"]),
         ),
     ],
@@ -76,9 +89,18 @@ def test_build_system_returns_a_copy_of_requires() -> None:
     ("data", "match"),
     [
         ({"build-system": "x"}, r"^p.toml: \[build-system\] must be a table, got: 'x'$"),
-        ({"build-system": {"build-backend": 1}}, r"^p.toml: \[build-system\].build-backend must be a string, got: 1$"),
-        ({"build-system": {"requires": "a"}}, r"^p.toml: \[build-system\].requires must be an array, got: 'a'$"),
-        ({"build-system": {"requires": ["a", 1]}}, r"^p.toml: \[build-system\].requires must contain only strings, got: 1$"),
+        (
+            {"build-system": {"build-backend": 1}},
+            r"^p.toml: \[build-system\].build-backend must be a string, got: 1$",
+        ),
+        (
+            {"build-system": {"requires": "a"}},
+            r"^p.toml: \[build-system\].requires must be an array, got: 'a'$",
+        ),
+        (
+            {"build-system": {"requires": ["a", 1]}},
+            r"^p.toml: \[build-system\].requires must contain only strings, got: 1$",
+        ),
     ],
 )
 def test_build_system_wrong_type(data: dict, match: str) -> None:

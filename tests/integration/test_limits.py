@@ -1,7 +1,7 @@
 """End-to-end tests of the size and depth of a ``pyproject.toml``.
 
-A pathological file must give an error or a result in a bounded time, never a Python traceback
-or a run that never ends.
+A pathological file must give an error or a result in a bounded time,
+never a Python traceback or a run that never ends.
 """
 
 from __future__ import annotations
@@ -9,17 +9,23 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.helpers import SCRIPT_PATH
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 HEADER = '[project]\nname = "a"\nversion = "1"\n'
 
 
-def run_script(tmp_path: Path, content: str, dependencies: str = "[]") -> subprocess.CompletedProcess[str]:
-    """Write ``content`` to a pyproject.toml and run the script on it, with a time limit."""
+def run_script(
+    tmp_path: Path, content: str, dependencies: str = "[]"
+) -> subprocess.CompletedProcess[str]:
+    """Write ``content`` to a pyproject.toml and run the script on it,
+    with a time limit."""
     path = tmp_path / "pyproject.toml"
     path.write_text(content, encoding="utf-8")
     return subprocess.run(

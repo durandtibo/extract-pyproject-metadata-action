@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 import json
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from extract_pyproject_metadata.errors import MetadataError
+
+if TYPE_CHECKING:
+    import argparse
 
 __all__ = ["Options", "parse_bool", "parse_options", "parse_string_array"]
 
@@ -79,9 +81,7 @@ def parse_options(args: argparse.Namespace) -> Options:
     """
     return Options(
         fail_on_missing=parse_bool(args.fail_on_missing, "fail-on-missing"),
-        fail_on_dynamic_version=parse_bool(
-            args.fail_on_dynamic_version, "fail-on-dynamic-version"
-        ),
+        fail_on_dynamic_version=parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version"),
         strict=parse_bool(args.strict, "strict"),
         step_summary=parse_bool(args.step_summary, "step-summary"),
     )

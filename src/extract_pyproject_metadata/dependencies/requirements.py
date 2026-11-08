@@ -11,14 +11,21 @@ from packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_string_array, get_table
 from extract_pyproject_metadata.dependencies.groups import flatten_group
 
-__all__ = ["PROJECT_SCOPE", "conflict_warnings", "dynamic_dependency_fields", "extract_project_dependencies", "index_dependencies"]
+__all__ = [
+    "PROJECT_SCOPE",
+    "conflict_warnings",
+    "dynamic_dependency_fields",
+    "extract_project_dependencies",
+    "index_dependencies",
+]
 
 # The scope of the requirements of ``[project].dependencies`` (see ``_scoped_requirements``).
 PROJECT_SCOPE = "project"
 
 
 def _dynamic_message(field: str, pyproject_path: str) -> str:
-    """Describe a dependency field that is dynamic, so cannot be read."""
+    """Describe a dependency field that is dynamic, so cannot be
+    read."""
     return (
         f"{pyproject_path}: [project].{field} is dynamic, it cannot be read, so no "
         "requirement is found in it"
@@ -26,10 +33,11 @@ def _dynamic_message(field: str, pyproject_path: str) -> str:
 
 
 def dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
-    """Return the dependency fields that only the build backend can provide.
+    """Return the dependency fields that only the build backend can
+    provide.
 
-    A field is returned when it is listed in ``[project].dynamic`` and has no
-    static value in ``[project]``. Only ``dependencies`` and
+    A field is returned when it is listed in ``[project].dynamic`` and
+    has no static value in ``[project]``. Only ``dependencies`` and
     ``optional-dependencies`` are checked, in this order.
     """
     project = data.get("project", {})
@@ -69,7 +77,8 @@ def _candidate_requirements(
 def _scoped_requirements(
     data: dict[str, Any], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[tuple[str, str]], list[str]]:
-    """All requirement strings with the place they are declared in, in search order.
+    """All requirement strings with the place they are declared in, in
+    search order.
 
     Returns:
         A tuple ``(requirements, warnings)``, as for ``_candidate_requirements``.
@@ -98,8 +107,7 @@ def _scoped_requirements(
         reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label, pyproject_path))
     groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
-        _dynamic_message(field, pyproject_path)
-        for field in dynamic_dependency_fields(data)
+        _dynamic_message(field, pyproject_path) for field in dynamic_dependency_fields(data)
     ]
     # flatten_group reads every spelling of a group name (PEP 503), so each group is expanded
     # once, from the first spelling: expanding each spelling would repeat its requirements.
@@ -212,7 +220,8 @@ def extract_project_dependencies(
 def index_dependencies(
     data: dict[str, Any], pyproject_path: str
 ) -> tuple[dict[str, list[tuple[str, str | None]]], list[str]]:
-    """Index every requirement of the file by package, once for all the lookups.
+    """Index every requirement of the file by package, once for all the
+    lookups.
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
@@ -245,7 +254,8 @@ def index_dependencies(
 def conflict_warnings(
     dep: str, matches: list[tuple[str, str | None]], used: str, pyproject_path: str
 ) -> list[str]:
-    """Describe the requirements of ``dep`` that disagree on the specifier.
+    """Describe the requirements of ``dep`` that disagree on the
+    specifier.
 
     Requirements with different environment markers (for example one per Python
     version) are expected to have different specifiers, so only requirements

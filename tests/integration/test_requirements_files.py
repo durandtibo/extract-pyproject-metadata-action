@@ -13,8 +13,6 @@ def test_script_requirements_list_the_dependencies_of_the_script() -> None:
 
 
 def test_test_requirements_include_the_script_requirements() -> None:
-    requirements = (ROOT_PATH / "requirements-test.txt").read_text(
-        encoding="utf-8"
-    )
+    requirements = (ROOT_PATH / "requirements-test.txt").read_text(encoding="utf-8")
 
     assert "-r scripts/requirements.txt" in requirements.splitlines()

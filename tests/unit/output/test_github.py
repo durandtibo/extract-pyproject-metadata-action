@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -27,6 +27,9 @@ from tests.helpers import (
     parse_github_output,
     write_pyproject,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize(
@@ -58,17 +61,17 @@ def test_format_outputs() -> None:
         "description": "",
         "readme": "",
         "license": "",
-        "license-files": '[]',
-        "authors": '[]',
-        "urls": '{}',
-        "keywords": '[]',
-        "classifiers": '[]',
-        "scripts": '{}',
+        "license-files": "[]",
+        "authors": "[]",
+        "urls": "{}",
+        "keywords": "[]",
+        "classifiers": "[]",
+        "scripts": "{}",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
         "build-backend": "",
-        "build-requires": '[]',
+        "build-requires": "[]",
         "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
         "python-min": "3.11",
         "python-max": "3.15",
@@ -80,7 +83,7 @@ def test_format_outputs() -> None:
 
 
 def test_format_outputs_keeps_non_ascii_characters() -> None:
-    metadata = {**METADATA, "extras": ["é"], "dependency_specifiers": {}}
+    metadata: Report = {**METADATA, "extras": ["é"], "dependency_specifiers": {}}
 
     assert format_outputs(metadata)["extras"] == '["é"]'
 
@@ -157,6 +160,7 @@ def test_format_outputs_python_matrix() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
+        schema_version=1,
     )
 
     assert format_outputs(report)["python-matrix"] == '{"python-version":["3.11","3.12"]}'
@@ -189,6 +193,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
+        schema_version=1,
     )
 
     assert format_outputs(report)["python-matrix"] == '{"python-version":[]}'
@@ -221,6 +226,7 @@ def test_format_outputs_normalized_version() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
+        schema_version=1,
     )
 
     outputs = format_outputs(report)

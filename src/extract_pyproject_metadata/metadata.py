@@ -1,4 +1,5 @@
-"""Extraction of the project metadata (name, version and the other fields) from the parsed file."""
+"""Extraction of the project metadata (name, version and the other
+fields) from the parsed file."""
 
 from __future__ import annotations
 
@@ -35,7 +36,8 @@ def extract_metadata(
     pyproject_path: str = "pyproject.toml",
     fail_on_dynamic_version: bool = False,
 ) -> tuple[Metadata, list[str]]:
-    """Read name, version, and sorted extras from a parsed pyproject.toml.
+    """Read name, version, and sorted extras from a parsed
+    pyproject.toml.
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
@@ -181,7 +183,8 @@ def _required_name(project: dict[str, Any], dynamic: list[str], pyproject_path: 
 def _static_and_dynamic_warnings(
     project: dict[str, Any], dynamic: list[str], pyproject_path: str
 ) -> list[str]:
-    """Describe the fields that are set in ``[project]`` and also listed in ``dynamic``.
+    """Describe the fields that are set in ``[project]`` and also listed
+    in ``dynamic``.
 
     PEP 621 forbids it. The static value is the one that is read.
 
@@ -207,7 +210,8 @@ def _required_version(
     pyproject_path: str,
     fail_on_dynamic_version: bool,
 ) -> tuple[object, list[str]]:
-    """Return ``[project].version`` as written, or an empty string if it is dynamic.
+    """Return ``[project].version`` as written, or an empty string if it
+    is dynamic.
 
     Args:
         project: The ``[project]`` table.

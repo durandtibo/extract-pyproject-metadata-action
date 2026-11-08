@@ -1,4 +1,5 @@
-"""Run the command line interface with ``python -m extract_pyproject_metadata``."""
+"""Run the command line interface with ``python -m
+extract_pyproject_metadata``."""
 
 from __future__ import annotations
 

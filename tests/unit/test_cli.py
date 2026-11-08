@@ -1,9 +1,10 @@
-"""Tests of ``extract_pyproject_metadata.cli``: ``main`` and the options."""
+"""Tests of ``extract_pyproject_metadata.cli``: ``main`` and the
+options."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -31,6 +32,9 @@ from tests.helpers import (
     requires_licenses,
     write_pyproject,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_report_keys_match_the_json_output(
@@ -131,7 +135,8 @@ def test_main_license_files_in_json_and_github_output(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense-files = ["LICENSE", "licenses/*.txt"]\n'
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nlicense-files = ["LICENSE", "licenses/*.txt"]\n',
     )
     output = tmp_path / "github_output"
 
@@ -196,7 +201,9 @@ def test_main_build_system_in_json_and_github_output(
 def test_main_returns_one_for_an_invalid_build_system(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    path = write_pyproject(tmp_path, '[build-system]\nrequires = "x"\n\n[project]\nname = "a"\nversion = "1"\n')
+    path = write_pyproject(
+        tmp_path, '[build-system]\nrequires = "x"\n\n[project]\nname = "a"\nversion = "1"\n'
+    )
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     assert f"{path}: [build-system].requires must be an array, got: 'x'" in capsys.readouterr().err
@@ -206,7 +213,9 @@ def test_main_returns_one_for_an_invalid_build_system(
 def test_main_strict_fails_on_an_invalid_license_expression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n')
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n'
+    )
 
     assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
     assert "not a valid SPDX license expression" in capsys.readouterr().err
@@ -220,7 +229,9 @@ def test_main_strict_fails_on_a_static_and_dynamic_field(
     )
 
     assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
-    assert "[project].version is set and also listed in [project].dynamic" in capsys.readouterr().err
+    assert (
+        "[project].version is set and also listed in [project].dynamic" in capsys.readouterr().err
+    )
 
 
 def test_main_dynamic_version_warning_in_json(
@@ -324,9 +335,7 @@ def test_main_parses_the_file_once(
     assert calls == [str(path)]
 
 
-def test_main_returns_nonzero_on_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_main_returns_nonzero_on_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
     exit_code = main(["extract_metadata.py", str(missing), "[]"])
@@ -416,17 +425,17 @@ def test_main_github_output_writes_outputs_and_annotations(
         "description": "",
         "readme": "",
         "license": "",
-        "license-files": '[]',
-        "authors": '[]',
-        "urls": '{}',
-        "keywords": '[]',
-        "classifiers": '[]',
-        "scripts": '{}',
+        "license-files": "[]",
+        "authors": "[]",
+        "urls": "{}",
+        "keywords": "[]",
+        "classifiers": "[]",
+        "scripts": "{}",
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
         "build-backend": "",
-        "build-requires": '[]',
+        "build-requires": "[]",
         "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
         "python-min": "3.11",
         "python-max": "3.15",
@@ -456,17 +465,30 @@ def test_main_strict_fails_without_writing_the_outputs(
     output = tmp_path / "out"
 
     exit_code = main(
-        ["extract_metadata.py", "--github-output", str(output), "--strict", "true", str(path), "[]", '["dup"]']
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(output),
+            "--strict",
+            "true",
+            str(path),
+            "[]",
+            '["dup"]',
+        ]
     )
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert captured.err.startswith(f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- dup")
+    assert captured.err.startswith(
+        f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- dup"
+    )
     assert captured.out == ""
     assert not output.exists()
 
 
-def test_main_invalid_strict_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_invalid_strict_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
     assert main(["extract_metadata.py", "--strict", "maybe", str(path), "[]"]) == 1
@@ -674,7 +696,9 @@ def test_main_error_annotation_cannot_inject_a_command(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = 3\n')
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"])
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"]
+    )
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -707,7 +731,9 @@ def test_main_github_output_error_writes_nothing(
         ["extract_metadata.py", "--unknown", "a", "[]"],
     ],
 )
-def test_main_usage_errors_with_options(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_usage_errors_with_options(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
     assert main(argv) == 2
     assert "usage:" in capsys.readouterr().err
 
@@ -906,7 +932,9 @@ def test_main_github_output_groups(tmp_path: Path) -> None:
     exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
 
     assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["groups"] == '["Dev","docs","test"]'
+    assert (
+        parse_github_output(output.read_text(encoding="utf-8"))["groups"] == '["Dev","docs","test"]'
+    )
 
 
 def test_main_json_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -961,7 +989,9 @@ def test_main_fail_on_missing_true_passes_when_all_are_found(
     }
 
 
-@pytest.mark.parametrize("argv_tail", [[], ["--fail-on-missing", "false"], ["--fail-on-missing", "FALSE"]])
+@pytest.mark.parametrize(
+    "argv_tail", [[], ["--fail-on-missing", "false"], ["--fail-on-missing", "FALSE"]]
+)
 def test_main_fail_on_missing_false_keeps_null(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], argv_tail: list[str]
 ) -> None:
@@ -1004,9 +1034,13 @@ def test_main_fail_on_missing_requires_a_value(capsys: pytest.CaptureFixture[str
 def test_main_fail_on_missing_points_out_dynamic_dependencies(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\ndynamic = ["dependencies"]\n')
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\ndynamic = ["dependencies"]\n'
+    )
 
-    exit_code = main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["numpy"]'])
+    exit_code = main(
+        ["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["numpy"]']
+    )
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -1146,7 +1180,9 @@ def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFi
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 1
+    assert (
+        json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 1
+    )
 
 
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1179,9 +1215,11 @@ def test_main_warns_when_no_python_version_is_allowed(
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["warnings"] == [
-        f"{path}: no python-candidates version satisfies [project].requires-python ('>=4'): "
-        "python-versions and python-matrix are empty, and a job matrix built from them is "
-        "rejected by GitHub"
+        (
+            f"{path}: no python-candidates version satisfies [project].requires-python ('>=4'): "
+            "python-versions and python-matrix are empty, and a job matrix built from them is "
+            "rejected by GitHub"
+        )
     ]
 
 
@@ -1261,9 +1299,7 @@ def test_main_github_output_python_min(tmp_path: Path) -> None:
     assert parse_github_output(output.read_text(encoding="utf-8"))["python-min"] == "3.13"
 
 
-def test_main_python_versions_in_json(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_main_python_versions_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
     )
@@ -1274,9 +1310,7 @@ def test_main_python_versions_in_json(
     assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.11", "3.12"]
 
 
-def test_main_python_candidates_option(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_main_python_candidates_option(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.9"\n'
     )
@@ -1348,12 +1382,16 @@ def test_main_warnings_are_in_the_order_of_the_sources(
     # The metadata, the Python versions, the dependencies of the project, then the lookups.
     assert warnings[:3] == [
         f"{path}: [project].version is dynamic, the version output is empty",
-        f"{path}: [project].requires-python is not a valid version specifier, "
-        f"the python-versions output is empty: {_specifier_error('python3')}",
+        (
+            f"{path}: [project].requires-python is not a valid version specifier, "
+            f"the python-versions output is empty: {_specifier_error('python3')}"
+        ),
         f"x has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
     ]
     assert warnings[3].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
-    assert warnings[4] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
+    assert (
+        warnings[4] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
+    )
 
 
 def test_main_dependency_requirements_with_a_scope(
@@ -1361,7 +1399,17 @@ def test_main_dependency_requirements_with_a_scope(
 ) -> None:
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
-    assert main(["extract_metadata.py", str(path), "[]", '["numpy", "numpy@extra:slow", "pytest@group:dev"]']) == 0
+    assert (
+        main(
+            [
+                "extract_metadata.py",
+                str(path),
+                "[]",
+                '["numpy", "numpy@extra:slow", "pytest@group:dev"]',
+            ]
+        )
+        == 0
+    )
     report = json.loads(capsys.readouterr().out)
     assert report["dependency_requirements"] == {
         "numpy": [
@@ -1385,7 +1433,19 @@ def test_main_fail_on_missing_names_the_entry_with_a_scope(
 ) -> None:
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
-    assert main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 1
+    assert (
+        main(
+            [
+                "extract_metadata.py",
+                "--fail-on-missing",
+                "true",
+                str(path),
+                "[]",
+                '["tqdm", "tqdm@extra:fast"]',
+            ]
+        )
+        == 1
+    )
     assert "['tqdm@extra:fast']" in capsys.readouterr().err
 
 
@@ -1417,7 +1477,7 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
 def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
     parser = extract_metadata_module._build_parser("extract_metadata.py")
 
-    assert parser.description == extract_metadata_module.__doc__.splitlines()[0]
+    assert parser.description == (extract_metadata_module.__doc__ or "").splitlines()[0]
 
 
 def test_build_parser_without_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1450,7 +1510,9 @@ def test_main_project_dependencies_in_json_and_warnings_are_not_duplicated(
 
     assert exit_code == 0
     assert report["project_dependencies"] == {"dup": ">=1"}
-    assert report["warnings"] == [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"]
+    assert report["warnings"] == [
+        f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"
+    ]
 
 
 def test_main_github_output_project_dependencies(tmp_path: Path) -> None:
@@ -1517,7 +1579,9 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
     assert outputs["requires-python"] == "x\n::error::boom\nversion=hacked"
     assert outputs["version"] == "1"
     assert not any(line.startswith("::error") for line in captured.out.splitlines())
-    assert len(captured.out.splitlines()) == 2  # the warning for the invalid specifier, then the summary
+    assert (
+        len(captured.out.splitlines()) == 2
+    )  # the warning for the invalid specifier, then the summary
     assert "requires-python=x\\n::error::boom\\nversion=hacked " in captured.out
 
 

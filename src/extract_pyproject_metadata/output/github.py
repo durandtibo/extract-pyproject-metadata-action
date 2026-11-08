@@ -1,11 +1,12 @@
-"""The action outputs (``GITHUB_OUTPUT``), the workflow commands and the one-line summary."""
+"""The action outputs (``GITHUB_OUTPUT``), the workflow commands and the
+one-line summary."""
 
 from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.output.escaping import (
@@ -13,15 +14,27 @@ from extract_pyproject_metadata.output.escaping import (
     escape_annotation_property,
     single_line,
 )
-from extract_pyproject_metadata.types import Report
 
-__all__ = ["emit_github_output", "format_error", "format_outputs", "format_summary", "new_delimiter", "write_github_output"]
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from extract_pyproject_metadata.types import Report
+
+__all__ = [
+    "emit_github_output",
+    "format_error",
+    "format_outputs",
+    "format_summary",
+    "new_delimiter",
+    "write_github_output",
+]
 
 
 def _compact_json(value: object) -> str:
     """Serialize ``value`` as the compact JSON of an action output.
 
-    No space after ``,`` and ``:``, and non-ASCII characters are kept as they are.
+    No space after ``,`` and ``:``, and non-ASCII characters are kept as
+    they are.
     """
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
@@ -66,7 +79,8 @@ def format_outputs(metadata: Report) -> dict[str, str]:
 
 
 def new_delimiter() -> str:
-    """Return a random delimiter for a multiline ``$GITHUB_OUTPUT`` value."""
+    """Return a random delimiter for a multiline ``$GITHUB_OUTPUT``
+    value."""
     return f"ghadelimiter_{uuid.uuid4()}"
 
 
@@ -87,7 +101,8 @@ _SUMMARY_FIELDS = (
 
 
 def format_summary(outputs: dict[str, str]) -> str:
-    """Build the one-line summary of the outputs that is printed in the log.
+    """Build the one-line summary of the outputs that is printed in the
+    log.
 
     Args:
         outputs: The action outputs, as returned by ``format_outputs``.
@@ -136,7 +151,8 @@ def write_github_output(
 
 
 def emit_github_output(report: Report, pyproject_path: str, output_path: str) -> None:
-    """Write the outputs of the action and print the workflow commands and the summary.
+    """Write the outputs of the action and print the workflow commands
+    and the summary.
 
     Args:
         report: The report built by ``build_report``.

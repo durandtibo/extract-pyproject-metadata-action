@@ -1,4 +1,5 @@
-"""Tests of the public names of the modules of ``extract_pyproject_metadata``."""
+"""Tests of the public names of the modules of
+``extract_pyproject_metadata``."""
 
 from __future__ import annotations
 
@@ -18,7 +19,8 @@ MODULES = sorted(
 
 
 def _public_names(path: Path) -> list[str]:
-    """Return the public names that a module defines at its top level."""
+    """Return the public names that a module defines at its top
+    level."""
     names: list[str] = []
     for node in ast.parse(path.read_text(encoding="utf-8")).body:
         if isinstance(node, ast.FunctionDef | ast.ClassDef):

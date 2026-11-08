@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,6 +18,9 @@ from extract_pyproject_metadata.output.summary import (
     write_step_summary,
 )
 from extract_pyproject_metadata.types import Report
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_write_step_summary_unwritable_file(tmp_path: Path) -> None:
@@ -69,6 +72,7 @@ def test_format_step_summary_without_warnings() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
+        schema_version=1,
     )
 
     assert format_step_summary(report, format_outputs(report)) == (
@@ -131,6 +135,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=["first | one", "second"],
+        schema_version=1,
     )
 
     summary = format_step_summary(report, format_outputs(report))

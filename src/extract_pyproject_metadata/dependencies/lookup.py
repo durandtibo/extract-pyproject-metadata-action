@@ -1,9 +1,9 @@
-"""Lookup of the requested dependencies in the requirements of a pyproject.toml."""
+"""Lookup of the requested dependencies in the requirements of a
+pyproject.toml."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.utils import canonicalize_name
 
@@ -15,11 +15,22 @@ from extract_pyproject_metadata.dependencies.requirements import (
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 
-__all__ = ["check_no_missing_dependency", "extract_dependency_requirements", "extract_dependency_specifiers", "parse_dependencies", "requirements_from_index", "specifiers_from_index"]
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+__all__ = [
+    "check_no_missing_dependency",
+    "extract_dependency_requirements",
+    "extract_dependency_specifiers",
+    "parse_dependencies",
+    "requirements_from_index",
+    "specifiers_from_index",
+]
 
 
 def parse_dependencies(raw: str) -> list[str]:
-    """Parse the ``dependencies`` input: a JSON array of package names with an optional scope.
+    """Parse the ``dependencies`` input: a JSON array of package names
+    with an optional scope.
 
     A name may be followed by ``@`` and the only place to look it up in:
     ``name@project`` (``[project].dependencies``), ``name@extra:<extra>``
@@ -51,7 +62,8 @@ def parse_dependencies(raw: str) -> list[str]:
 
 
 def _lookup_key(dependency: str) -> str:
-    """Return the key of the index of the requirements for an entry of ``dependencies``.
+    """Return the key of the index of the requirements for an entry of
+    ``dependencies``.
 
     Args:
         dependency: An entry, as returned by ``parse_dependencies``.
@@ -72,7 +84,8 @@ def extract_dependency_specifiers(
     dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
 ) -> tuple[dict[str, str | None], list[str]]:
-    """Map each requested package to its specifier string, or None if not found.
+    """Map each requested package to its specifier string, or None if
+    not found.
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
@@ -109,7 +122,8 @@ def specifiers_from_index(
     dependencies: list[str],
     pyproject_path: str,
 ) -> tuple[dict[str, str | None], list[str]]:
-    """Look up the specifier of each requested package in an index of the requirements.
+    """Look up the specifier of each requested package in an index of
+    the requirements.
 
     Args:
         found: The index, as returned by ``index_dependencies``.
@@ -142,7 +156,8 @@ def extract_dependency_requirements(
     dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
 ) -> dict[str, list[dict[str, str]]]:
-    """Map each requested package to all its requirements, with their markers.
+    """Map each requested package to all its requirements, with their
+    markers.
 
     Unlike ``extract_dependency_specifiers``, which keeps the first requirement
     of a package, this lists every requirement, so that a caller can pick the one
@@ -174,7 +189,8 @@ def extract_dependency_requirements(
 def requirements_from_index(
     found: dict[str, list[tuple[str, str | None]]], dependencies: list[str]
 ) -> dict[str, list[dict[str, str]]]:
-    """List the requirements of each requested package in an index of the requirements.
+    """List the requirements of each requested package in an index of
+    the requirements.
 
     Args:
         found: The index, as returned by ``index_dependencies``.

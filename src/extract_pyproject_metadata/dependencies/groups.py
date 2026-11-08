@@ -1,4 +1,5 @@
-"""Expansion of the ``include-group`` entries of ``[dependency-groups]``."""
+"""Expansion of the ``include-group`` entries of ``[dependency-
+groups]``."""
 
 from __future__ import annotations
 
@@ -21,7 +22,8 @@ _MAX_GROUP_EXPANSIONS = 10_000
 
 
 def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
-    """Describe an include-group cycle, starting from its smallest group name.
+    """Describe an include-group cycle, starting from its smallest group
+    name.
 
     The same cycle is reached from each of its groups: rotating it to a fixed
     starting point gives the same message each time, so it can be deduplicated.
@@ -32,14 +34,15 @@ def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
     return f"{pyproject_path}: [dependency-groups] has an include-group cycle: {path}"
 
 
-def flatten_group(
+def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     groups: dict[str, Any],
     name: str,
     seen: tuple[str, ...] = (),
     pyproject_path: str = "pyproject.toml",
     budget: list[int] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Return requirement strings of a dependency group, expanding include-group.
+    """Return requirement strings of a dependency group, expanding
+    include-group.
 
     An ``include-group`` that leads back to a group being expanded is not
     followed again, with a warning (once per cycle). An ``include-group`` that

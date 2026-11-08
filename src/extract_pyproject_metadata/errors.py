@@ -6,4 +6,5 @@ __all__ = ["MetadataError"]
 
 
 class MetadataError(Exception):
-    """Raised when pyproject.toml cannot be read or is missing required metadata."""
+    """Raised when pyproject.toml cannot be read or is missing required
+    metadata."""
