@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from helpers import (
     ACTION_PATH,
-    README_PATH,
     PACKAGE_PATH,
+    README_PATH,
     _action_section_keys,
     _readme_table_names,
     extract,
