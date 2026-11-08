@@ -18,6 +18,7 @@ characters are kept as they are, as in the action outputs):
      "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
+     "dependency_requirements": {...},
      "warnings": [...], "schema_version": 1}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
@@ -29,8 +30,8 @@ reads the object can check it.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires-python``,
-``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies`` and
-``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
+``extras``, ``groups``, ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``, ``project-dependencies``, ``dependency-specifiers`` and
+``dependency-requirements`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
 the pyproject path, so that GitHub attaches the annotation to the file,
@@ -138,6 +139,7 @@ class Report(Metadata):
     python_max: str
     project_dependencies: dict[str, str]
     dependency_specifiers: dict[str, str | None]
+    dependency_requirements: dict[str, list[dict[str, str]]]
     warnings: list[str]
     schema_version: int
 
@@ -829,6 +831,46 @@ def extract_dependency_specifiers(
     return result, warnings
 
 
+def extract_dependency_requirements(
+    data: dict[str, Any],
+    dependencies: list[str],
+    pyproject_path: str = "pyproject.toml",
+) -> dict[str, list[dict[str, str]]]:
+    """Map each requested package to all its requirements, with their markers.
+
+    Unlike ``extract_dependency_specifiers``, which keeps the first requirement
+    of a package, this lists every requirement, so that a caller can pick the one
+    that applies to its environment (for example one per Python version).
+
+    Args:
+        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
+        dependencies: Package names to look up, as returned by
+            ``parse_string_array``.
+        pyproject_path: Path of the file ``data`` was read from, used only in
+            error messages.
+
+    Returns:
+        A dict that maps each requested package name to the list of its
+        requirements, in search order (``[project].dependencies``, extras, then
+        dependency groups), each a dict with the ``specifier`` (``""`` if there is
+        none) and the environment ``marker`` (``""`` if there is none). The list
+        is empty if the package is not found. The warnings are those of
+        ``extract_dependency_specifiers``, not repeated here.
+
+    Raises:
+        MetadataError: Under the same conditions as ``extract_dependency_specifiers``.
+    """
+    candidates, _ = _candidate_requirements(data, pyproject_path)
+    found, _, _ = _index_requirements(candidates, pyproject_path)
+    return {
+        dep: [
+            {"specifier": specifier, "marker": marker or ""}
+            for specifier, marker in found.get(canonicalize_name(dep), [])
+        ]
+        for dep in dependencies
+    }
+
+
 def _conflict_warnings(
     dep: str, matches: list[tuple[str, str | None]], used: str, pyproject_path: str
 ) -> list[str]:
@@ -1128,6 +1170,9 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "dependency-specifiers": json.dumps(
             metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
         ),
+        "dependency-requirements": json.dumps(
+            metadata["dependency_requirements"], separators=(",", ":"), ensure_ascii=False
+        ),
     }
 
 
@@ -1380,6 +1425,7 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
     python_versions, python_warnings = compatible_python_versions(
         metadata["requires_python"], python_candidates, args.pyproject_path
     )
+    requirements = extract_dependency_requirements(data, dependencies, args.pyproject_path)
     project_dependencies, project_warnings = extract_project_dependencies(
         data, args.pyproject_path
     )
@@ -1402,6 +1448,7 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         python_max=highest_python_version(python_versions),
         project_dependencies=project_dependencies,
         dependency_specifiers=specifiers,
+        dependency_requirements=requirements,
         warnings=warnings,
         schema_version=SCHEMA_VERSION,
     )

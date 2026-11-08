@@ -636,6 +636,22 @@ jobs:
           assert_equal "urls" '{}' '${{ steps.test-no-project-fields.outputs.urls }}'
           print_success "urls test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 25: dependency-requirements output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test dependency-requirements output
+        id: test-dependency-requirements
+        uses: ./
+        with:
+          pyproject-path: test-data/with-markers/pyproject.toml
+          dependencies: '["numpy","plain","missing"]'
+
+      - name: ✓ Verify dependency-requirements
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "dependency-requirements" '{"numpy":[{"specifier":">=1.20","marker":"python_version < \"3.12\""},{"specifier":">=1.26","marker":"python_version >= \"3.12\""}],"plain":[{"specifier":"","marker":""}],"missing":[]}' '${{ steps.test-dependency-requirements.outputs.dependency-requirements }}'
+          print_success "dependency-requirements test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest

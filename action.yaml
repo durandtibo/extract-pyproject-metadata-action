@@ -158,6 +158,13 @@ outputs:
       JSON object mapping each requested package to its specifier (null if
       not found, empty string if it has no specifier)
     value: ${{ steps.metadata.outputs.dependency-specifiers }}
+  dependency-requirements:
+    description: >
+      JSON object mapping each requested package to the array of all its
+      requirements, in search order, each an object with its specifier and its
+      environment marker (empty strings if it has none); an empty array if the
+      package is not found
+    value: ${{ steps.metadata.outputs.dependency-requirements }}
 
 runs:
   using: composite
