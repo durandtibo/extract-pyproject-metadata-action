@@ -71,9 +71,10 @@ def extract_metadata(
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
-            ``version``, has a ``name`` that is not a non-empty string or a
-            ``version`` that is not a string, or ``extra_values_json`` is not a
-            JSON array.
+            ``version``, has a ``name`` that is not a non-empty string, a
+            ``version`` that is not a string or an ``optional-dependencies``
+            that is not a table, or ``extra_values_json`` is not a JSON array
+            of strings.
     """
     project = data.get("project", {})
     if not isinstance(project, dict):
@@ -92,7 +93,14 @@ def extract_metadata(
         msg = f"{pyproject_path}: [project].version must be a string, got: {version!r}"
         raise MetadataError(msg)
 
-    extras = sorted(project.get("optional-dependencies", {}).keys())
+    optional_dependencies = project.get("optional-dependencies", {})
+    if not isinstance(optional_dependencies, dict):
+        msg = (
+            f"{pyproject_path}: [project].optional-dependencies must be a table, "
+            f"got: {optional_dependencies!r}"
+        )
+        raise MetadataError(msg)
+    extras = sorted(optional_dependencies)
 
     try:
         extra_values = json.loads(extra_values_json)
@@ -102,6 +110,9 @@ def extract_metadata(
 
     if not isinstance(extra_values, list):
         msg = f"extra-values must be a JSON array, got: {extra_values_json!r}"
+        raise MetadataError(msg)
+    if not all(isinstance(value, str) for value in extra_values):
+        msg = f"extra-values must be a JSON array of strings, got: {extra_values_json!r}"
         raise MetadataError(msg)
 
     return {"name": name, "version": version, "extras": extra_values + extras}
