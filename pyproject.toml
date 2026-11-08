@@ -8,3 +8,8 @@ source = ["scripts"]
 # The unit tests cover the whole script on every supported Python version.
 fail_under = 100
 show_missing = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["scripts/extract_metadata.py"]
