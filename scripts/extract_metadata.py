@@ -691,7 +691,12 @@ def _candidate_requirements(
         _dynamic_message(field, pyproject_path)
         for field in _dynamic_dependency_fields(data)
     ]
-    for gname in groups:
+    # _flatten_group reads every spelling of a group name (PEP 503), so each group is expanded
+    # once, from the first spelling: expanding each spelling would repeat its requirements.
+    first_spellings: dict[str, str] = {}
+    for group in groups:
+        first_spellings.setdefault(canonicalize_name(group), group)
+    for gname in first_spellings.values():
         group_reqs, group_warnings = _flatten_group(groups, gname, pyproject_path=pyproject_path)
         reqs.extend(group_reqs)
         warnings.extend(group_warnings)

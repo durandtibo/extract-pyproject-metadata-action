@@ -1825,6 +1825,12 @@ def test_candidate_requirements_non_string_entries(data: dict, match: str) -> No
         _candidate_requirements(data, "p.toml")
 
 
+def test_candidate_requirements_expands_the_spellings_of_a_group_once() -> None:
+    data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
+
+    assert _candidate_requirements(data)[0] == ["a", "b", "c"]
+
+
 def test_candidate_requirements_does_not_modify_the_data() -> None:
     data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
