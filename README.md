@@ -110,6 +110,10 @@ jobs:
 | `extras`                | JSON array of extra names, sorted by normalized name, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept); names are compared per PEP 685, so `Foo_Bar` and `foo-bar` are the same extra.                                                                                                                                                                                                                           |
 | `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found, `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, or if an `include-group` names a group that does not exist. |
 
+Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
+commands, so GitHub attaches them to the file that is read (`pyproject-path` is
+used as given).
+
 ## Failure modes
 
 The action's step fails (non-zero exit) when:

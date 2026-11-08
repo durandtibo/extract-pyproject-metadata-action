@@ -14,8 +14,9 @@ input.
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``version``, ``extras`` and ``dependency-specifiers`` to
 FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that values may
-contain line breaks) and prints to stdout one ``::warning::`` workflow command
-per warning, followed by a one-line summary. Warnings are printed on stdout
+contain line breaks) and prints to stdout one ``::warning file=<path>::``
+workflow command per warning, where ``<path>`` is the pyproject path, so that
+GitHub attaches the annotation to the file, followed by a one-line summary. Warnings are printed on stdout
 because GitHub only parses workflow commands there.
 
 Exits non-zero with a message on stderr if the file is missing, is not
@@ -403,6 +404,15 @@ def escape_annotation(message: str) -> str:
     return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
+def escape_annotation_property(value: str) -> str:
+    """Escape a property value (such as ``file``) of a workflow command.
+
+    Same escaping as ``@actions/core``: like ``escape_annotation``, plus ``:``
+    and ``,``, which delimit properties.
+    """
+    return escape_annotation(value).replace(":", "%3A").replace(",", "%2C")
+
+
 def format_outputs(metadata: dict) -> dict[str, str]:
     """Convert the metadata dict into the string outputs of the action.
 
@@ -495,7 +505,8 @@ def main(argv: list[str]) -> int:
 
     outputs = format_outputs(metadata)
     for warning in warnings:
-        print(f"::warning::{escape_annotation(warning)}")
+        file = escape_annotation_property(args.pyproject_path)
+        print(f"::warning file={file}::{escape_annotation(warning)}")
     # name and version come from the file: keep them on one line so they cannot
     # start a workflow command in the log.
     print(
