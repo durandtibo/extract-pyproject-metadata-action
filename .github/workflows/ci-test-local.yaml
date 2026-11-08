@@ -2,7 +2,11 @@ name: Test Local Action
 
 on:
   workflow_call:
-  workflow_dispatch: # to trigger manually
+    inputs:
+      test-matrix:
+        description: "JSON test matrix from lib-get-test-matrix.yaml, loaded once by the caller"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,33 +16,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 2
     strategy:
+      max-parallel: 8
       fail-fast: false
       matrix:
-        os:
-          [
-            ubuntu-latest,
-            ubuntu-26.04,
-            ubuntu-24.04,
-            ubuntu-22.04,
-            ubuntu-26.04-arm,
-            ubuntu-24.04-arm,
-            ubuntu-22.04-arm,
-            macos-latest,
-            macos-26,
-            macos-15,
-            macos-14,
-            macos-15-intel,
-          ]
-        # Test all supported Python versions including free-threaded builds (t suffix)
-        python-version:
-          ["3.14", "3.14t", "3.13", "3.13t", "3.12", "3.11", "3.10"]
+        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
+        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 

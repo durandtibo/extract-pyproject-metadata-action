@@ -1,0 +1,21 @@
+# Nightly workflow.
+# Runs the integration tests of the latest stable release of the action.
+
+name: Nightly
+on:
+  schedule:
+    - cron: "20 9 * * *" # Run nightly at 9:20 AM UTC
+  workflow_dispatch: # to trigger manually
+
+permissions:
+  contents: read
+
+jobs:
+  get-matrix:
+    uses: ./.github/workflows/lib-get-test-matrix.yaml
+
+  test-stable:
+    needs: get-matrix
+    uses: ./.github/workflows/nightly-test-stable.yaml
+    with:
+      test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

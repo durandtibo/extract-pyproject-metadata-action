@@ -67,12 +67,12 @@ fixtures used by the integration workflows.
   several values. Every `pytest.raises` defines `match`.
 - Cover typical inputs, edge cases (empty, duplicates, missing keys), and error
   conditions. Assert whole outputs against a literal (`assert result == {...}`).
-- The integration workflows (`.github/workflows/test-local.yaml` with `uses:
-./`, and `test-stable.yaml` with the last release) check only the wiring,
+- The integration workflows (`.github/workflows/ci-test-local.yaml` with `uses:
+./`, and `nightly-test-stable.yaml` with the last release) check only the wiring,
   using `scripts/test-helper.sh` and the fixtures in `test-data/`. Keep the two
   files identical except for the name and the `uses:` line, and add a job for
   every new input or output. A job that tests something added after the latest
-  release goes only in `test-local.yaml`.
+  release goes only in `ci-test-local.yaml`.
 
 ## Reporting
 
