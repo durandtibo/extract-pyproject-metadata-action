@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -1499,3 +1500,41 @@ def test_main_warning_annotation_names_the_file(
         "::warning file=pyproject.toml::pyproject.toml: [project].version is dynamic, "
         "the version output is empty"
     )
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["1", "1.2.3", "0.1.0.dev3", "1.0rc1", "2024.1.post2", "1!2.0", "1.0.0rc1+build.5", "v1.2", "1.0-1"],
+)
+def test_extract_metadata_valid_pep_440_versions(tmp_path: Path, version: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "p"\nversion = "{version}"\n')
+
+    assert extract(path)["version"] == version
+
+
+@pytest.mark.parametrize("version", ["", "latest", "1.2.x", "one", "1..2", "1.2.3 beta", "^1.2"])
+def test_extract_metadata_invalid_pep_440_version(tmp_path: Path, version: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "p"\nversion = "{version}"\n')
+
+    message = f"{path.name}: [project].version is not a valid PEP 440 version: {version!r}"
+    with pytest.raises(MetadataError, match=re.escape(message)):
+        extract(path)
+
+
+def test_extract_metadata_dynamic_version_is_not_validated(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "p"\ndynamic = ["version"]\n')
+
+    assert extract(path)["version"] == ""
+
+
+def test_main_invalid_version_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "latest"\n')
+
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "is not a valid PEP 440 version: 'latest'" in captured.err
+    assert captured.out == ""

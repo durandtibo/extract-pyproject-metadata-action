@@ -36,6 +36,7 @@ from pathlib import Path
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
 try:
     import tomllib
@@ -100,9 +101,9 @@ def extract_metadata(
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
             is not an array, a ``name`` that is not a non-empty string, a
-            ``version`` that is not a string or an ``optional-dependencies``
-            that is not a table, or ``extra_values_json`` is not a JSON array
-            of strings.
+            ``version`` that is not a string or not a valid PEP 440 version, an
+            ``optional-dependencies`` that is not a table, or
+            ``extra_values_json`` is not a JSON array of strings.
     """
     project = data.get("project", {})
     if not isinstance(project, dict):
@@ -135,6 +136,15 @@ def extract_metadata(
     if not isinstance(version, str):
         msg = f"{pyproject_path}: [project].version must be a string, got: {version!r}"
         raise MetadataError(msg)
+    if "version" in project:
+        try:
+            Version(version)
+        except InvalidVersion as exc:
+            msg = (
+                f"{pyproject_path}: [project].version is not a valid PEP 440 version: "
+                f"{version!r}"
+            )
+            raise MetadataError(msg) from exc
 
     optional_dependencies = project.get("optional-dependencies", {})
     if not isinstance(optional_dependencies, dict):

@@ -125,6 +125,8 @@ The action's step fails (non-zero exit) when:
 - `[project]` is not a table, `name` is not a non-empty string, or `version` is
   not a string (for example `version = 1.0` is a TOML float; write
   `version = "1.0"`).
+- `[project].version` is not a valid
+  [PEP 440](https://peps.python.org/pep-0440/) version (for example `latest`).
 - `[project.optional-dependencies]` is not a table.
 - `[project].dependencies` or a value of `[project.optional-dependencies]` or
   `[dependency-groups]` is not an array, `[dependency-groups]` is not a table,
