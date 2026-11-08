@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import extract_metadata as extract_metadata_module  # noqa: E402
 from extract_metadata import (  # noqa: E402
     MetadataError,
+    check_no_missing_dependency,
     extract_dependency_specifiers,
     _candidate_requirements,
     _conflict_warnings,
@@ -24,6 +25,7 @@ from extract_metadata import (  # noqa: E402
     format_outputs,
     load_pyproject,
     main,
+    parse_bool,
     write_github_output,
 )
 
@@ -1757,3 +1759,144 @@ def test_main_json_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["groups"] == ["Dev", "docs", "test"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("true", True), ("false", False), ("True", True), ("FALSE", False), (" true ", True)],
+)
+def test_parse_bool(value: str, expected: bool) -> None:
+    assert parse_bool(value, "flag") is expected
+
+
+@pytest.mark.parametrize("value", ["", "yes", "1", "0", "tru", "true false", "null"])
+def test_parse_bool_invalid(value: str) -> None:
+    with pytest.raises(MetadataError, match=rf"my-input must be 'true' or 'false', got: {value!r}"):
+        parse_bool(value, "my-input")
+
+
+def test_check_no_missing_dependency_all_found() -> None:
+    check_no_missing_dependency({"a": ">=1", "b": ""}, "p.toml")
+
+
+def test_check_no_missing_dependency_nothing_requested() -> None:
+    check_no_missing_dependency({}, "p.toml")
+
+
+def test_check_no_missing_dependency_lists_the_missing_packages() -> None:
+    with pytest.raises(
+        MetadataError, match=r"custom\.toml: dependencies not found in .*: \['b', 'd'\]$"
+    ):
+        check_no_missing_dependency({"a": ">=1", "b": None, "c": "", "d": None}, "custom.toml")
+
+
+def test_main_fail_on_missing_true_fails_for_a_missing_dependency(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    output = tmp_path / "github_output"
+
+    exit_code = main(
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(output),
+            "--fail-on-missing",
+            "true",
+            str(path),
+            "[]",
+            '["nospec", "missing", "other"]',
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.err == (
+        f"{path}: dependencies not found in [project].dependencies, "
+        "[project.optional-dependencies] or [dependency-groups]: ['missing', 'other']\n"
+    )
+    assert captured.out == ""
+    assert not output.exists()
+
+
+def test_main_fail_on_missing_true_passes_when_all_are_found(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(
+        ["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["nospec", "dup"]']
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {
+        "nospec": "",
+        "dup": ">=1",
+    }
+
+
+@pytest.mark.parametrize("argv_tail", [[], ["--fail-on-missing", "false"], ["--fail-on-missing", "FALSE"]])
+def test_main_fail_on_missing_false_keeps_null(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv_tail: list[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(["extract_metadata.py", *argv_tail, str(path), "[]", '["missing"]'])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {"missing": None}
+
+
+def test_main_fail_on_missing_true_without_dependencies_passes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    assert main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {}
+
+
+@pytest.mark.parametrize("value", ["", "yes", "1"])
+def test_main_fail_on_missing_invalid_value_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], value: str
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(["extract_metadata.py", "--fail-on-missing", value, str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert f"fail-on-missing must be 'true' or 'false', got: {value!r}" in captured.err
+    assert captured.out == ""
+
+
+def test_main_fail_on_missing_requires_a_value(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["extract_metadata.py", "--fail-on-missing"]) == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_cli_end_to_end_fail_on_missing(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n'
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--fail-on-missing",
+            "true",
+            "--",
+            str(path),
+            "[]",
+            '["numpy", "pandas"]',
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "dependencies not found" in result.stderr
+    assert "['pandas']" in result.stderr
+    assert result.stdout == ""

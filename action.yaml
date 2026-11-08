@@ -37,6 +37,13 @@ inputs:
       [dependency-groups] (e.g. '["invoke-tasklib"]').
     required: false
     default: "[]"
+  fail-on-missing:
+    description: >
+      Set to "true" to fail when a package listed in dependencies is not found,
+      instead of reporting it as null in dependency-specifiers ("true" or
+      "false")
+    required: false
+    default: "false"
 
 outputs:
   name:
@@ -76,6 +83,7 @@ runs:
         PYPROJECT_PATH: ${{ inputs.pyproject-path }}
         EXTRA_VALUES: ${{ inputs.extra-values }}
         DEPENDENCIES: ${{ inputs.dependencies }}
+        FAIL_ON_MISSING: ${{ inputs.fail-on-missing }}
       run: |
         set -euo pipefail
 
@@ -104,4 +112,5 @@ runs:
 
         "$python" "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" \
           --github-output "$GITHUB_OUTPUT" \
+          --fail-on-missing "$FAIL_ON_MISSING" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"

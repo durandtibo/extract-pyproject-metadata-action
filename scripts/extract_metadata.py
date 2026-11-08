@@ -1,8 +1,8 @@
 r"""Extract project name, version, and optional-dependency extras from a pyproject.toml.
 
 Usage:
-    extract_metadata.py [--github-output FILE] [--] <pyproject-path>
-        <extra-values-json> [<dependencies-json>]
+    extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
+        [--] <pyproject-path> <extra-values-json> [<dependencies-json>]
 
 Without ``--github-output``, prints a single JSON object to stdout:
     {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
@@ -21,11 +21,15 @@ warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
 annotation to the file, followed by a one-line summary. Warnings are printed
 on stdout because GitHub only parses workflow commands there.
 
+With ``--fail-on-missing true``, a requested dependency that is not found
+is an error instead of a ``null`` specifier.
+
 Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, a
 dependency table ([project].dependencies, [project.optional-dependencies] or
-[dependency-groups]) has the wrong type, or an input is not valid JSON of the
-expected shape.
+[dependency-groups]) has the wrong type, an input is not valid JSON of the
+expected shape, or ``--fail-on-missing true`` is given and a requested
+dependency is not found.
 """
 
 from __future__ import annotations
@@ -435,6 +439,45 @@ def _conflict_warnings(
     return messages
 
 
+def parse_bool(value: str, name: str) -> bool:
+    """Parse the ``"true"`` / ``"false"`` string of a boolean input.
+
+    Args:
+        value: The string, compared case-insensitively.
+        name: The name of the input, used in the error message.
+
+    Returns:
+        The boolean value.
+
+    Raises:
+        MetadataError: If ``value`` is neither ``"true"`` nor ``"false"``.
+    """
+    lowered = value.strip().lower()
+    if lowered not in {"true", "false"}:
+        msg = f"{name} must be 'true' or 'false', got: {value!r}"
+        raise MetadataError(msg)
+    return lowered == "true"
+
+
+def check_no_missing_dependency(specifiers: dict, pyproject_path: str) -> None:
+    """Raise if a requested dependency was not found.
+
+    Args:
+        specifiers: The mapping returned by ``extract_dependency_specifiers``.
+        pyproject_path: Path of the file, used in the error message.
+
+    Raises:
+        MetadataError: If a package maps to ``None``.
+    """
+    missing = [name for name, specifier in specifiers.items() if specifier is None]
+    if missing:
+        msg = (
+            f"{pyproject_path}: dependencies not found in [project].dependencies, "
+            f"[project.optional-dependencies] or [dependency-groups]: {missing}"
+        )
+        raise MetadataError(msg)
+
+
 def escape_annotation(message: str) -> str:
     """Escape a message for use in a ``::warning::`` workflow command.
 
@@ -516,6 +559,12 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
         metavar="FILE",
         help="append the action outputs to FILE and print workflow commands instead of JSON",
     )
+    parser.add_argument(
+        "--fail-on-missing",
+        metavar="BOOL",
+        default="false",
+        help="'true' to fail when a requested dependency is not found (default: false)",
+    )
     parser.add_argument("pyproject_path", help="path to pyproject.toml")
     parser.add_argument("extra_values", help="JSON array of extra values to prepend")
     parser.add_argument(
@@ -532,12 +581,15 @@ def main(argv: list[str]) -> int:
         return exc.code if isinstance(exc.code, int) else 2
 
     try:
+        fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
         data = load_pyproject(args.pyproject_path)
         warnings: list[str] = []
         metadata = extract_metadata(data, args.extra_values, args.pyproject_path, warnings)
         metadata["dependency_specifiers"] = extract_dependency_specifiers(
             data, args.dependencies, args.pyproject_path, warnings
         )
+        if fail_on_missing:
+            check_no_missing_dependency(metadata["dependency_specifiers"], args.pyproject_path)
         metadata["warnings"] = warnings
     except MetadataError as exc:
         print(str(exc), file=sys.stderr)
