@@ -15,6 +15,8 @@ from extract_pyproject_metadata.output.escaping import (
 )
 from extract_pyproject_metadata.types import Report
 
+__all__ = ["emit_github_output", "format_error", "format_outputs", "format_summary", "new_delimiter", "write_github_output"]
+
 
 def _compact_json(value: object) -> str:
     """Serialize ``value`` as the compact JSON of an action output.

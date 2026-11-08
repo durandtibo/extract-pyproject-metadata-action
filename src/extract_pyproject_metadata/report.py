@@ -27,6 +27,8 @@ from extract_pyproject_metadata.python_versions import (
 )
 from extract_pyproject_metadata.types import Report
 
+__all__ = ["SCHEMA_VERSION", "build_report"]
+
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
 SCHEMA_VERSION = 1
 

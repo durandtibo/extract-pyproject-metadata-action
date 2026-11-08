@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+__all__ = ["Metadata", "Report"]
+
 
 class Metadata(TypedDict):
     """The project metadata read by ``extract_metadata``."""

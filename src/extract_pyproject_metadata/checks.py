@@ -6,6 +6,8 @@ from typing import Any
 
 from extract_pyproject_metadata.errors import MetadataError
 
+__all__ = ["check_array", "check_str", "check_string_array", "get_table"]
+
 
 def check_str(value: object, label: str, pyproject_path: str) -> str:
     """Return ``value`` if it is a string, and raise ``MetadataError`` otherwise.

@@ -366,7 +366,13 @@ The action's step fails (non-zero exit) when:
 
 The logic is in the package `src/extract_pyproject_metadata/`, started by `scripts/run.sh`
 (which installs the requirements in a private virtual environment when the
-interpreter lacks them); `action.yaml` only wires inputs and outputs. Use a virtual environment:
+interpreter lacks them); `action.yaml` only wires inputs and outputs.
+The package has one module per concern (reading the file, the fields, the
+dependencies, the Python versions, the output, the report and the command line);
+the list of the modules and the import rules are in the docstring of
+`src/extract_pyproject_metadata/__init__.py` and in `CLAUDE.md`. The tests mirror
+it: `tests/unit` (one module per module), `tests/integration` and
+`tests/properties`. Use a virtual environment:
 
 ```bash
 python -m venv .venv

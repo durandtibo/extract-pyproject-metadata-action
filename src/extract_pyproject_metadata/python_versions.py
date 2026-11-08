@@ -10,6 +10,8 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 
+__all__ = ["DEFAULT_PYTHON_CANDIDATES", "compatible_python_versions", "highest_python_version", "lowest_python_version", "parse_python_candidates"]
+
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 

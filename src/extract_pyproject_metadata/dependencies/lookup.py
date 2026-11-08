@@ -15,6 +15,8 @@ from extract_pyproject_metadata.dependencies.requirements import (
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 
+__all__ = ["check_no_missing_dependency", "extract_dependency_requirements", "extract_dependency_specifiers", "parse_dependencies", "requirements_from_index", "specifiers_from_index"]
+
 
 def parse_dependencies(raw: str) -> list[str]:
     """Parse the ``dependencies`` input: a JSON array of package names with an optional scope.

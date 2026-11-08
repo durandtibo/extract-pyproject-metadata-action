@@ -11,6 +11,8 @@ from packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_string_array, get_table
 from extract_pyproject_metadata.dependencies.groups import flatten_group
 
+__all__ = ["PROJECT_SCOPE", "conflict_warnings", "dynamic_dependency_fields", "extract_project_dependencies", "index_dependencies"]
+
 # The scope of the requirements of ``[project].dependencies`` (see ``_scoped_requirements``).
 PROJECT_SCOPE = "project"
 

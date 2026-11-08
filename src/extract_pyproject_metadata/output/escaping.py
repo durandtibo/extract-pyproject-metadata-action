@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["escape_annotation", "escape_annotation_property", "single_line"]
+
 
 def escape_annotation(message: str) -> str:
     """Escape a message for use in a ``::warning::`` workflow command.

@@ -8,6 +8,8 @@ from typing import NamedTuple
 
 from extract_pyproject_metadata.errors import MetadataError
 
+__all__ = ["Options", "parse_bool", "parse_options", "parse_string_array"]
+
 
 class Options(NamedTuple):
     """The boolean inputs of the action, parsed."""
