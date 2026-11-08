@@ -3427,19 +3427,15 @@ CANDIDATES = ["3.9", "3.10", "3.11", "3.12", "3.13"]
         ("~=3.11.0", ["3.11"]),
         ("==3.11.*", ["3.11"]),
         ("!=3.12.*", ["3.9", "3.10", "3.11", "3.13"]),
-        (">=3.14", []),
         (">=3", CANDIDATES),
         ("==3.12.3", ["3.12"]),
         ("===3.12.3", ["3.12"]),
         ("==3.12.3,!=3.12.0", ["3.12"]),
         ("~=3.12.3", ["3.12"]),
         (">3.12.5,<3.12.7", ["3.12"]),
-        (">3.12.5,<3.12.6", []),
         (">=3.11.4,<=3.11.4", ["3.11"]),
-        ("<3.9.0", []),
         ("==3.12.*,!=3.12.3", ["3.12"]),
         ("==3.12.99", ["3.12"]),
-        ("==3.12.150", []),
         (">=3.12.150", ["3.12", "3.13"]),
         ("<3.12.150", ["3.9", "3.10", "3.11", "3.12"]),
     ],
@@ -3448,11 +3444,32 @@ def test_compatible_python_versions(requires_python: str, expected: list[str]) -
     assert compatible_python_versions(requires_python, CANDIDATES) == (expected, [])
 
 
+@pytest.mark.parametrize(
+    "requires_python",
+    [">=3.14", ">3.12.5,<3.12.6", "<3.9.0", "==3.12.150", ">=3.12.5,<3.12.7,!=3.12.5,!=3.12.6"],
+)
+def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> None:
+    assert compatible_python_versions(requires_python, CANDIDATES, "p.toml") == (
+        [],
+        [
+            "p.toml: no python-candidates version satisfies [project].requires-python "
+            f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
+            "matrix built from them is rejected by GitHub"
+        ],
+    )
+
+
+def test_compatible_python_versions_none_allowed_warning_names_the_file() -> None:
+    _, warnings = compatible_python_versions(">=4", CANDIDATES, "custom/pyproject.toml")
+
+    assert warnings[0].startswith("custom/pyproject.toml: no python-candidates version")
+
+
 def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
     assert compatible_python_versions(">=3.10", ["3.12", "3.10", "3.8"]) == (["3.12", "3.10"], [])
 
 
-def test_compatible_python_versions_no_candidates() -> None:
+def test_compatible_python_versions_no_candidates_does_not_warn() -> None:
     assert compatible_python_versions(">=3.10", []) == ([], [])
 
 
@@ -3507,7 +3524,6 @@ def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
         "!=3.12.0,!=3.12.1,!=3.12.2,<3.12.3",
         ">3.12.5,!=3.12.6,<3.12.8",
         ">3.12.5,!=3.12.6,!=3.12.7,<3.12.9",
-        ">=3.12.5,<3.12.7,!=3.12.5,!=3.12.6",
         ">=3.12.9999",
         "<3.12.0",
         "<=3.12.0",
@@ -4029,6 +4045,32 @@ def test_main_python_max_is_empty_without_allowed_version(
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert (report["python_versions"], report["python_max"]) == ([], "")
+
+
+def test_main_warns_when_no_python_version_is_allowed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["warnings"] == [
+        f"{path}: no python-candidates version satisfies [project].requires-python ('>=4'): "
+        "python-versions and python-matrix are empty, and a job matrix built from them is "
+        "rejected by GitHub"
+    ]
+
+
+def test_main_strict_fails_when_no_python_version_is_allowed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
+    )
+
+    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert "strict is 'true' and there are 1 warning(s)" in capsys.readouterr().err
 
 
 def test_main_python_max_compares_versions_as_numbers(
