@@ -1098,3 +1098,122 @@ def test_main_malformed_dependency_table_returns_one(
     assert "[dependency-groups].dev must be an array" in captured.err
     assert "Traceback" not in captured.err
     assert captured.out == ""
+
+
+def test_flatten_group_cycle_adds_a_warning() -> None:
+    groups = {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}
+    warnings: list[str] = []
+
+    result = _flatten_group(groups, "a", pyproject_path="p.toml", warnings=warnings)
+
+    assert result == ["y", "x"]
+    assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
+
+
+def test_flatten_group_self_include_adds_a_warning() -> None:
+    warnings: list[str] = []
+
+    result = _flatten_group({"a": [{"include-group": "a"}, "x"]}, "a", warnings=warnings)
+
+    assert result == ["x"]
+    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> a"]
+
+
+def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
+    groups = {"c": [{"include-group": "a"}], "a": [{"include-group": "b"}], "b": [{"include-group": "c"}]}
+    warnings: list[str] = []
+
+    _flatten_group(groups, "b", warnings=warnings)
+
+    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> b -> c -> a"]
+
+
+def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
+    groups = {"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": [{"include-group": "b"}]}
+    warnings: list[str] = []
+
+    _flatten_group(groups, "a", warnings=warnings)
+
+    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: b -> c -> b"]
+
+
+def test_flatten_group_cycle_uses_canonical_names() -> None:
+    groups = {"My_Group": [{"include-group": "my-group"}]}
+    warnings: list[str] = []
+
+    _flatten_group(groups, "My_Group", warnings=warnings)
+
+    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: my-group -> my-group"]
+
+
+def test_flatten_group_no_cycle_adds_no_warning() -> None:
+    groups = {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]}
+    warnings: list[str] = []
+
+    assert _flatten_group(groups, "a", warnings=warnings) == ["y", "y"]
+    assert warnings == []
+
+
+def test_candidate_requirements_reports_a_cycle_once() -> None:
+    data = {
+        "dependency-groups": {
+            "a": [{"include-group": "b"}, "x"],
+            "b": [{"include-group": "a"}, "y"],
+        }
+    }
+    warnings: list[str] = []
+
+    _candidate_requirements(data, "p.toml", warnings)
+
+    assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
+
+
+def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [dependency-groups]
+        a = [{include-group = "b"}, "x>=1"]
+        b = [{include-group = "a"}, "y>=2"]
+        """,
+    )
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(
+        load_pyproject(str(path)), '["x", "y"]', str(path), warnings
+    )
+
+    assert result == {"x": ">=1", "y": ">=2"}
+    assert warnings == [f"{path}: [dependency-groups] has an include-group cycle: a -> b -> a"]
+
+
+def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(tmp_path, '[dependency-groups]\na = [{include-group = "a"}]\n')
+    warnings: list[str] = []
+
+    result = extract_dependency_specifiers(load_pyproject(str(path)), "[]", str(path), warnings)
+
+    assert result == {}
+    assert warnings == []
+
+
+def test_main_include_group_cycle_warning_annotation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\na = [{include-group = "a"}]\n',
+    )
+    output = tmp_path / "github_output"
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(output), str(path), "[]", '["x"]']
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.out.splitlines()[0] == (
+        f"::warning::{path}: [dependency-groups] has an include-group cycle: a -> a"
+    )

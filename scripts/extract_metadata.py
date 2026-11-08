@@ -185,13 +185,29 @@ def _check_array(value: object, label: str, pyproject_path: str) -> list:
     return value
 
 
+def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
+    """Describe an include-group cycle, starting from its smallest group name.
+
+    The same cycle is reached from each of its groups: rotating it to a fixed
+    starting point gives the same message each time, so it can be deduplicated.
+    """
+    start = cycle.index(min(cycle))
+    ordered = (*cycle[start:], *cycle[:start])
+    path = " -> ".join((*ordered, ordered[0]))
+    return f"{pyproject_path}: [dependency-groups] has an include-group cycle: {path}"
+
+
 def _flatten_group(
     groups: dict,
     name: str,
     seen: tuple[str, ...] = (),
     pyproject_path: str = "pyproject.toml",
+    warnings: list[str] | None = None,
 ) -> list[str]:
     """Return requirement strings of a dependency group, expanding include-group.
+
+    An ``include-group`` that leads back to a group being expanded is not
+    followed again; a warning is appended to ``warnings`` (once per cycle).
 
     Raises:
         MetadataError: If a group is not an array or an ``include-group`` value
@@ -199,6 +215,10 @@ def _flatten_group(
     """
     key = canonicalize_name(name)
     if key in seen:
+        if warnings is not None:
+            message = _cycle_message(seen[seen.index(key) :], pyproject_path)
+            if message not in warnings:
+                warnings.append(message)
         return []
     out: list[str] = []
     for gname, entries in groups.items():
@@ -213,12 +233,18 @@ def _flatten_group(
                 if not isinstance(included, str):
                     msg = f"{pyproject_path}: {label}: include-group must be a string, got: {included!r}"
                     raise MetadataError(msg)
-                out.extend(_flatten_group(groups, included, (*seen, key), pyproject_path))
+                out.extend(
+                    _flatten_group(groups, included, (*seen, key), pyproject_path, warnings)
+                )
     return out
 
 
-def _candidate_requirements(data: dict, pyproject_path: str = "pyproject.toml") -> list[str]:
+def _candidate_requirements(
+    data: dict, pyproject_path: str = "pyproject.toml", warnings: list[str] | None = None
+) -> list[str]:
     """All requirement strings, in search order.
+
+    ``warnings`` receives one message per include-group cycle.
 
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
@@ -248,7 +274,7 @@ def _candidate_requirements(data: dict, pyproject_path: str = "pyproject.toml") 
         msg = f"{pyproject_path}: [dependency-groups] must be a table, got: {groups!r}"
         raise MetadataError(msg)
     for gname in groups:
-        reqs.extend(_flatten_group(groups, gname, pyproject_path=pyproject_path))
+        reqs.extend(_flatten_group(groups, gname, pyproject_path=pyproject_path, warnings=warnings))
     return reqs
 
 
@@ -266,10 +292,10 @@ def extract_dependency_specifiers(
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
         warnings: List to which warning messages are appended (for example
-            when a package has different specifiers in several places, or a
-            requirement string cannot be parsed and is ignored). Invalid
-            requirements are only reported when ``dependencies_json`` is not
-            empty.
+            when a package has different specifiers in several places, a
+            requirement string cannot be parsed and is ignored, or
+            ``include-group`` entries form a cycle). Invalid requirements and
+            cycles are only reported when ``dependencies_json`` is not empty.
 
     Returns:
         A dict mapping each requested package name to its specifier, ``""`` if
@@ -283,7 +309,10 @@ def extract_dependency_specifiers(
     """
     deps = _parse_dependencies(dependencies_json)
     found: dict[str, list[str]] = {}
-    for raw in _candidate_requirements(data, pyproject_path):
+    # Like invalid requirements below, structure warnings are only worth
+    # reporting when the caller looks something up.
+    candidates = _candidate_requirements(data, pyproject_path, warnings if deps else None)
+    for raw in candidates:
         try:
             req = Requirement(raw)
         except InvalidRequirement as exc:
