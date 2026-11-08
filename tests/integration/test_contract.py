@@ -7,7 +7,11 @@ import re
 from pathlib import Path
 
 import pytest
-from helpers import (
+
+import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
+from extract_pyproject_metadata.types import Metadata, Report
+from tests.helpers import (
     ACTION_PATH,
     PACKAGE_PATH,
     README_PATH,
@@ -16,10 +20,6 @@ from helpers import (
     extract,
     write_pyproject,
 )
-
-import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
-from extract_pyproject_metadata.types import Metadata, Report
 
 
 def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
@@ -30,7 +30,7 @@ def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
 
 
 def test_action_yaml_default_of_python_candidates_matches_the_script() -> None:
-    action = (Path(__file__).resolve().parents[1] / "action.yaml").read_text(encoding="utf-8")
+    action = ACTION_PATH.read_text(encoding="utf-8")
 
     assert f"default: '{DEFAULT_PYTHON_CANDIDATES}'" in action
 

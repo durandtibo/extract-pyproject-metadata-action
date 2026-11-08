@@ -1,20 +1,14 @@
-"""Tests of the reading and validation of the fields of pyproject.toml."""
+"""Tests of ``extract_pyproject_metadata.metadata``: the fields of the file."""
 
-
+from __future__ import annotations
 
 import re
 from pathlib import Path
 
 import pytest
-from helpers import extract, requires_licenses, write_pyproject
 
-import extract_pyproject_metadata.license as license_module
-import extract_pyproject_metadata.output.github as output_github_module
-from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.fields import read_build_system, read_extra_names, read_string_table
 from extract_pyproject_metadata.inputs import parse_string_array
-from extract_pyproject_metadata.license import license_warnings
 from extract_pyproject_metadata.metadata import (
     _required_name,
     _required_version,
@@ -24,84 +18,12 @@ from extract_pyproject_metadata.metadata import (
     extract_metadata,
 )
 from extract_pyproject_metadata.pyproject import load_pyproject
-
-
-def test_load_pyproject(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
-
-    assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
-
-
-
-def test_load_pyproject_utf8_bom(tmp_path: Path) -> None:
-    path = tmp_path / "pyproject.toml"
-    path.write_bytes(b'\xef\xbb\xbf[project]\nname = "coola"\nversion = "1.2.3"\n')
-
-    assert load_pyproject(str(path)) == {"project": {"name": "coola", "version": "1.2.3"}}
-
-
-
-def test_load_pyproject_bom_only_at_the_start(tmp_path: Path) -> None:
-    path = tmp_path / "pyproject.toml"
-    path.write_bytes(b'[project]\n\xef\xbb\xbfname = "coola"\n')
-
-    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid TOML"):
-        load_pyproject(str(path))
-
-
-
-def test_load_pyproject_nested_too_deeply(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, "[project]\nx = " + "[" * 5000 + "]" * 5000 + "\n")
-
-    with pytest.raises(MetadataError, match=r"pyproject.toml is nested too deeply to be parsed"):
-        load_pyproject(str(path))
-
-
-
-def test_load_pyproject_missing_file(tmp_path: Path) -> None:
-    missing = tmp_path / "does-not-exist.toml"
-
-    with pytest.raises(MetadataError, match=r"pyproject.toml not found at: .*does-not-exist.toml"):
-        load_pyproject(str(missing))
-
-
-
-def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, "this is not [valid toml")
-
-    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid TOML"):
-        load_pyproject(str(path))
-
-
-
-def test_load_pyproject_invalid_utf8(tmp_path: Path) -> None:
-    path = tmp_path / "pyproject.toml"
-    path.write_bytes(b'[project]\nname = "caf\xe9"\n')
-
-    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid UTF-8"):
-        load_pyproject(str(path))
-
-
-
-def test_load_pyproject_unreadable_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
-
-    def deny(self: Path, *args: object, **kwargs: object) -> None:
-        raise PermissionError(13, "Permission denied")
-
-    monkeypatch.setattr(Path, "open", deny)
-
-    with pytest.raises(MetadataError, match=r"pyproject.toml cannot be read: .*Permission denied"):
-        load_pyproject(str(path))
-
+from tests.helpers import extract, requires_licenses, write_pyproject
 
 
 def test_extract_metadata_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
         extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
-
 
 
 def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
@@ -138,7 +60,6 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
     }
 
 
-
 @pytest.mark.parametrize(
     ("project", "expected"),
     [
@@ -156,7 +77,6 @@ def test_extract_metadata_description(tmp_path: Path, project: str, expected: st
     assert extract(path)["description"] == expected
 
 
-
 @pytest.mark.parametrize("value", ["1", "true", '["a"]', "{a = 1}"])
 def test_extract_metadata_description_must_be_a_string(tmp_path: Path, value: str) -> None:
     path = write_pyproject(
@@ -165,42 +85,6 @@ def test_extract_metadata_description_must_be_a_string(tmp_path: Path, value: st
 
     with pytest.raises(MetadataError, match=r"p\.toml: \[project\]\.description must be a string, got: "):
         extract_metadata(load_pyproject(str(path)), [], "p.toml")
-
-
-
-@pytest.mark.parametrize(
-    ("project", "expected"),
-    [
-        ("", []),
-        ('license-files = []\n', []),
-        ('license-files = ["LICENSE"]\n', ["LICENSE"]),
-        ('license-files = ["LICENSE", "licenses/*.txt", "LICENSE"]\n', ["LICENSE", "licenses/*.txt", "LICENSE"]),
-        ('dynamic = ["license-files"]\n', []),
-    ],
-)
-def test_extract_metadata_license_files(tmp_path: Path, project: str, expected: list[str]) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{project}')
-
-    assert extract(path)["license_files"] == expected
-
-
-
-@pytest.mark.parametrize(
-    ("value", "match"),
-    [
-        ('"LICENSE"', r"\[project\]\.license-files must be an array, got: 'LICENSE'"),
-        ('{ glob = "LICENSE" }', r"\[project\]\.license-files must be an array, got: \{'glob': 'LICENSE'\}"),
-        ('["LICENSE", 1]', r"\[project\]\.license-files must contain only strings, got: 1"),
-    ],
-)
-def test_extract_metadata_license_files_must_be_an_array_of_strings(
-    tmp_path: Path, value: str, match: str
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\nlicense-files = {value}\n')
-
-    with pytest.raises(MetadataError, match=match):
-        extract(path)
-
 
 
 @pytest.mark.parametrize("key", ["keywords", "classifiers"])
@@ -222,7 +106,6 @@ def test_extract_metadata_keywords_and_classifiers(
     assert extract(path)[key] == expected
 
 
-
 @pytest.mark.parametrize("key", ["keywords", "classifiers"])
 @pytest.mark.parametrize(
     ("value", "match"),
@@ -240,7 +123,6 @@ def test_extract_metadata_keywords_and_classifiers_must_be_arrays_of_strings(
         extract(path)
 
 
-
 def test_extract_metadata_scripts(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -252,12 +134,10 @@ def test_extract_metadata_scripts(tmp_path: Path) -> None:
     assert list(extract(path)["scripts"]) == ["z", "a"]
 
 
-
 def test_extract_metadata_scripts_default_to_empty(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
     assert extract(path)["scripts"] == {}
-
 
 
 @pytest.mark.parametrize(
@@ -276,80 +156,6 @@ def test_extract_metadata_scripts_must_be_a_table_of_strings(
         extract(path)
 
 
-
-def test_string_table() -> None:
-    assert read_string_table({"x": {"b": "1", "a": "2"}}, "x", "p.toml") == {"b": "1", "a": "2"}
-
-
-
-def test_string_table_absent() -> None:
-    assert read_string_table({}, "x", "p.toml") == {}
-
-
-
-def test_string_table_returns_a_copy() -> None:
-    project = {"x": {"a": "1"}}
-
-    read_string_table(project, "x", "p.toml")["b"] = "2"
-
-    assert project == {"x": {"a": "1"}}
-
-
-
-def test_string_table_not_a_table() -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\] must be a table, got: 1$"):
-        read_string_table({"x": 1}, "x", "p.toml")
-
-
-
-def test_string_table_not_a_string() -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[project\.x\]\.a must be a string, got: 1$"):
-        read_string_table({"x": {"a": 1}}, "x", "p.toml")
-
-
-
-@pytest.mark.parametrize(
-    ("data", "expected"),
-    [
-        ({}, ("", [])),
-        ({"build-system": {}}, ("", [])),
-        ({"build-system": {"requires": ["setuptools>=61", "wheel"]}}, ("", ["setuptools>=61", "wheel"])),
-        ({"build-system": {"build-backend": "hatchling.build"}}, ("hatchling.build", [])),
-        (
-            {"build-system": {"requires": ["a", "a"], "build-backend": "a.b:c", "backend-path": ["."]}},
-            ("a.b:c", ["a", "a"]),
-        ),
-    ],
-)
-def test_build_system(data: dict, expected: tuple[str, list[str]]) -> None:
-    assert read_build_system(data, "p.toml") == expected
-
-
-
-def test_build_system_returns_a_copy_of_requires() -> None:
-    data = {"build-system": {"requires": ["a"]}}
-
-    read_build_system(data, "p.toml")[1].append("b")
-
-    assert data == {"build-system": {"requires": ["a"]}}
-
-
-
-@pytest.mark.parametrize(
-    ("data", "match"),
-    [
-        ({"build-system": "x"}, r"^p.toml: \[build-system\] must be a table, got: 'x'$"),
-        ({"build-system": {"build-backend": 1}}, r"^p.toml: \[build-system\].build-backend must be a string, got: 1$"),
-        ({"build-system": {"requires": "a"}}, r"^p.toml: \[build-system\].requires must be an array, got: 'a'$"),
-        ({"build-system": {"requires": ["a", 1]}}, r"^p.toml: \[build-system\].requires must contain only strings, got: 1$"),
-    ],
-)
-def test_build_system_wrong_type(data: dict, match: str) -> None:
-    with pytest.raises(MetadataError, match=match):
-        read_build_system(data, "p.toml")
-
-
-
 def test_extract_metadata_build_system(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -362,49 +168,12 @@ def test_extract_metadata_build_system(tmp_path: Path) -> None:
     assert (metadata["build_backend"], metadata["build_requires"]) == ("hatchling.build", ["hatchling"])
 
 
-
 def test_extract_metadata_without_build_system(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
     metadata = extract(path)
 
     assert (metadata["build_backend"], metadata["build_requires"]) == ("", [])
-
-
-
-@pytest.mark.parametrize(
-    "license_",
-    ["MIT", "Apache-2.0 OR MIT", "apache-2.0 or mit", "GPL-3.0-or-later WITH Classpath-exception-2.0", "LicenseRef-Foo", ""],
-)
-def test_license_warnings_valid_expression(license_: str) -> None:
-    assert license_warnings(license_, "p.toml") == []
-
-
-
-@requires_licenses
-@pytest.mark.parametrize("license_", ["MIT License", "MIT AND", "GPL v3", "(MIT"])
-def test_license_warnings_invalid_expression(license_: str) -> None:
-    warnings = license_warnings(license_, "p.toml")
-
-    assert len(warnings) == 1
-    assert warnings[0].startswith(
-        "p.toml: [project].license is not a valid SPDX license expression (PEP 639): "
-    )
-    assert repr(license_) in warnings[0]
-
-
-
-@pytest.mark.parametrize("license_", [{"text": "MIT License"}, {"file": "LICENSE"}, 1, None, ["MIT"]])
-def test_license_warnings_ignores_what_is_not_an_expression(license_: object) -> None:
-    assert license_warnings(license_, "p.toml") == []
-
-
-
-def test_license_warnings_cannot_check_with_an_old_packaging(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(license_module, "canonicalize_license_expression", None)
-
-    assert license_warnings("MIT License", "p.toml") == []
-
 
 
 @requires_licenses
@@ -416,7 +185,6 @@ def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> No
     assert metadata["license"] == "MIT License"
     assert len(warnings) == 1
     assert warnings[0].startswith(f"{path}: [project].license is not a valid SPDX license expression")
-
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -438,7 +206,6 @@ def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
     assert metadata["extras"] == ["numpy", "pandas"]
 
 
-
 def test_extract_metadata_extra_values_are_prepended(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -455,7 +222,6 @@ def test_extract_metadata_extra_values_are_prepended(tmp_path: Path) -> None:
     metadata = extract(path, '[""]')
 
     assert metadata["extras"] == ["", "numpy"]
-
 
 
 @pytest.mark.parametrize(
@@ -487,7 +253,6 @@ def test_extract_metadata_extras_are_deduplicated(
     assert extract(path, extra_values_json)["extras"] == expected
 
 
-
 def test_extract_metadata_missing_name(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -501,7 +266,6 @@ def test_extract_metadata_missing_name(tmp_path: Path) -> None:
         extract(path)
 
 
-
 @pytest.mark.parametrize("dynamic", ['["name"]', '["name", "version"]', '["readme", "name"]'])
 def test_extract_metadata_dynamic_name_is_an_error(tmp_path: Path, dynamic: str) -> None:
     path = write_pyproject(tmp_path, f'[project]\nversion = "1.2.3"\ndynamic = {dynamic}\n')
@@ -512,14 +276,12 @@ def test_extract_metadata_dynamic_name_is_an_error(tmp_path: Path, dynamic: str)
         extract(path)
 
 
-
 def test_extract_metadata_static_name_wins_over_dynamic(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndynamic = ["name"]\n'
     )
 
     assert extract(path)["name"] == "coola"
-
 
 
 @pytest.mark.parametrize(
@@ -542,14 +304,12 @@ def test_extract_metadata_name_and_version_must_be_strings(
         extract(path)
 
 
-
 @pytest.mark.parametrize("content", ["project = 1", 'project = "coola"', "project = []"])
 def test_extract_metadata_project_must_be_a_table(tmp_path: Path, content: str) -> None:
     path = write_pyproject(tmp_path, content)
 
     with pytest.raises(MetadataError, match=r"\[project\] must be a table"):
         extract(path)
-
 
 
 def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> None:
@@ -586,7 +346,6 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
 
-
 def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -599,7 +358,6 @@ def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> No
         f"{path}: [project].version is set and also listed in [project].dynamic, "
         "which PEP 621 forbids; the static value is used"
     ]
-
 
 
 def test_extract_metadata_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -> None:
@@ -624,7 +382,6 @@ def test_extract_metadata_static_and_dynamic_fields_warn_once_each(tmp_path: Pat
     ]
 
 
-
 def test_extract_metadata_dynamic_fields_that_are_not_set_do_not_warn(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "coola"\nversion = "1"\ndynamic = ["readme", "license"]\n'
@@ -635,13 +392,11 @@ def test_extract_metadata_dynamic_fields_that_are_not_set_do_not_warn(tmp_path: 
     assert warnings == []
 
 
-
 def test_extract_metadata_missing_version_with_other_dynamic_fields(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["readme"]\n')
 
     with pytest.raises(MetadataError, match=r"missing required key \[project\]\.version"):
         extract(path)
-
 
 
 @pytest.mark.parametrize("value", ["[1]", '["readme", 2]', '[["version"]]', "[true]"])
@@ -654,7 +409,6 @@ def test_extract_metadata_dynamic_must_contain_only_strings(tmp_path: Path, valu
         extract(path)
 
 
-
 @pytest.mark.parametrize("value", ['"version"', "1", '{a = "version"}'])
 def test_extract_metadata_dynamic_must_be_an_array(tmp_path: Path, value: str) -> None:
     path = write_pyproject(
@@ -663,7 +417,6 @@ def test_extract_metadata_dynamic_must_be_an_array(tmp_path: Path, value: str) -
 
     with pytest.raises(MetadataError, match=r"\[project\]\.dynamic must be an array"):
         extract(path)
-
 
 
 def test_extract_metadata_missing_version(tmp_path: Path) -> None:
@@ -677,7 +430,6 @@ def test_extract_metadata_missing_version(tmp_path: Path) -> None:
 
     with pytest.raises(MetadataError, match=r"missing required key \[project\]\.version"):
         extract(path)
-
 
 
 def test_extract_metadata_invalid_extra_values_json(tmp_path: Path) -> None:
@@ -694,7 +446,6 @@ def test_extract_metadata_invalid_extra_values_json(tmp_path: Path) -> None:
         extract(path, "not json")
 
 
-
 def test_extract_metadata_extra_values_not_a_list(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -709,14 +460,12 @@ def test_extract_metadata_extra_values_not_a_list(tmp_path: Path) -> None:
         extract(path, '{"not": "a list"}')
 
 
-
 @pytest.mark.parametrize("value", ["[1]", "[null]", '[["a"]]', '["ok", 2]', '[{"a": 1}]'])
 def test_extract_metadata_extra_values_must_be_strings(tmp_path: Path, value: str) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
     with pytest.raises(MetadataError, match="extra-values must be a JSON array of strings"):
         extract(path, value)
-
 
 
 def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
@@ -735,43 +484,6 @@ def test_extract_metadata_special_characters_round_trip(tmp_path: Path) -> None:
     assert metadata["version"] == "1.0.0rc1+build.5"
 
 
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ([], "[]"),
-        ({}, "{}"),
-        (["a", "b"], '["a","b"]'),
-        ({"a": [1, None], "b": {"c": True}}, '{"a":[1,null],"b":{"c":true}}'),
-        (["é", "日本"], '["é","日本"]'),
-        (['say "hi"\n'], '["say \\"hi\\"\\n"]'),
-    ],
-)
-def test_compact_json(value: object, expected: str) -> None:
-    assert output_github_module._compact_json(value) == expected
-
-
-
-@pytest.mark.parametrize("value", [[], ["a"], ["a", "B_c>=1"]])
-def test_check_string_array_returns_the_strings(value: list[str]) -> None:
-    assert check_string_array(value, "[x]", "p.toml") == value
-
-
-
-@pytest.mark.parametrize(
-    ("value", "match"),
-    [
-        ("a", r"^p\.toml: \[x\] must be an array, got: 'a'"),
-        (["a", 2], r"^p\.toml: \[x\] must contain only strings, got: 2$"),
-        ([["a"]], r"^p\.toml: \[x\] must contain only strings, got: \['a'\]$"),
-    ],
-)
-def test_check_string_array_wrong_types(value: object, match: str) -> None:
-    with pytest.raises(MetadataError, match=match):
-        check_string_array(value, "[x]", "p.toml")
-
-
-
 @pytest.mark.parametrize(
     ("value", "expected"),
     [("[]", []), ('["a"]', ["a"]), ('["a", "B_c"]', ["a", "B_c"]), ('["a", "a"]', ["a", "a"])],
@@ -780,19 +492,16 @@ def test_parse_string_array(value: str, expected: list[str]) -> None:
     assert parse_string_array(value, "dependencies") == expected
 
 
-
 @pytest.mark.parametrize("value", ["not json", ""])
 def test_parse_string_array_invalid_json(value: str) -> None:
     with pytest.raises(MetadataError, match=r"^extra-values is not valid JSON: "):
         parse_string_array(value, "extra-values")
 
 
-
 @pytest.mark.parametrize("value", ['{"a": 1}', '"a"', "1", "null", "[1]", '["a", null]', '[["a"]]'])
 def test_parse_string_array_not_an_array_of_strings(value: str) -> None:
     with pytest.raises(MetadataError, match=r"^extra-values must be a JSON array of strings, got: "):
         parse_string_array(value, "extra-values")
-
 
 
 @pytest.mark.parametrize(
@@ -815,7 +524,6 @@ def test_extract_metadata_extras_spellings_of_the_same_extra_are_one(
     assert extract(path)["extras"] == expected
 
 
-
 @pytest.mark.parametrize(
     ("extra_values_json", "expected"),
     [
@@ -834,7 +542,6 @@ def test_extract_metadata_extra_values_are_deduplicated_per_pep_685(
     )
 
     assert extract(path, extra_values_json)["extras"] == expected
-
 
 
 def test_extract_metadata_extras_are_sorted_by_normalized_name(tmp_path: Path) -> None:
@@ -856,7 +563,6 @@ def test_extract_metadata_extras_are_sorted_by_normalized_name(tmp_path: Path) -
     assert extract(path)["extras"] == ["alpha", "Beta", "gamma_x", "Zeta"]
 
 
-
 @pytest.mark.parametrize(
     "version",
     ["1", "1.2.3", "0.1.0.dev3", "1.0rc1", "2024.1.post2", "1!2.0", "1.0.0rc1+build.5", "v1.2", "1.0-1"],
@@ -865,7 +571,6 @@ def test_extract_metadata_valid_pep_440_versions(tmp_path: Path, version: str) -
     path = write_pyproject(tmp_path, f'[project]\nname = "p"\nversion = "{version}"\n')
 
     assert extract(path)["version"] == version
-
 
 
 @pytest.mark.parametrize("version", ["", "latest", "1.2.x", "one", "1..2", "1.2.3 beta", "^1.2"])
@@ -877,12 +582,10 @@ def test_extract_metadata_invalid_pep_440_version(tmp_path: Path, version: str) 
         extract(path)
 
 
-
 def test_extract_metadata_dynamic_version_is_not_validated(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "p"\ndynamic = ["version"]\n')
 
     assert extract(path)["version"] == ""
-
 
 
 @pytest.mark.parametrize(
@@ -906,55 +609,8 @@ def test_extract_metadata_normalized_name(tmp_path: Path, name: str, expected: s
     assert metadata["normalized_name"] == expected
 
 
-
-def test_get_table() -> None:
-    assert get_table({"project": {"name": "a"}}, "project", "[project]", "p.toml") == {"name": "a"}
-
-
-
-@pytest.mark.parametrize("container", [{}, {"other": 1}])
-def test_get_table_absent_is_empty(container: dict) -> None:
-    assert get_table(container, "project", "[project]", "p.toml") == {}
-
-
-
-@pytest.mark.parametrize("value", [1, "text", [], [{"a": 1}]])
-def test_get_table_not_a_table(value: object) -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[project\] must be a table, got: "):
-        get_table({"project": value}, "project", "[project]", "p.toml")
-
-
-
-@pytest.mark.parametrize("value", ["text", ""])
-def test_check_str(value: str) -> None:
-    assert check_str(value, "[x]", "p.toml") == value
-
-
-
-@pytest.mark.parametrize(
-    ("value", "shown"), [(1, "1"), (None, "None"), (["a"], "\\['a'\\]"), ({"a": 1}, "\\{'a': 1\\}")]
-)
-def test_check_str_not_a_string(value: object, shown: str) -> None:
-    with pytest.raises(MetadataError, match=rf"^p.toml: \[x\] must be a string, got: {shown}$"):
-        check_str(value, "[x]", "p.toml")
-
-
-
-def test_check_array() -> None:
-    assert check_array(["a", 1], "[x]", "p.toml") == ["a", 1]
-
-
-
-@pytest.mark.parametrize("value", [{}, "text", 1])
-def test_check_array_not_an_array(value: object) -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[x\] must be an array, got: "):
-        check_array(value, "[x]", "p.toml")
-
-
-
 def test_required_name() -> None:
     assert _required_name({"name": 1}, [], "p.toml") == 1
-
 
 
 def test_required_name_missing() -> None:
@@ -962,11 +618,9 @@ def test_required_name_missing() -> None:
         _required_name({}, ["version"], "p.toml")
 
 
-
 def test_required_name_dynamic() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name is listed in .*static name$"):
         _required_name({}, ["name"], "p.toml")
-
 
 
 def test_static_and_dynamic_warnings() -> None:
@@ -980,20 +634,16 @@ def test_static_and_dynamic_warnings() -> None:
     ]
 
 
-
 def test_static_and_dynamic_warnings_none() -> None:
     assert _static_and_dynamic_warnings({"name": "a"}, ["version"], "p.toml") == []
-
 
 
 def test_required_version_static() -> None:
     assert _required_version({"version": "1.0"}, [], "p.toml", False) == ("1.0", [])
 
 
-
 def test_required_version_is_returned_whatever_its_type() -> None:
     assert _required_version({"version": 1.0}, [], "p.toml", True) == (1.0, [])
-
 
 
 def test_required_version_dynamic_warns() -> None:
@@ -1003,11 +653,9 @@ def test_required_version_dynamic_warns() -> None:
     )
 
 
-
 def test_required_version_dynamic_fails_when_requested() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version is dynamic, so it cannot be read"):
         _required_version({}, ["version"], "p.toml", True)
-
 
 
 def test_required_version_missing() -> None:
@@ -1015,11 +663,9 @@ def test_required_version_missing() -> None:
         _required_version({}, ["readme"], "p.toml", False)
 
 
-
 @pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
 def test_valid_name(name: str) -> None:
     assert _valid_name(name, "p.toml") == name
-
 
 
 @pytest.mark.parametrize("name", [1, "", None, ["a"]])
@@ -1028,12 +674,10 @@ def test_valid_name_not_a_non_empty_string(name: object) -> None:
         _valid_name(name, "p.toml")
 
 
-
 @pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
 def test_valid_name_not_a_project_name(name: str) -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].name is not a valid project name"):
         _valid_name(name, "p.toml")
-
 
 
 @pytest.mark.parametrize(
@@ -1043,10 +687,8 @@ def test_valid_version_static(version: str, expected: str) -> None:
     assert _valid_version(version, True, "p.toml") == (version, expected)
 
 
-
 def test_valid_version_dynamic() -> None:
     assert _valid_version("", False, "p.toml") == ("", "")
-
 
 
 def test_valid_version_not_a_string() -> None:
@@ -1054,18 +696,9 @@ def test_valid_version_not_a_string() -> None:
         _valid_version(1.0, True, "p.toml")
 
 
-
 def test_valid_version_invalid() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].version is not a valid PEP 440 version: 'latest'$"):
         _valid_version("latest", True, "p.toml")
-
-
-
-def test_extra_names() -> None:
-    project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
-
-    assert read_extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
-
 
 
 @pytest.mark.parametrize(
@@ -1078,7 +711,6 @@ def test_extract_metadata_valid_names(tmp_path: Path, name: str) -> None:
     assert extract(path)["name"] == name
 
 
-
 @pytest.mark.parametrize(
     "name",
     ["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB", "a\\nb", " a", "a ", "a\\n"],
@@ -1088,7 +720,6 @@ def test_extract_metadata_invalid_names(tmp_path: Path, name: str) -> None:
 
     with pytest.raises(MetadataError, match=r"\[project\]\.name is not a valid project name"):
         extract(path)
-
 
 
 @pytest.mark.parametrize(
@@ -1114,14 +745,12 @@ def test_extract_metadata_normalized_version(tmp_path: Path, version: str, expec
     assert (metadata["version"], metadata["normalized_version"]) == (version, expected)
 
 
-
 def test_extract_metadata_normalized_version_is_empty_when_the_version_is_dynamic(
     tmp_path: Path,
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
     assert extract(path)["normalized_version"] == ""
-
 
 
 @pytest.mark.parametrize(
@@ -1143,7 +772,6 @@ def test_extract_metadata_readme(tmp_path: Path, readme: str, expected: str) -> 
     assert extract(path)["readme"] == expected
 
 
-
 @pytest.mark.parametrize(
     ("readme", "match"),
     [
@@ -1161,49 +789,6 @@ def test_extract_metadata_readme_must_be_a_string_or_a_table(
 
     with pytest.raises(MetadataError, match=match):
         extract(path)
-
-
-
-@pytest.mark.parametrize(
-    ("license_", "expected"),
-    [
-        ('license = "MIT"', "MIT"),
-        ('license = "Apache-2.0 OR MIT"', "Apache-2.0 OR MIT"),
-        ('license = ""', ""),
-        ('license = {text = "BSD-3-Clause"}', "BSD-3-Clause"),
-        ('license = {text = "Line one\\nline two"}', "Line one\nline two"),
-        ('license = {file = "LICENSE"}', ""),
-        ('license = {file = "LICENSE", text = "MIT"}', "MIT"),
-        ("license = {}", ""),
-        ('dynamic = ["license"]', ""),
-        ("", ""),
-    ],
-)
-def test_extract_metadata_license(tmp_path: Path, license_: str, expected: str) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{license_}\n')
-
-    assert extract(path)["license"] == expected
-
-
-
-@pytest.mark.parametrize(
-    ("license_", "match"),
-    [
-        ("license = 1", r"\[project\]\.license must be a string or a table, got: 1"),
-        ('license = ["MIT"]', r"\[project\]\.license must be a string or a table"),
-        ("license = {text = 1}", r"\[project\]\.license\.text must be a string, got: 1"),
-        ("license = {text = true}", r"\[project\]\.license\.text must be a string, got: True"),
-        ("license = {file = 2}", r"\[project\]\.license\.file must be a string, got: 2"),
-    ],
-)
-def test_extract_metadata_license_must_be_a_string_or_a_table(
-    tmp_path: Path, license_: str, match: str
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{license_}\n')
-
-    with pytest.raises(MetadataError, match=match):
-        extract(path)
-
 
 
 @pytest.mark.parametrize(
@@ -1231,7 +816,6 @@ def test_extract_metadata_authors(
     assert extract(path)["authors"] == expected
 
 
-
 @pytest.mark.parametrize(
     ("authors", "match"),
     [
@@ -1255,7 +839,6 @@ def test_extract_metadata_authors_must_be_an_array_of_tables(
         extract(path)
 
 
-
 @pytest.mark.parametrize(
     ("urls", "expected"),
     [
@@ -1276,7 +859,6 @@ def test_extract_metadata_urls(tmp_path: Path, urls: str, expected: dict[str, st
     assert extract(path)["urls"] == expected
 
 
-
 def test_extract_metadata_urls_keep_the_order_of_the_file(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -1284,7 +866,6 @@ def test_extract_metadata_urls_keep_the_order_of_the_file(tmp_path: Path) -> Non
     )
 
     assert list(extract(path)["urls"]) == ["Z", "A", "M"]
-
 
 
 @pytest.mark.parametrize(
@@ -1310,13 +891,11 @@ def test_extract_metadata_urls_must_be_a_table_of_strings(
         extract(path)
 
 
-
 def test_extract_metadata_fail_on_dynamic_version_raises() -> None:
     data = {"project": {"name": "a", "dynamic": ["version"]}}
 
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\]\.version is dynamic, so it cannot be read"):
         extract_metadata(data, [], "p.toml", fail_on_dynamic_version=True)
-
 
 
 def test_extract_metadata_fail_on_dynamic_version_accepts_a_static_version() -> None:
@@ -1329,7 +908,6 @@ def test_extract_metadata_fail_on_dynamic_version_accepts_a_static_version() -> 
         "p.toml: [project].version is set and also listed in [project].dynamic, "
         "which PEP 621 forbids; the static value is used"
     ]
-
 
 
 def test_extract_metadata_dynamic_version_warns_by_default() -> None:

@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from helpers import (
+
+from tests.helpers import (
     REQUIREMENTS_PATH,
     RUN_PATH,
     SCRIPT_PATH,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Assertion helpers for the integration workflow (ci-test-local.yaml / nightly-test-stable.yaml).
 # These only check wiring (inputs reach the action, outputs land in GITHUB_OUTPUT
-# correctly) -- business-logic edge cases are covered by tests/test_extract_metadata.py.
+# correctly) -- business-logic edge cases are covered by tests/unit.
 
 set -euo pipefail
 

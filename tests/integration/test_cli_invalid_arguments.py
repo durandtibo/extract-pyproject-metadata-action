@@ -3,7 +3,7 @@
 Each test starts the script in a new process, like ``scripts/run.sh`` does, and checks the
 contract of a bad input: exit code 1, an error on stderr without a Python traceback and
 nothing on stdout. Errors of the individual parsers are tested in
-``test_extract_metadata.py``.
+``tests/unit``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
+from tests.helpers import SCRIPT_PATH
+
 VALID = '[project]\nname = "coola"\nversion = "1.2.3"\n'
 
 
