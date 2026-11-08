@@ -2275,3 +2275,61 @@ def test_main_github_output_project_dependencies(tmp_path: Path) -> None:
     assert parse_github_output(output.read_text(encoding="utf-8"))["project-dependencies"] == (
         '{"numpy":">=1.20"}'
     )
+
+
+def test_extract_metadata_fail_on_dynamic_version_raises() -> None:
+    data = {"project": {"name": "a", "dynamic": ["version"]}}
+
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\]\.version is dynamic, so it cannot be read"):
+        extract_metadata(data, [], "p.toml", fail_on_dynamic_version=True)
+
+
+def test_extract_metadata_fail_on_dynamic_version_accepts_a_static_version() -> None:
+    data = {"project": {"name": "a", "version": "1.0", "dynamic": ["version"]}}
+
+    metadata, warnings = extract_metadata(data, [], "p.toml", fail_on_dynamic_version=True)
+
+    assert metadata["version"] == "1.0"
+    assert warnings == []
+
+
+def test_extract_metadata_dynamic_version_warns_by_default() -> None:
+    data = {"project": {"name": "a", "dynamic": ["version"]}}
+
+    metadata, warnings = extract_metadata(data, [], "p.toml", fail_on_dynamic_version=False)
+
+    assert metadata["version"] == ""
+    assert warnings == ["p.toml: [project].version is dynamic, the version output is empty"]
+
+
+def test_main_fail_on_dynamic_version(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    exit_code = main(["extract_metadata.py", "--fail-on-dynamic-version", "true", str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "[project].version is dynamic, so it cannot be read" in captured.err
+    assert captured.out == ""
+
+
+def test_main_fail_on_dynamic_version_false_keeps_the_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    exit_code = main(["extract_metadata.py", "--fail-on-dynamic-version", "false", str(path), "[]"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["version"] == ""
+
+
+def test_main_invalid_fail_on_dynamic_version_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    exit_code = main(["extract_metadata.py", "--fail-on-dynamic-version", "maybe", str(path), "[]"])
+
+    assert exit_code == 1
+    assert "fail-on-dynamic-version must be 'true' or 'false'" in capsys.readouterr().err

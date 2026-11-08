@@ -400,3 +400,53 @@ jobs:
           assert_equal "project-dependencies" '{"invoke-tasklib":"<1.0.0,>=0.0.8","Foo_Bar":"==2.1","nospec":""}' '${{ steps.test-project-dependencies.outputs.project-dependencies }}'
           assert_equal "project-dependencies" '{}' '${{ steps.test-no-project-dependencies.outputs.project-dependencies }}'
           print_success "project-dependencies test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 17: fail-on-dynamic-version input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test fail-on-dynamic-version with a static version
+        id: test-fail-on-dynamic-static
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          fail-on-dynamic-version: "true"
+
+      - name: ✓ Verify fail-on-dynamic-version succeeds with a static version
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "version" "0.1.0" "${{ steps.test-fail-on-dynamic-static.outputs.version }}"
+          print_success "fail-on-dynamic-version (static version) test passed"
+
+      - name: 🧪 Test fail-on-dynamic-version with a dynamic version (should fail)
+        id: test-fail-on-dynamic
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          fail-on-dynamic-version: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify fail-on-dynamic-version fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-fail-on-dynamic.outcome }}" = "success" ]; then
+            print_error "A dynamic version with fail-on-dynamic-version should cause the step to fail"
+            exit 1
+          fi
+          print_success "fail-on-dynamic-version correctly failed"
+
+      - name: 🧪 Test invalid fail-on-dynamic-version (should fail)
+        id: test-invalid-fail-on-dynamic
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          fail-on-dynamic-version: "maybe"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid fail-on-dynamic-version fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-fail-on-dynamic.outcome }}" = "success" ]; then
+            print_error "Invalid fail-on-dynamic-version should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid fail-on-dynamic-version correctly failed"

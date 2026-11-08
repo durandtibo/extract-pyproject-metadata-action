@@ -5,6 +5,7 @@ extras and dependency groups.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
+        [--fail-on-dynamic-version true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
@@ -30,6 +31,10 @@ on stdout because GitHub only parses workflow commands there.
 With ``--fail-on-missing true``, a requested dependency that is not found
 is an error instead of a ``null`` specifier.
 
+With ``--fail-on-dynamic-version true``, a ``version`` that is listed in
+``[project].dynamic`` (so that the version output would be empty) is an error
+instead of a warning.
+
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
 "major.minor" strings) that ``[project].requires-python`` allows.
 
@@ -37,9 +42,9 @@ Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, a
 dependency table ([project].dependencies, [project.optional-dependencies] or
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
-expected shape, a Python candidate is not a "major.minor" string, or
-``--fail-on-missing true`` is given and a requested
-dependency is not found.
+expected shape, a Python candidate is not a "major.minor" string,
+``--fail-on-dynamic-version true`` is given and the version is dynamic, or
+``--fail-on-missing true`` is given and a requested dependency is not found.
 """
 
 from __future__ import annotations
@@ -127,6 +132,7 @@ def extract_metadata(
     data: dict,
     extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
+    fail_on_dynamic_version: bool = False,
 ) -> tuple[Metadata, list[str]]:
     """Read name, version, and sorted extras from a parsed pyproject.toml.
 
@@ -137,6 +143,8 @@ def extract_metadata(
             ``parse_string_array``.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
+        fail_on_dynamic_version: Whether a ``version`` listed in
+            ``[project].dynamic`` is an error instead of a warning.
 
     Returns:
         A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
@@ -161,7 +169,7 @@ def extract_metadata(
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``requires-python`` that is not a string, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
-            table.
+            table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
     dynamic = _check_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
@@ -175,6 +183,12 @@ def extract_metadata(
         version = project["version"]
     elif "version" in dynamic:
         # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
+        if fail_on_dynamic_version:
+            msg = (
+                f"{pyproject_path}: [project].version is dynamic, so it cannot be read "
+                "(fail-on-dynamic-version is 'true')"
+            )
+            raise MetadataError(msg)
         version = ""
         warnings.append(
             f"{pyproject_path}: [project].version is dynamic, the version output is empty"
@@ -792,6 +806,12 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
         help="'true' to fail when a requested dependency is not found (default: false)",
     )
     parser.add_argument(
+        "--fail-on-dynamic-version",
+        metavar="BOOL",
+        default="false",
+        help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
+    )
+    parser.add_argument(
         "--python-candidates",
         metavar="JSON",
         default=DEFAULT_PYTHON_CANDIDATES,
@@ -817,11 +837,16 @@ def main(argv: list[str]) -> int:
 
     try:
         fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
+        fail_on_dynamic_version = parse_bool(
+            args.fail_on_dynamic_version, "fail-on-dynamic-version"
+        )
         data = load_pyproject(args.pyproject_path)
         extra_values = parse_string_array(args.extra_values, "extra-values")
         dependencies = parse_string_array(args.dependencies, "dependencies")
         python_candidates = parse_python_candidates(args.python_candidates)
-        metadata, warnings = extract_metadata(data, extra_values, args.pyproject_path)
+        metadata, warnings = extract_metadata(
+            data, extra_values, args.pyproject_path, fail_on_dynamic_version
+        )
         specifiers, specifier_warnings = extract_dependency_specifiers(
             data, dependencies, args.pyproject_path
         )
