@@ -341,7 +341,53 @@ def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> No
     metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
 
     assert metadata["version"] == "1.2.3"
+    assert warnings == [
+        f"{path}: [project].version is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used"
+    ]
+
+
+def test_extract_metadata_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        """
+        [project]
+        name = "coola"
+        version = "1.2.3"
+        dependencies = ["numpy"]
+        dynamic = ["dependencies", "readme", "dependencies", "version"]
+        """,
+    )
+
+    _, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
+
+    assert warnings == [
+        f"{path}: [project].dependencies is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used",
+        f"{path}: [project].version is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used",
+    ]
+
+
+def test_extract_metadata_dynamic_fields_that_are_not_set_do_not_warn(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1"\ndynamic = ["readme", "license"]\n'
+    )
+
+    _, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
+
     assert warnings == []
+
+
+def test_main_strict_fails_on_a_static_and_dynamic_field(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1"\ndynamic = ["version"]\n'
+    )
+
+    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert "[project].version is set and also listed in [project].dynamic" in capsys.readouterr().err
 
 
 def test_extract_metadata_missing_version_with_other_dynamic_fields(tmp_path: Path) -> None:
@@ -3052,7 +3098,10 @@ def test_extract_metadata_fail_on_dynamic_version_accepts_a_static_version() -> 
     metadata, warnings = extract_metadata(data, [], "p.toml", fail_on_dynamic_version=True)
 
     assert metadata["version"] == "1.0"
-    assert warnings == []
+    assert warnings == [
+        "p.toml: [project].version is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used"
+    ]
 
 
 def test_extract_metadata_dynamic_version_warns_by_default() -> None:

@@ -161,7 +161,8 @@ def extract_metadata(
 
     Returns:
         A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
-        messages (for example when the version is dynamic). ``metadata`` is a
+        messages (for example when the version is dynamic, or when a field is
+        both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
         ``version``, ``description``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
@@ -200,7 +201,13 @@ def extract_metadata(
             raise MetadataError(msg) from exc
         msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
         raise MetadataError(msg) from exc
-    warnings: list[str] = []
+    # PEP 621: a field that is set cannot also be dynamic. The static value is the one read.
+    warnings: list[str] = [
+        f"{pyproject_path}: [project].{field} is set and also listed in [project].dynamic, "
+        "which PEP 621 forbids; the static value is used"
+        for field in dict.fromkeys(dynamic)
+        if field in project
+    ]
     if "version" in project:
         version = project["version"]
     elif "version" in dynamic:

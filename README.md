@@ -131,6 +131,11 @@ used as given). Failures (see [Failure modes](#failure-modes)) are emitted the
 same way, as `::error file=<pyproject-path>::<message>`, so they show as an
 annotation of the run and not only in the log of the step.
 
+A field that is set in `[project]` and also listed in `[project].dynamic` (for
+example `version = "1.2.3"` with `dynamic = ["version"]`) is invalid per
+[PEP 621](https://peps.python.org/pep-0621/#dynamic): the action warns and reads
+the static value. With `strict: "true"` this warning fails the step.
+
 The step also prints a one-line `📦` summary of the outputs in the log, with line
 breaks in the values escaped, to help debugging a workflow. With
 `step-summary: "true"`, the outputs and the warnings are also written to the job
