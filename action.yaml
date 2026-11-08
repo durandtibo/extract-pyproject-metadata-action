@@ -1,12 +1,15 @@
-# Composite action shared by every workflow that needs package metadata from
-# pyproject.toml (build.yaml, test-package-extras.yaml, nightly-package.yaml,
-# test-deps.yaml). Reads the project name, version, and the optional-extras
-# names directly from pyproject.toml's [project] and
-# [project.optional-dependencies] tables instead of a hardcoded/duplicated
-# list, so it can never drift from what `pip install "coola[extra]"` actually
-# installs. Requires the repository to already be checked out and a Python 3
-# interpreter to be available on PATH; on Python < 3.11 (no stdlib tomllib)
-# it installs the "tomli" backport on the fly.
+# Composite action that reads project metadata from a pyproject.toml: the
+# project name and version, the names of the optional-dependency extras, and
+# the version specifiers of selected dependencies. Reading them from the file
+# instead of a hardcoded or duplicated list keeps workflows (build, test
+# matrices, publish steps, ...) from drifting out of sync with what
+# `pip install` actually installs.
+#
+# The logic lives in scripts/extract_metadata.py; this file only wires the
+# inputs to the script and its output to the action outputs. Requires the
+# repository to already be checked out and a Python 3 interpreter to be
+# available on PATH. If "packaging" (or "tomli" on Python < 3.11) is missing,
+# it is installed in a private virtual environment.
 
 name: Extract pyproject metadata
 description: Read the project name, version, and optional-dependency extra names from pyproject.toml
