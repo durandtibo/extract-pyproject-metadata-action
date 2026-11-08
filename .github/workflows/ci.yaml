@@ -2,6 +2,8 @@
 # Runs on pull requests, pushes to main, a nightly schedule, and manual dispatch.
 # The per-check workflows (ci-*.yaml) are reusable so each can also be run on
 # its own (workflow_dispatch).
+# ci-verify-workflows.yaml is not called from here: it lints .github/workflows/*
+# itself, so it has its own triggers.
 
 name: CI
 on:
@@ -35,7 +37,3 @@ jobs:
     uses: ./.github/workflows/ci-test-local.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
-
-  # Verify the workflow files
-  verify-workflows:
-    uses: ./.github/workflows/ci-verify-workflows.yaml
