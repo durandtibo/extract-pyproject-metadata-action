@@ -17,6 +17,13 @@ step), with the versions listed in
 `scripts/requirements.txt`. It never modifies the Python
 environment of the caller.
 
+That installation needs a package index: PyPI by default, or the one that `pip`
+is configured to use (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `pip.conf`, ...). On
+a runner without network access, or when you prefer not to download anything
+in the job, install `packaging` in the Python of the job beforehand (for
+example `python -m pip install packaging`, from a mirror or a cache): the
+action then uses it as it is and does not touch the network.
+
 > [!NOTE]
 > The action supports **Linux and macOS** runners only. **Windows runners are
 > not supported**: the step expects `python3` and a POSIX `bash`, and fails
@@ -209,8 +216,8 @@ markers.
 The action's step fails (non-zero exit) when:
 
 - It runs on a Windows runner (`RUNNER_OS` is `Windows`), which is not supported.
-- The `python3` on `PATH` is older than 3.11 (or missing), or `packaging` cannot be
-  installed.
+- The `python3` on `PATH` is older than 3.11 (or missing), or `packaging` is missing
+  and cannot be installed (for example, no access to a package index).
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
