@@ -5,8 +5,9 @@
 # matrices, publish steps, ...) from drifting out of sync with what
 # `pip install` actually installs.
 #
-# The logic lives in scripts/extract_metadata.py; this file only wires the
-# inputs to the script and its output to the action outputs. Requires the
+# The logic lives in scripts/extract_metadata.py, started by scripts/run.sh
+# (which installs its requirements if needed); this file only wires the inputs
+# to the scripts and their output to the action outputs. Requires the
 # repository to already be checked out and a Python 3 interpreter to be
 # available on PATH. If "packaging" (or "tomli" on Python < 3.11) is missing,
 # it is installed in a private virtual environment.
@@ -111,39 +112,7 @@ runs:
         PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
         FAIL_ON_DYNAMIC_VERSION: ${{ inputs.fail-on-dynamic-version }}
       run: |
-        set -euo pipefail
-
-        # The script needs "packaging" and, before Python 3.11, "tomli"
-        # (scripts/requirements.txt). If either is missing, install them in a
-        # private virtual environment instead of pip-installing into the
-        # caller's Python: that would modify the caller's environment and fails
-        # on "externally managed" Pythons (PEP 668). --system-site-packages
-        # reuses whatever is already there. The venv is created in a new
-        # directory on every run, so a stale or broken one left by an earlier
-        # run (self-hosted runners keep $RUNNER_TEMP between jobs) is never
-        # reused.
-        python=python3
-        if ! python3 -c '
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli
-        import packaging' 2>/dev/null; then
-          if venv="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/extract-pyproject-metadata-venv.XXXXXX")" &&
-            python3 -m venv --system-site-packages "$venv"; then
-            python="$venv/bin/python"
-            "$python" -m pip install --quiet --disable-pip-version-check \
-              -r "$GITHUB_ACTION_PATH/scripts/requirements.txt" || python=""
-          else
-            python=""
-          fi
-          if [ -z "$python" ]; then
-            echo "::error::Could not install the 'packaging' and 'tomli' Python packages. Install them in the Python on PATH (e.g. 'pip install packaging tomli') before using this action." >&2
-            exit 1
-          fi
-        fi
-
-        "$python" "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" \
+        bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
           --github-output "$GITHUB_OUTPUT" \
           --fail-on-missing "$FAIL_ON_MISSING" \
           --python-candidates "$PYTHON_CANDIDATES" \
