@@ -13,10 +13,10 @@ input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``version``, ``extras`` and ``dependency-specifiers`` to
-FILE as ``key=value`` lines (the format of ``$GITHUB_OUTPUT``) and prints to
-stdout one ``::warning::`` workflow command per warning, followed by a
-one-line summary. Warnings are printed on stdout because GitHub only parses
-workflow commands there.
+FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that values may
+contain line breaks) and prints to stdout one ``::warning::`` workflow command
+per warning, followed by a one-line summary. Warnings are printed on stdout
+because GitHub only parses workflow commands there.
 
 Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, or an
@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import uuid
 from pathlib import Path
 
 from packaging.requirements import InvalidRequirement, Requirement
@@ -288,16 +289,34 @@ def format_outputs(metadata: dict) -> dict[str, str]:
     }
 
 
+def _new_delimiter() -> str:
+    """Return a random delimiter for a multiline ``$GITHUB_OUTPUT`` value."""
+    return f"ghadelimiter_{uuid.uuid4()}"
+
+
+def _single_line(value: str) -> str:
+    """Escape backslashes and line breaks so ``value`` stays on one log line."""
+    return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+
+
 def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
-    """Append ``key=value`` lines to a ``$GITHUB_OUTPUT`` file.
+    """Append outputs to a ``$GITHUB_OUTPUT`` file.
+
+    Every value is written with the ``key<<delimiter`` syntax, so a value that
+    contains line breaks (a TOML string can) cannot end early and add outputs
+    of its own. The delimiter is random and is regenerated if it appears in
+    the key or the value.
 
     Args:
         output_path: Path of the file, which is created if it does not exist.
         outputs: Output names and values.
     """
-    with Path(output_path).open("a", encoding="utf-8") as f:
+    with Path(output_path).open("a", encoding="utf-8", newline="") as f:
         for key, value in outputs.items():
-            f.write(f"{key}={value}\n")
+            delimiter = _new_delimiter()
+            while delimiter in key or delimiter in value:
+                delimiter = _new_delimiter()
+            f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
 
 
 def _build_parser(prog: str) -> argparse.ArgumentParser:
@@ -342,7 +361,12 @@ def main(argv: list[str]) -> int:
     outputs = format_outputs(metadata)
     for warning in warnings:
         print(f"::warning::{escape_annotation(warning)}")
-    print(f"📦 name={outputs['name']} version={outputs['version']} extras={outputs['extras']}")
+    # name and version come from the file: keep them on one line so they cannot
+    # start a workflow command in the log.
+    print(
+        f"📦 name={_single_line(outputs['name'])} version={_single_line(outputs['version'])} "
+        f"extras={outputs['extras']}"
+    )
     write_github_output(args.github_output, outputs)
     return 0
 
