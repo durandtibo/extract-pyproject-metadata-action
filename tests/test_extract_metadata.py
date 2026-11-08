@@ -44,16 +44,18 @@ def write_pyproject(tmp_path: Path, content: str) -> Path:
 
 def extract(path: Path, extra_values_json: str = "[]") -> dict:
     """Load ``path`` and extract its metadata."""
-    return extract_metadata(
+    metadata, _ = extract_metadata(
         load_pyproject(str(path)), parse_string_array(extra_values_json, "extra-values"), str(path)
     )
+    return metadata
 
 
 def specifiers(path: Path, dependencies_json: str) -> dict:
     """Load ``path`` and extract the specifiers of the requested dependencies."""
-    return extract_dependency_specifiers(
+    result, _ = extract_dependency_specifiers(
         load_pyproject(str(path)), parse_string_array(dependencies_json, "dependencies"), str(path)
     )
+    return result
 
 
 def test_load_pyproject(tmp_path: Path) -> None:
@@ -78,7 +80,7 @@ def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
 
 def test_extract_metadata_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
-        extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
+        _, warnings = extract_metadata({"project": {"version": "1"}}, [], "custom/pyproject.toml")
 
 
 def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
@@ -227,18 +229,10 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         dynamic = ["version", "readme"]
         """,
     )
-    warnings: list[str] = []
-
-    metadata = extract_metadata(load_pyproject(str(path)), [], str(path), warnings)
+    metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
 
     assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
-
-
-def test_extract_metadata_dynamic_version_without_warnings_list(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
-
-    assert extract(path) == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
 
 
 def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> None:
@@ -246,9 +240,7 @@ def test_extract_metadata_static_version_wins_over_dynamic(tmp_path: Path) -> No
         tmp_path,
         '[project]\nname = "coola"\nversion = "1.2.3"\ndynamic = ["version"]\n',
     )
-    warnings: list[str] = []
-
-    metadata = extract_metadata(load_pyproject(str(path)), [], str(path), warnings)
+    metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
 
     assert metadata["version"] == "1.2.3"
     assert warnings == []
@@ -528,11 +520,8 @@ def test_dependency_include_group_only(tmp_path: Path) -> None:
 
 def test_dependency_duplicate_adds_a_warning(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["dup"], str(path), warnings
-    )
+    result, warnings = extract_dependency_specifiers(
+        load_pyproject(str(path)), ["dup"], str(path))
 
     assert result == {"dup": ">=1"}
     assert warnings == [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"]
@@ -540,17 +529,9 @@ def test_dependency_duplicate_adds_a_warning(tmp_path: Path) -> None:
 
 def test_dependency_no_duplicate_adds_no_warning(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
-    warnings: list[str] = []
-
-    extract_dependency_specifiers(load_pyproject(str(path)), ["nospec"], str(path), warnings)
+    _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["nospec"], str(path))
 
     assert warnings == []
-
-
-def test_dependency_warnings_are_optional(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    assert specifiers(path, '["dup"]') == {"dup": ">=1"}
 
 
 def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
@@ -584,11 +565,8 @@ dev = ["oops==", "dev-pkg>=2"]
 
 def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, INVALID_TOML)
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["good", "dev-pkg", "missing"], str(path), warnings
-    )
+    result, warnings = extract_dependency_specifiers(
+        load_pyproject(str(path)), ["good", "dev-pkg", "missing"], str(path))
 
     assert result == {"good": ">=1", "dev-pkg": ">=2", "missing": None}
     assert len(warnings) == 3
@@ -601,9 +579,7 @@ def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
     tmp_path: Path,
 ) -> None:
     path = write_pyproject(tmp_path, INVALID_TOML)
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path), warnings)
+    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path))
 
     assert result == {}
     assert warnings == []
@@ -884,7 +860,7 @@ def test_single_line(value: str, expected: str) -> None:
     ],
 )
 def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
-    assert _flatten_group(groups, name) == expected
+    assert _flatten_group(groups, name)[0] == expected
 
 
 @pytest.mark.parametrize(
@@ -906,7 +882,7 @@ def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
 def test_flatten_group_include_cycles_terminate(
     groups: dict, name: str, expected: list[str]
 ) -> None:
-    assert _flatten_group(groups, name) == expected
+    assert _flatten_group(groups, name)[0] == expected
 
 
 def test_candidate_requirements_search_order() -> None:
@@ -918,7 +894,7 @@ def test_candidate_requirements_search_order() -> None:
         "dependency-groups": {"dev": ["d>=4"], "test": [{"include-group": "dev"}, "e>=5"]},
     }
 
-    assert _candidate_requirements(data) == [
+    assert _candidate_requirements(data)[0] == [
         "a>=1",
         "b>=2",
         "c>=3",
@@ -929,7 +905,7 @@ def test_candidate_requirements_search_order() -> None:
 
 
 def test_candidate_requirements_empty() -> None:
-    assert _candidate_requirements({}) == []
+    assert _candidate_requirements({}) == ([], [])
 
 
 def test_candidate_requirements_ignores_non_string_entries() -> None:
@@ -937,7 +913,7 @@ def test_candidate_requirements_ignores_non_string_entries() -> None:
         "project": {"dependencies": ["a", 1, None], "optional-dependencies": {"x": [{"b": 1}, "c"]}}
     }
 
-    assert _candidate_requirements(data) == ["a", "c"]
+    assert _candidate_requirements(data)[0] == ["a", "c"]
 
 
 @pytest.mark.parametrize(
@@ -1097,7 +1073,7 @@ def test_dependency_malformed_tables_raise_even_when_nothing_is_requested(tmp_pa
 
 def test_dependency_malformed_table_error_names_the_file() -> None:
     with pytest.raises(MetadataError, match=r"custom/pyproject\.toml: \[dependency-groups\] must"):
-        extract_dependency_specifiers({"dependency-groups": 1}, [], "custom/pyproject.toml")
+        _, warnings = extract_dependency_specifiers({"dependency-groups": 1}, [], "custom/pyproject.toml")
 
 
 def test_flatten_group_group_must_be_an_array() -> None:
@@ -1143,18 +1119,14 @@ def test_main_malformed_dependency_table_returns_one(
 
 def test_flatten_group_cycle_adds_a_warning() -> None:
     groups = {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}
-    warnings: list[str] = []
-
-    result = _flatten_group(groups, "a", pyproject_path="p.toml", warnings=warnings)
+    result, warnings = _flatten_group(groups, "a", pyproject_path="p.toml")
 
     assert result == ["y", "x"]
     assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
 def test_flatten_group_self_include_adds_a_warning() -> None:
-    warnings: list[str] = []
-
-    result = _flatten_group({"a": [{"include-group": "a"}, "x"]}, "a", warnings=warnings)
+    result, warnings = _flatten_group({"a": [{"include-group": "a"}, "x"]}, "a")
 
     assert result == ["x"]
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> a"]
@@ -1162,36 +1134,30 @@ def test_flatten_group_self_include_adds_a_warning() -> None:
 
 def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
     groups = {"c": [{"include-group": "a"}], "a": [{"include-group": "b"}], "b": [{"include-group": "c"}]}
-    warnings: list[str] = []
-
-    _flatten_group(groups, "b", warnings=warnings)
+    _, warnings = _flatten_group(groups, "b")
 
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> b -> c -> a"]
 
 
 def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
     groups = {"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": [{"include-group": "b"}]}
-    warnings: list[str] = []
-
-    _flatten_group(groups, "a", warnings=warnings)
+    _, warnings = _flatten_group(groups, "a")
 
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: b -> c -> b"]
 
 
 def test_flatten_group_cycle_uses_canonical_names() -> None:
     groups = {"My_Group": [{"include-group": "my-group"}]}
-    warnings: list[str] = []
-
-    _flatten_group(groups, "My_Group", warnings=warnings)
+    _, warnings = _flatten_group(groups, "My_Group")
 
     assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: my-group -> my-group"]
 
 
 def test_flatten_group_no_cycle_adds_no_warning() -> None:
     groups = {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]}
-    warnings: list[str] = []
+    result, warnings = _flatten_group(groups, "a")
 
-    assert _flatten_group(groups, "a", warnings=warnings) == ["y", "y"]
+    assert result == ["y", "y"]
     assert warnings == []
 
 
@@ -1202,9 +1168,7 @@ def test_candidate_requirements_reports_a_cycle_once() -> None:
             "b": [{"include-group": "a"}, "y"],
         }
     }
-    warnings: list[str] = []
-
-    _candidate_requirements(data, "p.toml", warnings)
+    _, warnings = _candidate_requirements(data, "p.toml")
 
     assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
 
@@ -1218,11 +1182,8 @@ def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
         b = [{include-group = "a"}, "y>=2"]
         """,
     )
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["x", "y"], str(path), warnings
-    )
+    result, warnings = extract_dependency_specifiers(
+        load_pyproject(str(path)), ["x", "y"], str(path))
 
     assert result == {"x": ">=1", "y": ">=2"}
     assert warnings == [f"{path}: [dependency-groups] has an include-group cycle: a -> b -> a"]
@@ -1232,9 +1193,7 @@ def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
     tmp_path: Path,
 ) -> None:
     path = write_pyproject(tmp_path, '[dependency-groups]\na = [{include-group = "a"}]\n')
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path), warnings)
+    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path))
 
     assert result == {}
     assert warnings == []
@@ -1261,22 +1220,16 @@ def test_main_include_group_cycle_warning_annotation(
 
 
 def test_flatten_group_missing_include_group_adds_a_warning() -> None:
-    warnings: list[str] = []
-
-    result = _flatten_group(
-        {"dev": [{"include-group": "tset"}, "x"]}, "dev", pyproject_path="p.toml", warnings=warnings
-    )
+    result, warnings = _flatten_group(
+        {"dev": [{"include-group": "tset"}, "x"]}, "dev", pyproject_path="p.toml")
 
     assert result == ["x"]
     assert warnings == ["p.toml: [dependency-groups].dev: include-group 'tset' does not match any group"]
 
 
 def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warning() -> None:
-    warnings: list[str] = []
-
-    result = _flatten_group(
-        {"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a", warnings=warnings
-    )
+    result, warnings = _flatten_group(
+        {"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
 
     assert result == ["y"]
     assert warnings == []
@@ -1284,9 +1237,7 @@ def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warnin
 
 def test_flatten_group_missing_include_group_is_reported_once_per_group() -> None:
     groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
-    warnings: list[str] = []
-
-    _candidate_requirements({"dependency-groups": groups}, "p.toml", warnings)
+    _, warnings = _candidate_requirements({"dependency-groups": groups}, "p.toml")
 
     assert warnings == ["p.toml: [dependency-groups].a: include-group 'nope' does not match any group"]
 
@@ -1299,9 +1250,7 @@ def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None
         dev = [{include-group = "tset"}, "x>=1"]
         """,
     )
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(load_pyproject(str(path)), ["x"], str(path), warnings)
+    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["x"], str(path))
 
     assert result == {"x": ">=1"}
     assert warnings == [
@@ -1313,9 +1262,7 @@ def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requeste
     tmp_path: Path,
 ) -> None:
     path = write_pyproject(tmp_path, '[dependency-groups]\ndev = [{include-group = "tset"}]\n')
-    warnings: list[str] = []
-
-    extract_dependency_specifiers(load_pyproject(str(path)), [], str(path), warnings)
+    _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [], str(path))
 
     assert warnings == []
 
@@ -1337,11 +1284,8 @@ dependencies = [
 
 def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, MARKERS_TOML)
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["numpy"], str(path), warnings
-    )
+    result, warnings = extract_dependency_specifiers(
+        load_pyproject(str(path)), ["numpy"], str(path))
 
     assert result == {"numpy": ">=1.20"}
     assert warnings == []
@@ -1351,11 +1295,8 @@ def test_dependency_same_marker_different_specifiers_warns_with_the_marker(
     tmp_path: Path,
 ) -> None:
     path = write_pyproject(tmp_path, MARKERS_TOML)
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["same"], str(path), warnings
-    )
+    result, warnings = extract_dependency_specifiers(
+        load_pyproject(str(path)), ["same"], str(path))
 
     assert result == {"same": ">=1"}
     assert warnings == [
@@ -1366,11 +1307,8 @@ def test_dependency_same_marker_different_specifiers_warns_with_the_marker(
 
 def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, MARKERS_TOML)
-    warnings: list[str] = []
-
-    result = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["mixed"], str(path), warnings
-    )
+    result, warnings = extract_dependency_specifiers(
+        load_pyproject(str(path)), ["mixed"], str(path))
 
     assert result == {"mixed": ">=1"}
     assert warnings == []
@@ -1381,9 +1319,7 @@ def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path
         tmp_path,
         '[project]\ndependencies = ["a>=1; os_name == \'nt\'", "a>=1; os_name == \'posix\'"]\n',
     )
-    warnings: list[str] = []
-
-    extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path), warnings)
+    _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path))
 
     assert warnings == []
 
@@ -1399,9 +1335,7 @@ def test_dependency_one_warning_per_conflicting_marker(tmp_path: Path) -> None:
         ]
         """,
     )
-    warnings: list[str] = []
-
-    extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path), warnings)
+    _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path))
 
     assert warnings == [
         f"a has different specifiers for marker 'os_name == \"nt\"' in {path}: "

@@ -104,8 +104,7 @@ def extract_metadata(
     data: dict,
     extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
-    warnings: list[str] | None = None,
-) -> Metadata:
+) -> tuple[Metadata, list[str]]:
     """Read name, version, and sorted extras from a parsed pyproject.toml.
 
     Args:
@@ -115,11 +114,11 @@ def extract_metadata(
             ``parse_string_array``.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
-        warnings: List to which warning messages are appended (for example
-            when the version is dynamic).
 
     Returns:
-        A ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
+        A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
+        messages (for example when the version is dynamic). ``metadata`` is a
+        ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
         ``version``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``requires_python``
@@ -147,15 +146,15 @@ def extract_metadata(
     except KeyError as exc:
         msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
         raise MetadataError(msg) from exc
+    warnings: list[str] = []
     if "version" in project:
         version = project["version"]
     elif "version" in dynamic:
         # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
         version = ""
-        if warnings is not None:
-            warnings.append(
-                f"{pyproject_path}: [project].version is dynamic, the version output is empty"
-            )
+        warnings.append(
+            f"{pyproject_path}: [project].version is dynamic, the version output is empty"
+        )
     else:
         msg = f"{pyproject_path} is missing required key [project].version"
         raise MetadataError(msg)
@@ -201,7 +200,7 @@ def extract_metadata(
     for group in sorted(dependency_groups, key=canonicalize_name):
         unique_groups.setdefault(canonicalize_name(group), group)
     groups = list(unique_groups.values())
-    return Metadata(
+    metadata = Metadata(
         name=name,
         normalized_name=canonicalize_name(name),
         version=version,
@@ -209,6 +208,7 @@ def extract_metadata(
         extras=list(unique_extras.values()),
         groups=groups,
     )
+    return metadata, warnings
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -282,13 +282,15 @@ def _flatten_group(
     name: str,
     seen: tuple[str, ...] = (),
     pyproject_path: str = "pyproject.toml",
-    warnings: list[str] | None = None,
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Return requirement strings of a dependency group, expanding include-group.
 
     An ``include-group`` that leads back to a group being expanded is not
-    followed again; a warning is appended to ``warnings`` (once per cycle). An
-    ``include-group`` that names no group is skipped, with a warning.
+    followed again, with a warning (once per cycle). An ``include-group`` that
+    names no group is skipped, with a warning.
+
+    Returns:
+        A tuple ``(requirements, warnings)``, without duplicate warnings.
 
     Raises:
         MetadataError: If a group is not an array or an ``include-group`` value
@@ -296,12 +298,9 @@ def _flatten_group(
     """
     key = canonicalize_name(name)
     if key in seen:
-        if warnings is not None:
-            message = _cycle_message(seen[seen.index(key) :], pyproject_path)
-            if message not in warnings:
-                warnings.append(message)
-        return []
+        return [], [_cycle_message(seen[seen.index(key) :], pyproject_path)]
     out: list[str] = []
+    warnings: list[str] = []
     for gname, entries in groups.items():
         if canonicalize_name(gname) != key:
             continue
@@ -317,28 +316,29 @@ def _flatten_group(
                         f"got: {included!r}"
                     )
                     raise MetadataError(msg)
-                if warnings is not None and not any(
+                if not any(
                     canonicalize_name(group) == canonicalize_name(included) for group in groups
                 ):
-                    message = (
+                    warnings.append(
                         f"{pyproject_path}: {label}: include-group {included!r} "
                         "does not match any group"
                     )
-                    if message not in warnings:
-                        warnings.append(message)
-                out.extend(
-                    _flatten_group(groups, included, (*seen, key), pyproject_path, warnings)
+                included_reqs, included_warnings = _flatten_group(
+                    groups, included, (*seen, key), pyproject_path
                 )
-    return out
+                out.extend(included_reqs)
+                warnings.extend(included_warnings)
+    return out, list(dict.fromkeys(warnings))
 
 
 def _candidate_requirements(
-    data: dict, pyproject_path: str = "pyproject.toml", warnings: list[str] | None = None
-) -> list[str]:
+    data: dict, pyproject_path: str = "pyproject.toml"
+) -> tuple[list[str], list[str]]:
     """All requirement strings, in search order.
 
-    ``warnings`` receives one message per include-group cycle and per
-    ``include-group`` that names no group.
+    Returns:
+        A tuple ``(requirements, warnings)``. ``warnings`` has one message per
+        include-group cycle and per ``include-group`` that names no group.
 
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
@@ -358,17 +358,19 @@ def _candidate_requirements(
         extra_reqs = _check_array(extra_reqs, label, pyproject_path)
         reqs.extend(r for r in extra_reqs if isinstance(r, str))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+    warnings: list[str] = []
     for gname in groups:
-        reqs.extend(_flatten_group(groups, gname, pyproject_path=pyproject_path, warnings=warnings))
-    return reqs
+        group_reqs, group_warnings = _flatten_group(groups, gname, pyproject_path=pyproject_path)
+        reqs.extend(group_reqs)
+        warnings.extend(group_warnings)
+    return reqs, list(dict.fromkeys(warnings))
 
 
 def extract_dependency_specifiers(
     data: dict,
     dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
-    warnings: list[str] | None = None,
-) -> dict[str, str | None]:
+) -> tuple[dict[str, str | None], list[str]]:
     """Map each requested package to its specifier string, or None if not found.
 
     Args:
@@ -377,18 +379,17 @@ def extract_dependency_specifiers(
             ``parse_string_array``.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
-        warnings: List to which warning messages are appended (for example
-            when a package has different specifiers (with the same environment
-            marker) in several places, a
-            requirement string cannot be parsed and is ignored,
-            ``include-group`` entries form a cycle, or an ``include-group``
-            names a group that does not exist). Invalid requirements and
-            include-group problems are only reported when ``dependencies``
-            is not empty.
 
     Returns:
-        A dict mapping each requested package name to its specifier, ``""`` if
-        the requirement has no specifier, or ``None`` if it was not found.
+        A tuple ``(specifiers, warnings)``. ``specifiers`` maps each requested
+        package name to its specifier, ``""`` if the requirement has no
+        specifier, or ``None`` if it was not found. ``warnings`` lists the
+        warning messages: a package has different specifiers (with the same
+        environment marker) in several places, a requirement string cannot be
+        parsed and is ignored, ``include-group`` entries form a cycle, or an
+        ``include-group`` names a group that does not exist. Invalid
+        requirements and include-group problems are only reported when
+        ``dependencies`` is not empty.
 
     Raises:
         MetadataError: If ``[project].dependencies``, ``[project.optional-dependencies]``
@@ -398,7 +399,8 @@ def extract_dependency_specifiers(
     deps = dependencies
     # Like invalid requirements below, structure warnings are only worth
     # reporting when the caller looks something up.
-    candidates = _candidate_requirements(data, pyproject_path, warnings if deps else None)
+    candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
+    warnings = structure_warnings if deps else []
     found: dict[str, list[tuple[str, str | None]]] = {}
     for raw in candidates:
         try:
@@ -406,7 +408,7 @@ def extract_dependency_specifiers(
         except InvalidRequirement as exc:
             # Only worth a warning when the caller looks something up: it may
             # be the very entry that was meant to be found.
-            if deps and warnings is not None:
+            if deps:
                 warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
             continue
         marker = None if req.marker is None else str(req.marker)
@@ -419,10 +421,9 @@ def extract_dependency_specifiers(
             result[dep] = None
             continue
         specifier = matches[0][0]
-        if warnings is not None:
-            warnings.extend(_conflict_warnings(dep, matches, specifier, pyproject_path))
+        warnings.extend(_conflict_warnings(dep, matches, specifier, pyproject_path))
         result[dep] = specifier
-    return result
+    return result, warnings
 
 
 def _conflict_warnings(
@@ -602,11 +603,11 @@ def main(argv: list[str]) -> int:
         data = load_pyproject(args.pyproject_path)
         extra_values = parse_string_array(args.extra_values, "extra-values")
         dependencies = parse_string_array(args.dependencies, "dependencies")
-        warnings: list[str] = []
-        metadata = extract_metadata(data, extra_values, args.pyproject_path, warnings)
-        specifiers = extract_dependency_specifiers(
-            data, dependencies, args.pyproject_path, warnings
+        metadata, warnings = extract_metadata(data, extra_values, args.pyproject_path)
+        specifiers, specifier_warnings = extract_dependency_specifiers(
+            data, dependencies, args.pyproject_path
         )
+        warnings.extend(specifier_warnings)
         if fail_on_missing:
             check_no_missing_dependency(specifiers, args.pyproject_path)
         report = Report(**metadata, dependency_specifiers=specifiers, warnings=warnings)
