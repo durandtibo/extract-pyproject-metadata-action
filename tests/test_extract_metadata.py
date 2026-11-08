@@ -35,6 +35,7 @@ from extract_metadata import (  # noqa: E402
     compatible_python_versions,
     escape_annotation,
     escape_annotation_property,
+    format_error,
     extract_metadata,
     extract_project_dependencies,
     format_outputs,
@@ -827,6 +828,58 @@ def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert out_lines[1].startswith("📦 name=p version=1 ")
     assert len(out_lines) == 2
     assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)
+
+
+@pytest.mark.parametrize(
+    ("message", "pyproject_path", "annotate", "expected"),
+    [
+        ("boom", "p.toml", False, "boom"),
+        ("a\nb", "p.toml", False, "a\nb"),
+        ("boom", "p.toml", True, "::error file=p.toml::boom"),
+        ("50%\nnext\r", "a,b:c.toml", True, "::error file=a%2Cb%3Ac.toml::50%25%0Anext%0D"),
+    ],
+)
+def test_format_error(message: str, pyproject_path: str, annotate: bool, expected: str) -> None:
+    assert format_error(message, pyproject_path, annotate) == expected
+
+
+def test_main_error_is_a_plain_message_without_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "nope.toml"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    captured = capsys.readouterr()
+
+    assert captured.err == f"pyproject.toml not found at: {path}\n"
+    assert captured.out == ""
+
+
+def test_main_error_is_an_annotation_with_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "nope.toml"
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.err == f"::error file={path}::pyproject.toml not found at: {path}\n"
+
+
+def test_main_error_annotation_cannot_inject_a_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = 3\n')
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert len(captured.err.splitlines()) == 1
+    assert captured.err.startswith("::error file=")
 
 
 @pytest.mark.parametrize(
@@ -1877,7 +1930,7 @@ def test_main_fail_on_missing_true_fails_for_a_missing_dependency(
 
     assert exit_code == 1
     assert captured.err == (
-        f"{path}: dependencies not found in [project].dependencies, "
+        f"::error file={path}::{path}: dependencies not found in [project].dependencies, "
         "[project.optional-dependencies] or [dependency-groups]: ['missing', 'other']\n"
     )
     assert captured.out == ""

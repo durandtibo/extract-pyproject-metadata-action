@@ -123,7 +123,9 @@ jobs:
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
-used as given).
+used as given). Failures (see [Failure modes](#failure-modes)) are emitted the
+same way, as `::error file=<pyproject-path>::<message>`, so they show as an
+annotation of the run and not only in the log of the step.
 
 The step also prints a one-line `📦` summary of the outputs in the log, with line
 breaks in the values escaped, to help debugging a workflow.
