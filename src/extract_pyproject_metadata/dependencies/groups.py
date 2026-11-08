@@ -1,4 +1,4 @@
-"""Expansion of the include-group entries of [dependency-groups]."""
+"""Expansion of the ``include-group`` entries of ``[dependency-groups]``."""
 
 from __future__ import annotations
 
