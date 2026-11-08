@@ -5,13 +5,14 @@ import json
 import importlib.util
 import re
 import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -29,11 +30,17 @@ from extract_metadata import (  # noqa: E402
     extract_dependency_specifiers,
     _candidate_requirements,
     _check_array,
+    _check_str,
     _check_string_array,
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
+    _index_dependencies,
     _index_requirements,
+    _scoped_requirements,
+    _lookup_key,
+    _requirements_from_index,
+    _specifiers_from_index,
     _get_table,
     compatible_python_versions,
     escape_annotation,
@@ -50,6 +57,7 @@ from extract_metadata import (  # noqa: E402
     lowest_python_version,
     main,
     parse_bool,
+    parse_dependencies,
     parse_options,
     parse_python_candidates,
     parse_string_array,
@@ -546,10 +554,10 @@ def test_main_dynamic_version_warning_in_json(
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-        "python_min": "3.10",
-    "python_max": "3.14",
-        "python_max": "3.14",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
+    "python_max": "3.15",
+        "python_max": "3.15",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "dependency_requirements": {},
@@ -670,10 +678,10 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-        "python_min": "3.10",
-    "python_max": "3.14",
-        "python_max": "3.14",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
+    "python_max": "3.15",
+        "python_max": "3.15",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "dependency_requirements": {},
@@ -719,6 +727,38 @@ def test_main_returns_usage_error_on_bad_args() -> None:
     assert exit_code == 2
 
 
+def test_main_prints_the_usage_error_on_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["extract_metadata.py"]) == 2
+
+    err = capsys.readouterr().err
+    assert err.startswith("usage: extract_metadata.py [-h]")
+    assert err.endswith(
+        "\nextract_metadata.py: error: the following arguments are required: "
+        "pyproject_path, extra_values\n"
+    )
+
+
+@pytest.mark.parametrize("option", [["--github-output", "out"], ["--github-output=out"]])
+def test_main_annotates_the_usage_error_with_github_output(
+    option: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["extract_metadata.py", *option]) == 2
+
+    err = capsys.readouterr().err
+    assert err.startswith("::error::usage: extract_metadata.py [-h]")
+    assert err.endswith(
+        "%0Aextract_metadata.py: error: the following arguments are required: "
+        "pyproject_path, extra_values\n"
+    )
+    assert err.count("\n") == 1
+
+
+def test_main_help_exits_with_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["extract_metadata.py", "--github-output", "out", "--help"]) == 0
+
+    assert capsys.readouterr().out.startswith("usage: extract_metadata.py [-h]")
+
+
 def test_cli_end_to_end(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -752,10 +792,10 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-        "python_min": "3.10",
-    "python_max": "3.14",
-        "python_max": "3.14",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
+    "python_max": "3.15",
+        "python_max": "3.15",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "dependency_requirements": {},
@@ -906,9 +946,9 @@ METADATA = {
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
-    "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-    "python_min": "3.10",
-    "python_max": "3.14",
+    "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+    "python_min": "3.11",
+    "python_max": "3.15",
     "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "dependency_requirements": {
@@ -934,10 +974,10 @@ def test_format_outputs() -> None:
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
-        "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
-        "python-min": "3.10",
-        "python-max": "3.14",
-        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
+        "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
+        "python-min": "3.11",
+        "python-max": "3.15",
+        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
         "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
         "dependency-requirements": '{"numpy":[{"specifier":">=1","marker":""}],"missing":[]}',
@@ -1080,10 +1120,10 @@ def test_main_github_output_writes_outputs_and_annotations(
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
-        "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
-        "python-min": "3.10",
-        "python-max": "3.14",
-        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
+        "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
+        "python-min": "3.11",
+        "python-max": "3.15",
+        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
         "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
         "dependency-requirements": (
@@ -1094,7 +1134,7 @@ def test_main_github_output_writes_outputs_and_annotations(
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         "📦 name=p version=1 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 python-max=3.14 extras=["","a"] '
+        'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
         'groups=["base","dev","other"] '
         'project-dependencies={"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"} '
         'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
@@ -1125,10 +1165,10 @@ def test_build_report(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-        "python_min": "3.10",
-    "python_max": "3.14",
-        "python_max": "3.14",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
+    "python_max": "3.15",
+        "python_max": "3.15",
         "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
         "dependency_specifiers": {"dup": ">=1", "missing": None},
         "dependency_requirements": {
@@ -1698,17 +1738,17 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
-        "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
-        "python-min": "3.10",
-        "python-max": "3.14",
-        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
+        "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
+        "python-min": "3.11",
+        "python-max": "3.15",
+        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
         "dependency-requirements": "{}",
     }
     assert result.stdout == (
         "📦 name=coola version=1.2.3 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 python-max=3.14 extras=["","numpy"] groups=[] '
+        'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","numpy"] groups=[] '
         "project-dependencies={} dependency-specifiers={}\n"
     )
 
@@ -1799,6 +1839,44 @@ def test_candidate_requirements_search_order() -> None:
     ]
 
 
+def test_scoped_requirements() -> None:
+    data = {
+        "project": {
+            "dependencies": ["a"],
+            "optional-dependencies": {"Extra_One": ["b"], "two": ["c", "d"]},
+        },
+        "dependency-groups": {"Dev_Tools": ["e", {"include-group": "lint"}], "lint": ["f"]},
+    }
+
+    assert _scoped_requirements(data) == (
+        [
+            ("project", "a"),
+            ("extra:extra-one", "b"),
+            ("extra:two", "c"),
+            ("extra:two", "d"),
+            ("group:dev-tools", "e"),
+            ("group:dev-tools", "f"),
+            ("group:lint", "f"),
+        ],
+        [],
+    )
+
+
+def test_scoped_requirements_share_a_scope_between_the_spellings_of_a_name() -> None:
+    data = {"project": {"optional-dependencies": {"Foo_Bar": ["a"], "foo-bar": ["b"]}}}
+
+    assert _scoped_requirements(data)[0] == [("extra:foo-bar", "a"), ("extra:foo-bar", "b")]
+
+
+def test_scoped_requirements_empty() -> None:
+    assert _scoped_requirements({}) == ([], [])
+
+
+def test_scoped_requirements_wrong_type() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
+        _scoped_requirements({"project": {"dependencies": "a"}}, "p.toml")
+
+
 def test_candidate_requirements_empty() -> None:
     assert _candidate_requirements({}) == ([], [])
 
@@ -1823,6 +1901,12 @@ def test_candidate_requirements_empty() -> None:
 def test_candidate_requirements_non_string_entries(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
         _candidate_requirements(data, "p.toml")
+
+
+def test_candidate_requirements_expands_the_spellings_of_a_group_once() -> None:
+    data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
+
+    assert _candidate_requirements(data)[0] == ["a", "b", "c"]
 
 
 def test_candidate_requirements_does_not_modify_the_data() -> None:
@@ -1961,10 +2045,10 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-        "python_min": "3.10",
-    "python_max": "3.14",
-        "python_max": "3.14",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
+    "python_max": "3.15",
+        "python_max": "3.15",
         "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "dependency_requirements": {
@@ -2833,6 +2917,19 @@ def test_get_table_not_a_table(value: object) -> None:
         _get_table({"project": value}, "project", "[project]", "p.toml")
 
 
+@pytest.mark.parametrize("value", ["text", ""])
+def test_check_str(value: str) -> None:
+    assert _check_str(value, "[x]", "p.toml") == value
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"), [(1, "1"), (None, "None"), (["a"], "\\['a'\\]"), ({"a": 1}, "\\{'a': 1\\}")]
+)
+def test_check_str_not_a_string(value: object, shown: str) -> None:
+    with pytest.raises(MetadataError, match=rf"^p.toml: \[x\] must be a string, got: {shown}$"):
+        _check_str(value, "[x]", "p.toml")
+
+
 def test_check_array() -> None:
     assert _check_array(["a", 1], "[x]", "p.toml") == ["a", 1]
 
@@ -3022,7 +3119,7 @@ def test_compatible_python_versions_invalid_specifier_warns(requires_python: str
         ('["3.12"]', ["3.12"]),
         ('["3.10", "3.9", "3.10"]', ["3.10", "3.9"]),
         ('["0.1", "10.20"]', ["0.1", "10.20"]),
-        (DEFAULT_PYTHON_CANDIDATES, ["3.10", "3.11", "3.12", "3.13", "3.14"]),
+        (DEFAULT_PYTHON_CANDIDATES, ["3.11", "3.12", "3.13", "3.14", "3.15"]),
     ],
 )
 def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
@@ -3172,7 +3269,7 @@ def test_main_github_output_python_matrix(tmp_path: Path) -> None:
 
     assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
     values = parse_github_output(output.read_text(encoding="utf-8"))
-    assert values["python-matrix"] == '{"python-version":["3.12","3.13","3.14"]}'
+    assert values["python-matrix"] == '{"python-version":["3.12","3.13","3.14","3.15"]}'
     assert json.loads(values["python-matrix"])["python-version"] == json.loads(
         values["python-versions"]
     )
@@ -3685,7 +3782,7 @@ def test_main_github_output_python_versions(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert parse_github_output(output.read_text(encoding="utf-8"))["python-versions"] == (
-        '["3.13","3.14"]'
+        '["3.13","3.14","3.15"]'
     )
 
 
@@ -3846,6 +3943,229 @@ def test_parse_requirement_is_called_once_per_distinct_string() -> None:
     assert parse.cache_info().misses == 2
 
 
+def _specifier_error(raw: str) -> InvalidSpecifier:
+    """Return the error that ``packaging`` raises for the invalid specifier ``raw``."""
+    with pytest.raises(InvalidSpecifier) as exc_info:
+        SpecifierSet(raw)
+    return exc_info.value
+
+
+def _parse_error(raw: str) -> InvalidRequirement:
+    """Return the error that ``packaging`` raises for the invalid requirement ``raw``."""
+    with pytest.raises(InvalidRequirement) as exc_info:
+        Requirement(raw)
+    return exc_info.value
+
+
+DATA_WITH_REQUIREMENTS = {
+    "project": {
+        "dependencies": ["numpy>=1.20; python_version < '3.12'", "not valid!", "tqdm"],
+        "optional-dependencies": {"x": ["numpy>=1.26; python_version >= '3.12'"]},
+    },
+    "dependency-groups": {"dev": ["pytest", {"include-group": "missing"}]},
+}
+
+
+def test_index_dependencies() -> None:
+    found, warnings = _index_dependencies(DATA_WITH_REQUIREMENTS, "p.toml")
+
+    assert found == {
+        "numpy": [(">=1.20", 'python_version < "3.12"'), (">=1.26", 'python_version >= "3.12"')],
+        "tqdm": [("", None)],
+        "pytest": [("", None)],
+        "numpy@project": [(">=1.20", 'python_version < "3.12"')],
+        "tqdm@project": [("", None)],
+        "numpy@extra:x": [(">=1.26", 'python_version >= "3.12"')],
+        "pytest@group:dev": [("", None)],
+    }
+    assert warnings == [
+        "p.toml: [dependency-groups].dev: include-group 'missing' does not match any group",
+        "Ignoring invalid requirement 'not valid!' in p.toml: "
+        + str(_parse_error("not valid!")),
+    ]
+
+
+def test_index_dependencies_empty() -> None:
+    assert _index_dependencies({}, "p.toml") == ({}, [])
+
+
+def test_index_dependencies_wrong_type() -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
+        _index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
+
+
+def test_specifiers_from_index() -> None:
+    found = {"numpy": [(">=1", None), ("<2", None)], "tqdm": [("", None)]}
+
+    assert _specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
+        {"Numpy": ">=1", "tqdm": "", "other": None},
+        ["warning", "Numpy has different specifiers in p.toml: ['<2', '>=1']; using '>=1'"],
+    )
+
+
+def test_specifiers_from_index_without_dependencies_ignores_the_index_warnings() -> None:
+    assert _specifiers_from_index({}, ["warning"], [], "p.toml") == ({}, [])
+
+
+def test_requirements_from_index() -> None:
+    found = {"numpy": [(">=1", "python_version < '3.12'"), ("", None)]}
+
+    assert _requirements_from_index(found, ["NumPy", "other"]) == {
+        "NumPy": [
+            {"specifier": ">=1", "marker": "python_version < '3.12'"},
+            {"specifier": "", "marker": ""},
+        ],
+        "other": [],
+    }
+
+
+def test_main_warnings_are_in_the_order_of_the_sources(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\ndynamic = ["version"]\nrequires-python = "python3"\n'
+        'dependencies = ["x>=1", "x>=2"]\n\n[dependency-groups]\ndev = ["x>=3", "not valid!"]\n',
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 0
+    warnings = json.loads(capsys.readouterr().out)["warnings"]
+    assert len(warnings) == 5
+    # The metadata, the Python versions, the dependencies of the project, then the lookups.
+    assert warnings[:3] == [
+        f"{path}: [project].version is dynamic, the version output is empty",
+        f"{path}: [project].requires-python is not a valid version specifier, "
+        f"the python-versions output is empty: {_specifier_error('python3')}",
+        f"x has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
+    ]
+    assert warnings[3].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
+    assert warnings[4] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "[]",
+        '["numpy", "NumPy"]',
+        '["numpy@project"]',
+        '["numpy@extra:x", "numpy@group:dev"]',
+        '["a@extra:with:colon", "a@group:Dev_Tools"]',
+    ],
+)
+def test_parse_dependencies(raw: str) -> None:
+    assert parse_dependencies(raw) == json.loads(raw)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["numpy@dev", "numpy@", "numpy@extra", "numpy@extra:", "numpy@group:", "numpy@Project", "numpy@feature:x", "numpy@@project"],
+)
+def test_parse_dependencies_invalid_scope(entry: str) -> None:
+    with pytest.raises(MetadataError, match=rf"^dependencies entry {re.escape(repr(entry))} has an invalid scope: "):
+        parse_dependencies(json.dumps([entry]))
+
+
+@pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[1]"])
+def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
+    with pytest.raises(MetadataError, match=r"^dependencies (is not valid JSON|must be a JSON array of strings)"):
+        parse_dependencies(raw)
+
+
+@pytest.mark.parametrize(
+    ("dependency", "expected"),
+    [
+        ("numpy", "numpy"),
+        ("Foo_Bar", "foo-bar"),
+        ("Foo.Bar@project", "foo-bar@project"),
+        ("numpy@extra:Dev_Tools", "numpy@extra:dev-tools"),
+        ("numpy@group:Dev..Tools", "numpy@group:dev-tools"),
+    ],
+)
+def test_lookup_key(dependency: str, expected: str) -> None:
+    assert _lookup_key(dependency) == expected
+
+
+DATA_WITH_SCOPES = """\
+[project]
+name = "a"
+version = "1"
+dependencies = ["numpy>=1.20", "tqdm"]
+
+[project.optional-dependencies]
+Fast = ["numpy>=2", "ujson"]
+slow = ["numpy<2"]
+
+[dependency-groups]
+lint = ["ruff>=0.5"]
+dev = ["numpy>=1.26", {include-group = "lint"}, "pytest"]
+"""
+
+
+@pytest.mark.parametrize(
+    ("dependencies", "expected"),
+    [
+        ('["numpy"]', {"numpy": ">=1.20"}),
+        ('["numpy@project"]', {"numpy@project": ">=1.20"}),
+        ('["numpy@extra:fast"]', {"numpy@extra:fast": ">=2"}),
+        ('["numpy@extra:Fast"]', {"numpy@extra:Fast": ">=2"}),
+        ('["numpy@extra:slow"]', {"numpy@extra:slow": "<2"}),
+        ('["NumPy@group:dev"]', {"NumPy@group:dev": ">=1.26"}),
+        ('["ruff@group:dev", "ruff@group:lint"]', {"ruff@group:dev": ">=0.5", "ruff@group:lint": ">=0.5"}),
+        ('["ujson@project", "ujson@extra:fast", "ujson@group:dev"]', {"ujson@project": None, "ujson@extra:fast": "", "ujson@group:dev": None}),
+        ('["tqdm@extra:fast"]', {"tqdm@extra:fast": None}),
+        ('["numpy@extra:missing", "numpy@group:missing"]', {"numpy@extra:missing": None, "numpy@group:missing": None}),
+    ],
+)
+def test_dependency_specifiers_with_a_scope(
+    tmp_path: Path, dependencies: str, expected: dict
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert specifiers(path, dependencies) == expected
+
+
+def test_main_dependency_requirements_with_a_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert main(["extract_metadata.py", str(path), "[]", '["numpy", "numpy@extra:slow", "pytest@group:dev"]']) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["dependency_requirements"] == {
+        "numpy": [
+            {"specifier": ">=1.20", "marker": ""},
+            {"specifier": ">=2", "marker": ""},
+            {"specifier": "<2", "marker": ""},
+            {"specifier": ">=1.26", "marker": ""},
+        ],
+        "numpy@extra:slow": [{"specifier": "<2", "marker": ""}],
+        "pytest@group:dev": [{"specifier": "", "marker": ""}],
+    }
+    assert report["dependency_specifiers"] == {
+        "numpy": ">=1.20",
+        "numpy@extra:slow": "<2",
+        "pytest@group:dev": "",
+    }
+
+
+def test_main_fail_on_missing_names_the_entry_with_a_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 1
+    assert "['tqdm@extra:fast']" in capsys.readouterr().err
+
+
+def test_main_returns_one_for_an_invalid_dependency_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
+
+    assert main(["extract_metadata.py", str(path), "[]", '["numpy@dev"]']) == 1
+    assert "dependencies entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
+
+
 def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -3855,8 +4175,9 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     extract_metadata_module._parse_requirement.cache_clear()
 
     assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
-    # "x>=1", "y" and "w": each is read again for the project dependencies ("x>=1", "y") and
-    # for the requirements of the requested packages ("x>=1", "y", "w").
+    # "x>=1", "y" and "w" are parsed once, in the index of all the requirements that both lookups
+    # share. They are read again for the index of their own place ("x>=1" and "y" for the project,
+    # "w" for the extra), and "x>=1" and "y" for the project dependencies.
     assert extract_metadata_module._parse_requirement.cache_info().misses == 3
     assert extract_metadata_module._parse_requirement.cache_info().hits == 5
 
@@ -4114,7 +4435,7 @@ def test_test_requirements_include_the_script_requirements() -> None:
 def test_format_summary() -> None:
     assert format_summary(format_outputs(METADATA)) == (
         "📦 name=coola version=1.2.3 requires-python=>=3.10 "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 python-max=3.14 extras=["","numpy"] '
+        'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","numpy"] '
         'groups=["dev","test"] '
         'project-dependencies={"numpy":">=1","Foo_Bar":""} '
         'dependency-specifiers={"numpy":">=1","missing":null}'
@@ -4164,7 +4485,15 @@ case "$1" in
   -c)
     case "$2" in
       *version_info*) name=version; status="${STUB_VERSION_STATUS:-0}" ;;
-      *) name=probe; status="${STUB_PROBE_STATUS:-0}" ;;
+      *)
+        name=probe
+        if [ -n "${STUB_REAL_PYTHON:-}" ]; then
+          # The real check of run.sh, run by a real Python with a "packaging" of another version.
+          PYTHONPATH="$STUB_FAKE_PACKAGING" "$STUB_REAL_PYTHON" -c "$2" "${@:3}" 2>/dev/null
+          status=$?
+        else
+          status="${STUB_PROBE_STATUS:-0}"
+        fi ;;
     esac
     printf '%s\\037' python3 "$name" >> "$STUB_LOG"; echo >> "$STUB_LOG"
     exit "$status" ;;
@@ -4251,6 +4580,68 @@ def test_run_sh_installs_the_requirements_in_a_private_venv_when_they_are_missin
         ["venv-python", "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", str(REQUIREMENTS_PATH)],
         ["venv-python", str(SCRIPT_PATH), "--flag", "a b", "[]"],
     ]
+
+
+def fake_packaging(tmp_path: Path, version: str) -> Path:
+    """Return a directory with a copy of ``packaging`` that says it is ``version``."""
+    import packaging
+
+    fake = tmp_path / f"fake-packaging-{version}"
+    shutil.copytree(Path(packaging.__file__).parent, fake / "packaging")
+    init = fake / "packaging" / "__init__.py"
+    init.write_text(re.sub(r"__version__ = .*", f'__version__ = "{version}"', init.read_text()))
+    return fake
+
+
+@pytest.mark.parametrize(("version", "installs"), [("22.9", True), ("23.0", False), ("26.1", False), ("30.0", False)])
+def test_run_sh_installs_packaging_in_a_venv_only_when_it_is_older_than_the_requirement(
+    tmp_path: Path, version: str, installs: bool
+) -> None:
+    result = run_run_sh(
+        tmp_path,
+        ["a"],
+        STUB_REAL_PYTHON=sys.executable,
+        STUB_FAKE_PACKAGING=str(fake_packaging(tmp_path, version)),
+    )
+
+    assert result.process.returncode == 0
+    assert len(result.created_venvs) == int(installs)
+
+
+def test_run_sh_installs_packaging_in_a_venv_when_it_cannot_be_imported(tmp_path: Path) -> None:
+    broken = tmp_path / "broken"
+    (broken / "packaging").mkdir(parents=True)
+    (broken / "packaging" / "__init__.py").write_text("raise ImportError('no packaging')\n")
+
+    result = run_run_sh(
+        tmp_path, ["a"], STUB_REAL_PYTHON=sys.executable, STUB_FAKE_PACKAGING=str(broken)
+    )
+
+    assert result.process.returncode == 0
+    assert len(result.created_venvs) == 1
+
+
+def test_run_sh_says_in_the_log_that_it_installs_the_requirements(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+
+    assert result.process.stdout == (
+        "'packaging' is missing or too old in 'python3': installing "
+        "packaging>=23.0,<27 in a private virtual environment\n"
+    )
+
+
+def test_run_sh_names_the_python_executable_in_the_log(tmp_path: Path) -> None:
+    custom = tmp_path / "custom-python"
+    custom.write_text(STUB_SYSTEM_PYTHON.replace("python3", "custom"))
+    custom.chmod(0o755)
+
+    result = run_run_sh(tmp_path, ["a"], PYTHON_EXECUTABLE=str(custom), STUB_PROBE_STATUS="1")
+
+    assert f"in '{custom}': installing" in result.process.stdout
+
+
+def test_run_sh_does_not_say_anything_when_the_requirements_are_available(tmp_path: Path) -> None:
+    assert run_run_sh(tmp_path, ["a"]).process.stdout == ""
 
 
 @pytest.mark.parametrize("probe_status", ["0", "1"])
