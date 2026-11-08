@@ -2,7 +2,8 @@ r"""Extract project metadata and dependency specifiers from a pyproject.toml.
 
 The metadata is the project name and version (and their normalized forms), the
 description, readme, license, authors, URLs, ``requires-python``,
-optional-dependency extras and dependency groups. The script also selects the
+optional-dependency extras and dependency groups, and the build backend and
+requirements of ``[build-system]``. The script also selects the
 Python versions that ``requires-python`` allows, and lists the requirements of
 ``[project].dependencies`` and of the packages that it is asked to look up.
 
@@ -25,6 +26,7 @@ characters are kept as they are, as in the action outputs):
      "keywords": [...], "classifiers": [...], "scripts": {...},
      "requires_python": ...,
      "extras": [...], "groups": [...],
+     "build_backend": ..., "build_requires": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
      "dependency_requirements": {...},
@@ -42,6 +44,7 @@ outputs to FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that
 values may contain line breaks). They are ``name``, ``normalized-name``,
 ``version``, ``normalized-version``, ``description``, ``readme``, ``license``,
 ``license-files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires-python``, ``extras``, ``groups``,
+``build-backend``, ``build-requires``,
 ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
 ``project-dependencies``, ``dependency-specifiers`` and
 ``dependency-requirements``. It also prints to stdout one
@@ -80,7 +83,8 @@ annotation on the file) if the file is missing, cannot be read, is not UTF-8 or
 is not valid TOML, the outputs or the job summary cannot be written, [project]
 is missing the required "name"/"version" keys, a dependency table
 ([project].dependencies, [project.optional-dependencies] or
-[dependency-groups]) has the wrong type, an input is not valid JSON of the
+[dependency-groups]) has the wrong type, [build-system] has a ``build-backend``
+that is not a string or ``requires`` that is not an array of strings, an input is not valid JSON of the
 expected shape, a Python candidate is not a "major.minor" string,
 ``--fail-on-dynamic-version true`` is given and the version is dynamic,
 ``--strict true`` is given and there is a warning, a requested dependency has a scope that
@@ -159,6 +163,8 @@ class Metadata(TypedDict):
     requires_python: str
     extras: list[str]
     groups: list[str]
+    build_backend: str
+    build_requires: list[str]
 
 
 class Report(Metadata):
@@ -237,7 +243,7 @@ def extract_metadata(
         messages (for example when the version is dynamic, or when a field is
         both set and listed in ``dynamic``). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires_python``, ``extras``, ``groups``, ``build_backend`` and ``build_requires``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value (so is ``normalized_version``,
         the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
@@ -259,7 +265,9 @@ def extract_metadata(
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
         the same way (sorted by normalized name, without duplicates), and is
-        empty if there is no such table.
+        empty if there is no such table. ``build_backend`` is ``[build-system].build-backend``
+        (empty if there is none) and ``build_requires`` is ``[build-system].requires``
+        as written (empty if there is none).
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` (also
@@ -274,8 +282,9 @@ def extract_metadata(
             ``license-files`` that is not an array of strings, an
             ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` or ``scripts`` that is not a table of strings, a
             ``keywords`` or ``classifiers`` that is not an array of strings, an
-            ``optional-dependencies`` or ``dependency-groups`` that is not a
-            table, or a dynamic version when ``fail_on_dynamic_version`` is true.
+            ``optional-dependencies``, ``dependency-groups`` or ``build-system`` that is not a
+            table, a ``build-backend`` that is not a string, a ``requires`` that is not an
+            array of strings, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
     dynamic = _check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
@@ -303,6 +312,7 @@ def extract_metadata(
     requires_python = _check_str(
         project.get("requires-python", ""), "[project].requires-python", pyproject_path
     )
+    build_backend, build_requires = _build_system(data, pyproject_path)
     metadata = Metadata(
         name=name,
         normalized_name=canonicalize_name(name),
@@ -322,6 +332,8 @@ def extract_metadata(
         requires_python=requires_python,
         extras=_extra_names(project, extra_values, pyproject_path),
         groups=_group_names(data, pyproject_path),
+        build_backend=build_backend,
+        build_requires=build_requires,
     )
     return metadata, warnings
 
@@ -499,6 +511,30 @@ def _extra_names(
     for extra in extra_values + extras:
         unique_extras.setdefault(canonicalize_name(extra), extra)
     return list(unique_extras.values())
+
+
+def _build_system(data: dict[str, Any], pyproject_path: str) -> tuple[str, list[str]]:
+    """Return the build backend and the build requirements of ``[build-system]``.
+
+    Args:
+        data: The parsed pyproject.toml.
+        pyproject_path: Path of the file, used in the error messages.
+
+    Returns:
+        A tuple ``(build_backend, build_requires)``: ``build-backend`` as written
+        (an empty string if there is none) and the ``requires`` array as written
+        (empty if there is none). Both are empty if there is no ``[build-system]``.
+
+    Raises:
+        MetadataError: If ``[build-system]`` is not a table, ``build-backend`` is
+            not a string or ``requires`` is not an array of strings.
+    """
+    table = _get_table(data, "build-system", "[build-system]", pyproject_path)
+    build_backend = _check_str(
+        table.get("build-backend", ""), "[build-system].build-backend", pyproject_path
+    )
+    requires = _check_string_array(table.get("requires", []), "[build-system].requires", pyproject_path)
+    return build_backend, list(requires)
 
 
 def _group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
@@ -1480,6 +1516,8 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "requires-python": metadata["requires_python"],
         "extras": _compact_json(metadata["extras"]),
         "groups": _compact_json(metadata["groups"]),
+        "build-backend": metadata["build_backend"],
+        "build-requires": _compact_json(metadata["build_requires"]),
         "python-versions": _compact_json(metadata["python_versions"]),
         "python-min": metadata["python_min"],
         "python-max": metadata["python_max"],
