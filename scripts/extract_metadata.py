@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -52,6 +53,11 @@ try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
+
+
+# A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
+# letter or a digit.
+_VALID_NAME = re.compile(r"^([A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9])$", re.IGNORECASE)
 
 
 class MetadataError(Exception):
@@ -133,7 +139,8 @@ def extract_metadata(
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
-            is not an array, a ``name`` that is not a non-empty string, a
+            is not an array, a ``name`` that is not a non-empty string or not a
+            valid PEP 508 name, a
             ``version`` that is not a string or not a valid PEP 440 version, a
             ``requires-python`` that is not a string, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
@@ -160,6 +167,12 @@ def extract_metadata(
         raise MetadataError(msg)
     if not isinstance(name, str) or not name:
         msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
+        raise MetadataError(msg)
+    if not _VALID_NAME.match(name):
+        msg = (
+            f"{pyproject_path}: [project].name is not a valid project name (letters, digits, "
+            f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
+        )
         raise MetadataError(msg)
     if not isinstance(version, str):
         msg = f"{pyproject_path}: [project].version must be a string, got: {version!r}"

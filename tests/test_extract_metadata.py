@@ -810,7 +810,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
     assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'
 
 
-def test_main_github_output_multiline_name_cannot_inject_outputs_or_commands(
+def test_main_github_output_multiline_name_is_rejected(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(
@@ -822,18 +822,11 @@ def test_main_github_output_multiline_name_cannot_inject_outputs_or_commands(
     exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8")) == {
-        "name": "evil\n::error::boom\nversion=hacked",
-        "normalized-name": "evil\n::error::boom\nversion=hacked",
-        "version": "1",
-        "requires-python": "",
-        "extras": "[]",
-        "groups": "[]",
-        "dependency-specifiers": "{}",
-    }
-    assert captured.out == '📦 name=evil\\n::error::boom\\nversion=hacked version=1 extras=[]\n'
-    assert not any(line.startswith("::") for line in captured.out.splitlines())
+    assert exit_code == 1
+    assert not output.exists()
+    assert captured.out == ""
+    assert len(captured.err.splitlines()) == 1
+    assert "[project].name is not a valid project name" in captured.err
 
 
 @pytest.mark.parametrize(
@@ -1522,7 +1515,6 @@ def test_main_invalid_version_returns_one(
         ("a-._b", "a-b"),
         ("Zope.Interface", "zope-interface"),
         ("pkg2", "pkg2"),
-        ("ÄB", "äb"),
     ],
 )
 def test_extract_metadata_normalized_name(tmp_path: Path, name: str, expected: str) -> None:
@@ -1878,3 +1870,24 @@ def test_report_keys_match_the_json_output(
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
 
     assert list(json.loads(capsys.readouterr().out)) == list(Report.__annotations__)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["a", "A", "7", "coola", "My_Package.Name", "a-b", "a_b", "a.b", "a--b__c..d", "zope.interface", "x9"],
+)
+def test_extract_metadata_valid_names(tmp_path: Path, name: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
+
+    assert extract(path)["name"] == name
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB", "a\\nb", " a", "a "],
+)
+def test_extract_metadata_invalid_names(tmp_path: Path, name: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
+
+    with pytest.raises(MetadataError, match=r"\[project\]\.name is not a valid project name"):
+        extract(path)
