@@ -8,4 +8,4 @@ numpy = ["numpy~=2.0"]
 
 [dependency-groups]
 base = ["grp-pkg>=1.5"]
-dev = [{include-group = "base"}, "dev-pkg<3"]
+dev = [{ include-group = "base" }, "dev-pkg<3"]
