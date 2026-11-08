@@ -67,7 +67,9 @@ def extract_metadata(
             error messages.
 
     Returns:
-        A dict with keys ``name``, ``version``, and ``extras``.
+        A dict with keys ``name``, ``version``, and ``extras``. ``extras``
+        lists the ``extra_values`` first, then the sorted extras, without
+        duplicates.
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
@@ -115,7 +117,12 @@ def extract_metadata(
         msg = f"extra-values must be a JSON array of strings, got: {extra_values_json!r}"
         raise MetadataError(msg)
 
-    return {"name": name, "version": version, "extras": extra_values + extras}
+    # dict.fromkeys removes duplicates and keeps the first occurrence's position.
+    return {
+        "name": name,
+        "version": version,
+        "extras": list(dict.fromkeys(extra_values + extras)),
+    }
 
 
 def _parse_dependencies(dependencies_json: str) -> list[str]:
