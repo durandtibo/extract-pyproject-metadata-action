@@ -114,6 +114,11 @@ outputs:
       License, from [project].license (an SPDX expression, or the text of the
       table); empty if not declared or a file
     value: ${{ steps.metadata.outputs.license }}
+  license-files:
+    description: >
+      JSON array of the patterns of [project].license-files, as written ("[]" if
+      none)
+    value: ${{ steps.metadata.outputs.license-files }}
   authors:
     description: >
       JSON array of the authors of [project].authors, each an object with the

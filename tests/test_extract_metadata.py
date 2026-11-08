@@ -217,6 +217,7 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -279,6 +280,55 @@ def test_main_json_keeps_non_ascii_characters(
     out = capsys.readouterr().out
     assert '"description": "Héllo ✓"' in out
     assert "\\u" not in out
+
+
+@pytest.mark.parametrize(
+    ("project", "expected"),
+    [
+        ("", []),
+        ('license-files = []\n', []),
+        ('license-files = ["LICENSE"]\n', ["LICENSE"]),
+        ('license-files = ["LICENSE", "licenses/*.txt", "LICENSE"]\n', ["LICENSE", "licenses/*.txt", "LICENSE"]),
+        ('dynamic = ["license-files"]\n', []),
+    ],
+)
+def test_extract_metadata_license_files(tmp_path: Path, project: str, expected: list[str]) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{project}')
+
+    assert extract(path)["license_files"] == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ('"LICENSE"', r"\[project\]\.license-files must be an array, got: 'LICENSE'"),
+        ('{ glob = "LICENSE" }', r"\[project\]\.license-files must be an array, got: \{'glob': 'LICENSE'\}"),
+        ('["LICENSE", 1]', r"\[project\]\.license-files must contain only strings, got: 1"),
+    ],
+)
+def test_extract_metadata_license_files_must_be_an_array_of_strings(
+    tmp_path: Path, value: str, match: str
+) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\nlicense-files = {value}\n')
+
+    with pytest.raises(MetadataError, match=match):
+        extract(path)
+
+
+def test_main_license_files_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense-files = ["LICENSE", "licenses/*.txt"]\n'
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["license_files"] == ["LICENSE", "licenses/*.txt"]
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["license-files"] == (
+        '["LICENSE","licenses/*.txt"]'
+    )
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -440,6 +490,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -549,6 +600,7 @@ def test_main_dynamic_version_warning_in_json(
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -673,6 +725,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -755,6 +808,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -909,6 +963,7 @@ METADATA = {
     "description": "",
     "readme": "",
     "license": "",
+    "license_files": [],
     "authors": [],
     "urls": {},
     "requires_python": ">=3.10",
@@ -937,6 +992,7 @@ def test_format_outputs() -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
         "requires-python": ">=3.10",
@@ -1083,6 +1139,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "description": "",
         "readme": "",
         "license": "",
+        "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
         "requires-python": "",
@@ -1128,6 +1185,7 @@ def test_build_report(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -1273,6 +1331,7 @@ def test_format_step_summary_without_warnings() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
         requires_python="",
@@ -1299,6 +1358,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `description` |  |\n"
         "| `readme` |  |\n"
         "| `license` |  |\n"
+        "| `license-files` | <code>&#91;&#93;</code> |\n"
         "| `authors` | <code>&#91;&#93;</code> |\n"
         "| `urls` | <code>&#123;&#125;</code> |\n"
         "| `requires-python` |  |\n"
@@ -1323,6 +1383,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
         requires_python="",
@@ -1701,6 +1762,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license-files": '[]',
         "authors": '[]',
         "urls": '{}',
         "requires-python": "",
@@ -1964,6 +2026,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
+        "license_files": [],
         "authors": [],
         "urls": {},
         "requires_python": "",
@@ -3264,6 +3327,7 @@ def test_format_outputs_python_matrix() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
         requires_python="",
@@ -3290,6 +3354,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
         requires_python=">=4",
@@ -3368,6 +3433,7 @@ def test_format_outputs_normalized_version() -> None:
         description="",
         readme="",
         license="",
+        license_files=[],
         authors=[],
         urls={},
         requires_python="",
@@ -3903,6 +3969,7 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "description",
         "readme",
         "license",
+        "license-files",
         "authors",
         "urls",
         "python-matrix",

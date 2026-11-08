@@ -617,6 +617,16 @@ jobs:
           print_success "license test passed"
 
       # -----------------------------------------------------------------------
+      # Test 22b: license-files output
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify license-files
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "license-files" '["LICENSE","licenses/*.txt"]' '${{ steps.test-project-fields.outputs.license-files }}'
+          assert_equal "license-files" '[]' '${{ steps.test-no-project-fields.outputs.license-files }}'
+          print_success "license-files test passed"
+
+      # -----------------------------------------------------------------------
       # Test 23: authors output
       # -----------------------------------------------------------------------
       - name: ✓ Verify authors
