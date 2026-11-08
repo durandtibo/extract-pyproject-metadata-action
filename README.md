@@ -7,8 +7,10 @@ keeps downstream workflows (build, test matrices, publish steps, ...) from
 drifting out of sync with what `pip install` actually installs.
 
 Requires the repository to already be checked out and a Python 3 interpreter
-available on `PATH`. On Python < 3.11 (no stdlib `tomllib`), the action
-installs the `tomli` backport on the fly.
+available on `PATH`. If the `packaging` package (or, on Python < 3.11 without
+stdlib `tomllib`, the `tomli` backport) is missing, the action installs it in a
+private virtual environment under `$RUNNER_TEMP`. It never modifies the Python
+environment of the caller.
 
 ## Usage
 

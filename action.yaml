@@ -58,8 +58,30 @@ runs:
         DEPENDENCIES: ${{ inputs.dependencies }}
       run: |
         set -euo pipefail
-        python3 -c "import tomllib" 2>/dev/null || python3 -c "import tomli" 2>/dev/null || pip install --quiet --disable-pip-version-check tomli
-        python3 -c "import packaging" 2>/dev/null || pip install --quiet --disable-pip-version-check packaging
-        python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" \
+
+        # The script needs "packaging" and, before Python 3.11, "tomli". If
+        # either is missing, install them in a private virtual environment
+        # instead of pip-installing into the caller's Python: that would modify
+        # the caller's environment and fails on "externally managed" Pythons
+        # (PEP 668). --system-site-packages reuses whatever is already there.
+        python=python3
+        if ! python3 -c "import packaging, tomllib" 2>/dev/null &&
+          ! python3 -c "import packaging, tomli" 2>/dev/null; then
+          venv="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/extract-pyproject-metadata-venv"
+          if python3 -m venv --system-site-packages "$venv"; then
+            python="$venv/bin/python"
+            [ -x "$python" ] || python="$venv/Scripts/python.exe" # Windows
+            "$python" -m pip install --quiet --disable-pip-version-check \
+              packaging 'tomli; python_version < "3.11"' || python=""
+          else
+            python=""
+          fi
+          if [ -z "$python" ]; then
+            echo "::error::Could not install the 'packaging' and 'tomli' Python packages. Install them in the Python on PATH (e.g. 'pip install packaging tomli') before using this action." >&2
+            exit 1
+          fi
+        fi
+
+        "$python" "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" \
           --github-output "$GITHUB_OUTPUT" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"
