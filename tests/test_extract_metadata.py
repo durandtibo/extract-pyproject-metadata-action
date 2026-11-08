@@ -15,6 +15,7 @@ from extract_metadata import (  # noqa: E402
     Metadata,
     MetadataError,
     Report,
+    DEFAULT_PYTHON_CANDIDATES,
     check_no_missing_dependency,
     extract_dependency_specifiers,
     _candidate_requirements,
@@ -23,6 +24,7 @@ from extract_metadata import (  # noqa: E402
     _dynamic_dependency_fields,
     _flatten_group,
     _get_table,
+    compatible_python_versions,
     escape_annotation,
     escape_annotation_property,
     extract_metadata,
@@ -30,6 +32,7 @@ from extract_metadata import (  # noqa: E402
     load_pyproject,
     main,
     parse_bool,
+    parse_python_candidates,
     parse_string_array,
     write_github_output,
 )
@@ -279,6 +282,7 @@ def test_main_dynamic_version_warning_in_json(
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "dependency_specifiers": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
     }
@@ -390,6 +394,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "dependency_specifiers": {},
         "warnings": [],
     }
@@ -459,6 +464,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
+        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "dependency_specifiers": {},
         "warnings": [],
     }
@@ -600,6 +606,7 @@ METADATA = {
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
+    "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "warnings": [],
 }
@@ -613,6 +620,7 @@ def test_format_outputs() -> None:
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
+        "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
     }
 
@@ -732,6 +740,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
+        "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
@@ -806,6 +815,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
+        "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
         "dependency-specifiers": "{}",
     }
     assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'
@@ -1015,6 +1025,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": [],
         "groups": [],
+        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
     }
@@ -1967,3 +1978,156 @@ def test_main_fail_on_missing_points_out_dynamic_dependencies(
 
     assert exit_code == 1
     assert captured.err.endswith("; [project].dependencies is dynamic and cannot be read\n")
+
+
+CANDIDATES = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "expected"),
+    [
+        ("", CANDIDATES),
+        ("   ", CANDIDATES),
+        (">=3.10", ["3.10", "3.11", "3.12", "3.13"]),
+        (">=3.10,<4", ["3.10", "3.11", "3.12", "3.13"]),
+        (">=3.10, <3.13", ["3.10", "3.11", "3.12"]),
+        (">3.10", ["3.10", "3.11", "3.12", "3.13"]),
+        (">=3.10.2", ["3.10", "3.11", "3.12", "3.13"]),
+        ("<3.12.5", ["3.9", "3.10", "3.11", "3.12"]),
+        ("<3.11", ["3.9", "3.10"]),
+        ("~=3.10", ["3.10", "3.11", "3.12", "3.13"]),
+        ("~=3.11.0", ["3.11"]),
+        ("==3.11.*", ["3.11"]),
+        ("!=3.12.*", ["3.9", "3.10", "3.11", "3.13"]),
+        (">=3.14", []),
+        (">=3", CANDIDATES),
+    ],
+)
+def test_compatible_python_versions(requires_python: str, expected: list[str]) -> None:
+    assert compatible_python_versions(requires_python, CANDIDATES) == (expected, [])
+
+
+def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
+    assert compatible_python_versions(">=3.10", ["3.12", "3.10", "3.8"]) == (["3.12", "3.10"], [])
+
+
+def test_compatible_python_versions_no_candidates() -> None:
+    assert compatible_python_versions(">=3.10", []) == ([], [])
+
+
+@pytest.mark.parametrize("requires_python", ["python3", ">=", "3.10 or later"])
+def test_compatible_python_versions_invalid_specifier_warns(requires_python: str) -> None:
+    versions, warnings = compatible_python_versions(requires_python, CANDIDATES, "p.toml")
+
+    assert versions == []
+    assert len(warnings) == 1
+    assert warnings[0].startswith(
+        "p.toml: [project].requires-python is not a valid version specifier, "
+        "the python-versions output is empty: "
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("[]", []),
+        ('["3.12"]', ["3.12"]),
+        ('["3.10", "3.9", "3.10"]', ["3.10", "3.9"]),
+        ('["0.1", "10.20"]', ["0.1", "10.20"]),
+        (DEFAULT_PYTHON_CANDIDATES, ["3.10", "3.11", "3.12", "3.13", "3.14"]),
+    ],
+)
+def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
+    assert parse_python_candidates(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw", ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]']
+)
+def test_parse_python_candidates_not_major_minor(raw: str) -> None:
+    with pytest.raises(MetadataError, match=r"python-candidates must contain 'major.minor' versions"):
+        parse_python_candidates(raw)
+
+
+@pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[3.12]"])
+def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
+    with pytest.raises(MetadataError, match=r"python-candidates (is not valid JSON|must be a JSON array)"):
+        parse_python_candidates(raw)
+
+
+def test_main_python_versions_in_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
+    )
+
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.11", "3.12"]
+
+
+def test_main_python_candidates_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.9"\n'
+    )
+
+    exit_code = main(
+        ["extract_metadata.py", "--python-candidates", '["3.8","3.9","3.15"]', str(path), "[]"]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.9", "3.15"]
+
+
+def test_main_invalid_requires_python_specifier_warns_and_gives_no_versions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "python3"\n'
+    )
+
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    report = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert report["python_versions"] == []
+    assert len(report["warnings"]) == 1
+    assert "requires-python is not a valid version specifier" in report["warnings"][0]
+
+
+def test_main_github_output_python_versions(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.13"\n'
+    )
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+
+    assert exit_code == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["python-versions"] == (
+        '["3.13","3.14"]'
+    )
+
+
+@pytest.mark.parametrize("raw", ['["3.12.1"]', "not json"])
+def test_main_invalid_python_candidates_return_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: str
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    exit_code = main(["extract_metadata.py", "--python-candidates", raw, str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "python-candidates" in captured.err
+    assert captured.out == ""
+
+
+def test_action_yaml_default_of_python_candidates_matches_the_script() -> None:
+    action = (Path(__file__).resolve().parents[1] / "action.yaml").read_text(encoding="utf-8")
+
+    assert f"default: '{DEFAULT_PYTHON_CANDIDATES}'" in action

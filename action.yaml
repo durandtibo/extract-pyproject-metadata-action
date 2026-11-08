@@ -45,6 +45,13 @@ inputs:
     required: false
     default: "false"
 
+  python-candidates:
+    description: >
+      JSON array of "major.minor" Python versions to choose from for the
+      python-versions output (e.g. '["3.11","3.12"]')
+    required: false
+    default: '["3.10","3.11","3.12","3.13","3.14"]'
+
 outputs:
   name:
     description: Project name, as declared in [project].name
@@ -62,6 +69,11 @@ outputs:
       Python version specifier, as declared in [project].requires-python (empty
       if not declared)
     value: ${{ steps.metadata.outputs.requires-python }}
+  python-versions:
+    description: >
+      JSON array of the python-candidates allowed by requires-python (all of
+      them if requires-python is not declared)
+    value: ${{ steps.metadata.outputs.python-versions }}
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}
@@ -84,6 +96,7 @@ runs:
         EXTRA_VALUES: ${{ inputs.extra-values }}
         DEPENDENCIES: ${{ inputs.dependencies }}
         FAIL_ON_MISSING: ${{ inputs.fail-on-missing }}
+        PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
       run: |
         set -euo pipefail
 
@@ -115,4 +128,5 @@ runs:
         "$python" "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" \
           --github-output "$GITHUB_OUTPUT" \
           --fail-on-missing "$FAIL_ON_MISSING" \
+          --python-candidates "$PYTHON_CANDIDATES" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"
