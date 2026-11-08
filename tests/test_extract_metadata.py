@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -2400,3 +2402,33 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
     assert not any(line.startswith("::error") for line in captured.out.splitlines())
     assert len(captured.out.splitlines()) == 2  # the warning for the invalid specifier, then the summary
     assert "requires-python=x\\n::error::boom\\nversion=hacked " in captured.out
+
+
+def _load_script_as(name: str) -> types.ModuleType:
+    """Execute a fresh copy of the script as the module ``name``."""
+    spec = importlib.util.spec_from_file_location(name, SCRIPT_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_tomli_is_used_when_tomllib_is_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_tomli = types.ModuleType("tomli")
+    monkeypatch.setitem(sys.modules, "tomllib", None)  # makes ``import tomllib`` raise ModuleNotFoundError
+    monkeypatch.setitem(sys.modules, "tomli", fake_tomli)
+
+    module = _load_script_as("extract_metadata_without_tomllib")
+
+    assert module.tomllib is fake_tomli
+
+
+def test_tomllib_is_preferred_over_tomli_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_tomllib = types.ModuleType("tomllib")
+    monkeypatch.setitem(sys.modules, "tomllib", fake_tomllib)
+    monkeypatch.setitem(sys.modules, "tomli", types.ModuleType("tomli"))
+
+    module = _load_script_as("extract_metadata_with_tomllib")
+
+    assert module.tomllib is fake_tomllib
