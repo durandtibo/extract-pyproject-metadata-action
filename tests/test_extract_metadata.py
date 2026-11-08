@@ -609,21 +609,87 @@ def test_format_outputs_keeps_non_ascii_characters() -> None:
     assert format_outputs(metadata)["extras"] == '["é"]'
 
 
+def parse_github_output(text: str) -> dict[str, str]:
+    """Parse a ``$GITHUB_OUTPUT`` file like the runner does (``k=v`` and ``k<<DELIM``)."""
+    outputs: dict[str, str] = {}
+    lines = iter(text.split("\n")[:-1])
+    for line in lines:
+        if "<<" in line and ("=" not in line or line.index("<<") < line.index("=")):
+            key, delimiter = line.split("<<", 1)
+            value_lines: list[str] = []
+            for value_line in lines:
+                if value_line == delimiter:
+                    break
+                value_lines.append(value_line)
+            else:
+                msg = f"unterminated value for {key}"
+                raise AssertionError(msg)
+            outputs[key] = "\n".join(value_lines)
+        else:
+            key, value = line.split("=", 1)
+            outputs[key] = value
+    return outputs
+
+
+@pytest.fixture
+def fixed_delimiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(extract_metadata_module, "_new_delimiter", lambda: "DELIM")
+
+
+@pytest.mark.usefixtures("fixed_delimiter")
 def test_write_github_output(tmp_path: Path) -> None:
     output = tmp_path / "github_output"
 
     write_github_output(str(output), {"name": "coola", "version": "", "extras": "[]"})
 
-    assert output.read_text(encoding="utf-8") == "name=coola\nversion=\nextras=[]\n"
+    assert output.read_text(encoding="utf-8") == (
+        "name<<DELIM\ncoola\nDELIM\nversion<<DELIM\n\nDELIM\nextras<<DELIM\n[]\nDELIM\n"
+    )
 
 
+@pytest.mark.usefixtures("fixed_delimiter")
 def test_write_github_output_appends(tmp_path: Path) -> None:
     output = tmp_path / "github_output"
     output.write_text("previous=step\n", encoding="utf-8")
 
     write_github_output(str(output), {"name": "coola"})
 
-    assert output.read_text(encoding="utf-8") == "previous=step\nname=coola\n"
+    assert output.read_text(encoding="utf-8") == "previous=step\nname<<DELIM\ncoola\nDELIM\n"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["a\nb", "a\r\nb", "evil\nversion=hacked", "trailing\n", "\n\n", "x<<y", "k=v", "é\n"],
+)
+def test_write_github_output_round_trips_any_value(tmp_path: Path, value: str) -> None:
+    output = tmp_path / "github_output"
+
+    write_github_output(str(output), {"name": value, "version": "1"})
+
+    assert parse_github_output(output.read_bytes().decode("utf-8")) == {
+        "name": value,
+        "version": "1",
+    }
+
+
+def test_write_github_output_picks_a_delimiter_not_in_the_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    delimiters = iter(["BAD", "GOOD"])
+    monkeypatch.setattr(extract_metadata_module, "_new_delimiter", lambda: next(delimiters))
+    output = tmp_path / "github_output"
+
+    write_github_output(str(output), {"name": "xBADx"})
+
+    assert output.read_text(encoding="utf-8") == "name<<GOOD\nxBADx\nGOOD\n"
+
+
+def test_new_delimiter_is_random_and_not_guessable() -> None:
+    first, second = extract_metadata_module._new_delimiter(), extract_metadata_module._new_delimiter()
+
+    assert first != second
+    assert first.startswith("ghadelimiter_")
+    assert len(first) > 32
 
 
 def test_main_github_output_writes_outputs_and_annotations(
@@ -645,12 +711,12 @@ def test_main_github_output_writes_outputs_and_annotations(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert output.read_text(encoding="utf-8") == (
-        "name=p\n"
-        "version=1\n"
-        'extras=["","a"]\n'
-        'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
-    )
+    assert parse_github_output(output.read_text(encoding="utf-8")) == {
+        "name": "p",
+        "version": "1",
+        "extras": '["","a"]',
+        "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
+    }
     assert captured.out == (
         f"::warning::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         '📦 name=p version=1 extras=["","a"]\n'
@@ -716,7 +782,41 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         check=True,
     )
 
-    assert output.read_text(encoding="utf-8") == (
-        'name=coola\nversion=1.2.3\nextras=["","numpy"]\ndependency-specifiers={}\n'
-    )
+    assert parse_github_output(output.read_text(encoding="utf-8")) == {
+        "name": "coola",
+        "version": "1.2.3",
+        "extras": '["","numpy"]',
+        "dependency-specifiers": "{}",
+    }
     assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'
+
+
+def test_main_github_output_multiline_name_cannot_inject_outputs_or_commands(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "evil\\n::error::boom\\nversion=hacked"\nversion = "1"\n',
+    )
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert parse_github_output(output.read_text(encoding="utf-8")) == {
+        "name": "evil\n::error::boom\nversion=hacked",
+        "version": "1",
+        "extras": "[]",
+        "dependency-specifiers": "{}",
+    }
+    assert captured.out == '📦 name=evil\\n::error::boom\\nversion=hacked version=1 extras=[]\n'
+    assert not any(line.startswith("::") for line in captured.out.splitlines())
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("plain", "plain"), ("", ""), ("a\nb", "a\\nb"), ("a\r\nb", "a\\r\\nb"), ("a\\nb", "a\\\\nb")],
+)
+def test_single_line(value: str, expected: str) -> None:
+    assert extract_metadata_module._single_line(value) == expected
