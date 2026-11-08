@@ -9,7 +9,7 @@ steps, ...) from drifting out of sync with what `pip install` actually
 installs.
 
 Requires the repository to already be checked out and a **Python 3.11 or
-later** interpreter (`python3`) available on `PATH`, for example set up with
+later** interpreter (`python3`, or the one named by the `python-executable` input) available on `PATH`, for example set up with
 `actions/setup-python`; the action fails with a clear message otherwise. If the
 `packaging` package is missing, the action installs it in a
 private virtual environment under `$RUNNER_TEMP` (removed at the end of the
@@ -106,16 +106,17 @@ jobs:
 
 ## Inputs
 
-| Name                      | Description                                                                                                                                                                                                                                                                                           | Required | Default                                |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------- |
-| `pyproject-path`          | Path to `pyproject.toml`.                                                                                                                                                                                                                                                                             | No       | `pyproject.toml`                       |
-| `extra-values`            | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`).                                                                                                             | No       | `[]`                                   |
-| `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503. | No       | `[]`                                   |
-| `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version. Must be `true` or `false` (case and surrounding spaces are ignored).                                        | No       | `false`                                |
-| `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                        | No       | `["3.10","3.11","3.12","3.13","3.14"]` |
-| `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`. Must be `true` or `false` (case and surrounding spaces are ignored).                                                                                               | No       | `false`                                |
-| `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input. Must be `true` or `false` (case and surrounding spaces are ignored).                                                                  | No       | `false`                                |
-| `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output). Must be `true` or `false` (case and surrounding spaces are ignored).                                                                                                      | No       | `false`                                |
+| Name                      | Description                                                                                                                                                                                                                                                                                            | Required | Default                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------- |
+| `pyproject-path`          | Path to `pyproject.toml`.                                                                                                                                                                                                                                                                              | No       | `pyproject.toml`                       |
+| `extra-values`            | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`).                                                                                                              | No       | `[]`                                   |
+| `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503.  | No       | `[]`                                   |
+| `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version. Must be `true` or `false` (case and surrounding spaces are ignored).                                         | No       | `false`                                |
+| `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                         | No       | `["3.10","3.11","3.12","3.13","3.14"]` |
+| `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`. Must be `true` or `false` (case and surrounding spaces are ignored).                                                                                                | No       | `false`                                |
+| `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input. Must be `true` or `false` (case and surrounding spaces are ignored).                                                                   | No       | `false`                                |
+| `python-executable`       | Python interpreter that runs the action: a command found on `PATH` or a path to an executable (Python 3.11 or later, e.g. `python3.12` or `/opt/python/bin/python`), for runners where `python3` is not the interpreter to use. The private virtual environment, if one is needed, is created with it. | No       | `python3`                              |
+| `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output). Must be `true` or `false` (case and surrounding spaces are ignored).                                                                                                       | No       | `false`                                |
 
 ## Outputs
 
@@ -256,7 +257,7 @@ is:
 The action's step fails (non-zero exit) when:
 
 - It runs on a Windows runner (`RUNNER_OS` is `Windows`), which is not supported.
-- The `python3` on `PATH` is older than 3.11 (or missing), or `packaging` is missing
+- The Python interpreter (`python3`, or `python-executable`) is older than 3.11, missing or cannot be run, or `packaging` is missing
   and cannot be installed (for example, no access to a package index).
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
@@ -312,7 +313,7 @@ The action's step fails (non-zero exit) when:
 
 The logic is in `scripts/extract_metadata.py`, started by `scripts/run.sh`
 (which installs the requirements in a private virtual environment when the
-`python3` on `PATH` lacks them); `action.yaml` only wires inputs and outputs. Use a virtual environment:
+interpreter lacks them); `action.yaml` only wires inputs and outputs. Use a virtual environment:
 
 ```bash
 python -m venv .venv

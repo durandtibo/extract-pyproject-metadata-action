@@ -4282,6 +4282,53 @@ def test_run_sh_fails_when_the_temporary_directory_cannot_be_created(tmp_path: P
     assert result.calls == [["python3", "version"], ["python3", "probe"]]
 
 
+def test_run_sh_uses_the_python_executable_when_it_is_set(tmp_path: Path) -> None:
+    custom = tmp_path / "custom-python"
+    custom.write_text(STUB_SYSTEM_PYTHON.replace("python3", "custom"))
+    custom.chmod(0o755)
+
+    result = run_run_sh(tmp_path, ["a"], PYTHON_EXECUTABLE=str(custom))
+
+    assert result.process.returncode == 0
+    assert result.calls == [["custom", "version"], ["custom", "probe"], ["custom", str(SCRIPT_PATH), "a"]]
+
+
+def test_run_sh_creates_the_venv_with_the_python_executable(tmp_path: Path) -> None:
+    custom = tmp_path / "custom-python"
+    custom.write_text(STUB_SYSTEM_PYTHON.replace("python3", "custom"))
+    custom.chmod(0o755)
+
+    result = run_run_sh(tmp_path, ["a"], PYTHON_EXECUTABLE=str(custom), STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 0
+    assert [call[:3] for call in result.calls[:3]] == [
+        ["custom", "version"],
+        ["custom", "probe"],
+        ["custom", "-m", "venv"],
+    ]
+    assert result.calls[-1][0] == "venv-python"
+
+
+def test_run_sh_uses_python3_when_the_python_executable_is_empty(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], PYTHON_EXECUTABLE="")
+
+    assert result.calls[-1] == ["python3", str(SCRIPT_PATH), "a"]
+
+
+def test_run_sh_fails_with_a_clear_message_when_the_python_executable_cannot_be_run(
+    tmp_path: Path,
+) -> None:
+    result = run_run_sh(tmp_path, ["a"], PYTHON_EXECUTABLE=str(tmp_path / "missing-python"))
+
+    assert result.process.returncode == 1
+    assert re.search(
+        r"^::error::This action requires Python 3\.11 or later, but '.*missing-python' is older, "
+        r"missing or cannot be run\..*python-executable input",
+        result.process.stderr,
+    )
+    assert result.calls == []
+
+
 def test_run_sh_fails_with_a_clear_message_when_python_is_older_than_3_11(tmp_path: Path) -> None:
     result = run_run_sh(tmp_path, ["a"], STUB_VERSION_STATUS="1")
 
