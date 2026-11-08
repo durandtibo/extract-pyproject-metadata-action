@@ -25,6 +25,7 @@ from extract_metadata import (  # noqa: E402
     emit_github_output,
     DEFAULT_PYTHON_CANDIDATES,
     check_no_missing_dependency,
+    extract_dependency_requirements,
     extract_dependency_specifiers,
     _candidate_requirements,
     _check_array,
@@ -551,6 +552,7 @@ def test_main_dynamic_version_warning_in_json(
         "python_max": "3.14",
         "project_dependencies": {},
         "dependency_specifiers": {},
+        "dependency_requirements": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
         "schema_version": 1,
     }
@@ -674,6 +676,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "python_max": "3.14",
         "project_dependencies": {},
         "dependency_specifiers": {},
+        "dependency_requirements": {},
         "warnings": [],
         "schema_version": 1,
     }
@@ -755,6 +758,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "python_max": "3.14",
         "project_dependencies": {},
         "dependency_specifiers": {},
+        "dependency_requirements": {},
         "warnings": [],
         "schema_version": 1,
     }
@@ -907,6 +911,10 @@ METADATA = {
     "python_max": "3.14",
     "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
+    "dependency_requirements": {
+        "numpy": [{"specifier": ">=1", "marker": ""}],
+        "missing": [],
+    },
     "warnings": [],
     "schema_version": 1,
 }
@@ -932,6 +940,7 @@ def test_format_outputs() -> None:
         "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
         "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
+        "dependency-requirements": '{"numpy":[{"specifier":">=1","marker":""}],"missing":[]}',
     }
 
 
@@ -1062,6 +1071,10 @@ def test_main_github_output_writes_outputs_and_annotations(
         "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
         "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
+        "dependency-requirements": (
+            '{"dup":[{"specifier":">=1","marker":""},{"specifier":">=2","marker":""}],'
+            '"nospec":[{"specifier":"","marker":""}],"missing":[]}'
+        ),
     }
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
@@ -1103,6 +1116,10 @@ def test_build_report(tmp_path: Path) -> None:
         "python_max": "3.14",
         "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
         "dependency_specifiers": {"dup": ">=1", "missing": None},
+        "dependency_requirements": {
+            "dup": [{"specifier": ">=1", "marker": ""}, {"specifier": ">=2", "marker": ""}],
+            "missing": [],
+        },
         "warnings": [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"],
         "schema_version": 1,
     }
@@ -1243,6 +1260,7 @@ def test_format_step_summary_without_warnings() -> None:
         python_max="3.12",
         project_dependencies={},
         dependency_specifiers={},
+        dependency_requirements={},
         warnings=[],
     )
 
@@ -1269,6 +1287,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `python-matrix` | <code>&#123;&#34;python&#45;version&#34;&#58;&#91;&#34;3&#46;12&#34;&#93;&#125;</code> |\n"
         "| `project-dependencies` | <code>&#123;&#125;</code> |\n"
         "| `dependency-specifiers` | <code>&#123;&#125;</code> |\n"
+        "| `dependency-requirements` | <code>&#123;&#125;</code> |\n"
     )
 
 
@@ -1291,6 +1310,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         python_max="",
         project_dependencies={},
         dependency_specifiers={},
+        dependency_requirements={},
         warnings=["first | one", "second"],
     )
 
@@ -1669,6 +1689,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14"]}',
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
+        "dependency-requirements": "{}",
     }
     assert result.stdout == (
         "📦 name=coola version=1.2.3 requires-python= "
@@ -1931,6 +1952,10 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "python_max": "3.14",
         "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
+        "dependency_requirements": {
+            "numpy": [{"specifier": ">=1.20", "marker": ""}],
+            "pandas": [],
+        },
         "warnings": [],
         "schema_version": 1,
     }
@@ -3106,6 +3131,7 @@ def test_format_outputs_python_matrix() -> None:
         python_max="3.12",
         project_dependencies={},
         dependency_specifiers={},
+        dependency_requirements={},
         warnings=[],
     )
 
@@ -3131,6 +3157,7 @@ def test_format_outputs_python_matrix_without_allowed_version() -> None:
         python_max="",
         project_dependencies={},
         dependency_specifiers={},
+        dependency_requirements={},
         warnings=[],
     )
 
@@ -3208,6 +3235,7 @@ def test_format_outputs_normalized_version() -> None:
         python_max="",
         project_dependencies={},
         dependency_specifiers={},
+        dependency_requirements={},
         warnings=[],
     )
 
@@ -3735,6 +3763,7 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "authors",
         "urls",
         "python-matrix",
+        "dependency-requirements",
     }
 
 
@@ -3775,9 +3804,10 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     extract_metadata_module._parse_requirement.cache_clear()
 
     assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
-    # "x>=1", "y" and "w": "x>=1" and "y" are read for both outputs.
+    # "x>=1", "y" and "w": each is read again for the project dependencies ("x>=1", "y") and
+    # for the requirements of the requested packages ("x>=1", "y", "w").
     assert extract_metadata_module._parse_requirement.cache_info().misses == 3
-    assert extract_metadata_module._parse_requirement.cache_info().hits == 2
+    assert extract_metadata_module._parse_requirement.cache_info().hits == 5
 
 
 def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
@@ -4328,3 +4358,83 @@ def test_run_sh_runs_on_the_other_runners(tmp_path: Path, runner_os: str) -> Non
 
     assert result.process.returncode == 0
     assert result.calls[-1] == ["python3", str(SCRIPT_PATH), "a"]
+
+
+# --- extract_dependency_requirements ---------------------------------------------------------
+
+
+def test_extract_dependency_requirements_lists_every_requirement_with_its_marker(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        "[project]\n"
+        'dependencies = ["numpy>=1.20; python_version < \'3.12\'", '
+        '"numpy>=1.26; python_version >= \'3.12\'", "Foo_Bar"]\n\n'
+        '[project.optional-dependencies]\nx = ["numpy<3"]\n\n'
+        '[dependency-groups]\ndev = ["numpy>=2"]\n',
+    )
+
+    result = extract_dependency_requirements(
+        load_pyproject(str(path)), ["numpy", "foo.bar"], str(path)
+    )
+
+    assert result == {
+        "numpy": [
+            {"specifier": ">=1.20", "marker": 'python_version < "3.12"'},
+            {"specifier": ">=1.26", "marker": 'python_version >= "3.12"'},
+            {"specifier": "<3", "marker": ""},
+            {"specifier": ">=2", "marker": ""},
+        ],
+        "foo.bar": [{"specifier": "", "marker": ""}],
+    }
+
+
+def test_extract_dependency_requirements_not_found_is_an_empty_list() -> None:
+    data = {"project": {"dependencies": ["numpy"]}}
+
+    assert extract_dependency_requirements(data, ["missing"]) == {"missing": []}
+
+
+def test_extract_dependency_requirements_without_dependencies_is_empty() -> None:
+    assert extract_dependency_requirements({"project": {"dependencies": ["numpy"]}}, []) == {}
+
+
+def test_extract_dependency_requirements_ignores_invalid_requirements() -> None:
+    data = {"project": {"dependencies": ["not a requirement!!", "numpy>=1"]}}
+
+    assert extract_dependency_requirements(data, ["numpy"]) == {
+        "numpy": [{"specifier": ">=1", "marker": ""}]
+    }
+
+
+def test_extract_dependency_requirements_keeps_duplicates() -> None:
+    data = {"project": {"dependencies": ["numpy>=1", "numpy>=1"]}}
+
+    assert extract_dependency_requirements(data, ["numpy"]) == {
+        "numpy": [{"specifier": ">=1", "marker": ""}, {"specifier": ">=1", "marker": ""}]
+    }
+
+
+def test_extract_dependency_requirements_wrong_type() -> None:
+    with pytest.raises(MetadataError, match=r"custom.toml: \[project\].dependencies must be an array"):
+        extract_dependency_requirements({"project": {"dependencies": 1}}, ["numpy"], "custom.toml")
+
+
+def test_main_dependency_requirements_in_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\n'
+        "dependencies = [\"numpy>=1; python_version < '3.12'\", \"numpy>=2; python_version >= '3.12'\"]\n",
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]", '["numpy", "missing"]']) == 0
+    assert json.loads(capsys.readouterr().out)["dependency_requirements"] == {
+        "numpy": [
+            {"specifier": ">=1", "marker": 'python_version < "3.12"'},
+            {"specifier": ">=2", "marker": 'python_version >= "3.12"'},
+        ],
+        "missing": [],
+    }

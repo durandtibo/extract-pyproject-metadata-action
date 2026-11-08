@@ -1,0 +1,8 @@
+[project]
+name = "markers-pkg"
+version = "0.1.0"
+dependencies = [
+  "numpy>=1.20; python_version < '3.12'",
+  "numpy>=1.26; python_version >= '3.12'",
+  "plain",
+]
