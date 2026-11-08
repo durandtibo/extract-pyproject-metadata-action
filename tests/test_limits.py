@@ -21,7 +21,7 @@ def run_script(tmp_path: Path, content: str, dependencies: str = "[]") -> subpro
     """Write ``content`` to a pyproject.toml and run the script on it, with a time limit."""
     path = tmp_path / "pyproject.toml"
     path.write_text(content, encoding="utf-8")
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(
         [sys.executable, "-I", str(SCRIPT_PATH), str(path), "[]", dependencies],
         capture_output=True,
         text=True,
