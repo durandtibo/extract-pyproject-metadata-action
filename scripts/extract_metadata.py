@@ -13,6 +13,10 @@ Usage:
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
+A name of ``<dependencies-json>`` may be followed by ``@project``, ``@extra:<name>`` or
+``@group:<name>`` to look it up in ``[project].dependencies``, one extra or one dependency
+group only (``numpy@extra:fast``); the key of the result is the entry as written.
+
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
     {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
@@ -78,8 +82,13 @@ is missing the required "name"/"version" keys, a dependency table
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
 expected shape, a Python candidate is not a "major.minor" string,
 ``--fail-on-dynamic-version true`` is given and the version is dynamic,
-``--strict true`` is given and there is a warning, or ``--fail-on-missing true``
+``--strict true`` is given and there is a warning, a requested dependency has a scope that
+is not ``project``, ``extra:<name>`` or ``group:<name>``, or ``--fail-on-missing true``
 is given and a requested dependency is not found.
+
+A wrong command line (which the action never builds) prints the usage and the
+problem on stderr and exits with the code 2, as ``argparse`` does; with
+``--github-output FILE`` it is one ``::error::`` workflow command instead.
 """
 
 from __future__ import annotations
@@ -96,7 +105,7 @@ import tomllib
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple, TypedDict
+from typing import Any, NamedTuple, NoReturn, TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -107,7 +116,7 @@ from packaging.version import InvalidVersion, Version
 SCHEMA_VERSION = 1
 
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
-DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
+DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 
 # A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
 # also match before a trailing line break.
@@ -117,6 +126,9 @@ _MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
 # real release (CPython patch numbers stay below 100) and a very late one, for the specifiers that
 # have no upper bound.
 _PATCH_RELEASES = (*range(100), 9999)
+
+# The scope of the requirements of ``[project].dependencies`` (see ``_scoped_requirements``).
+_PROJECT_SCOPE = "project"
 
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit. Always used with ``fullmatch``.
@@ -802,29 +814,105 @@ def _candidate_requirements(
             of their values has the wrong type, or if a requirement of
             ``[project].dependencies`` or of an extra is not a string.
     """
+    scoped, warnings = _scoped_requirements(data, pyproject_path)
+    return [raw for _, raw in scoped], warnings
+
+
+def _scoped_requirements(
+    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """All requirement strings with the place they are declared in, in search order.
+
+    Returns:
+        A tuple ``(requirements, warnings)``, as for ``_candidate_requirements``.
+        Each requirement is a tuple ``(scope, requirement)``. ``scope`` is
+        ``"project"`` for ``[project].dependencies``, ``"extra:<name>"`` for an extra
+        and ``"group:<name>"`` for a dependency group (the requirements that its
+        ``include-group`` entries add included), with the name normalized per PEP 503.
+        Spellings of the same name share one scope.
+
+    Raises:
+        MetadataError: Under the same conditions as ``_candidate_requirements``.
+    """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    # A copy: the lists below are extended, and the parsed document must stay as it is.
-    reqs = list(
-        _check_string_array(
+    reqs = [
+        (_PROJECT_SCOPE, raw)
+        for raw in _check_string_array(
             project.get("dependencies", []), "[project].dependencies", pyproject_path
         )
-    )
+    ]
     optional_dependencies = _get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
-        reqs.extend(_check_string_array(extra_reqs, label, pyproject_path))
+        scope = f"extra:{canonicalize_name(extra)}"
+        reqs.extend((scope, raw) for raw in _check_string_array(extra_reqs, label, pyproject_path))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
         _dynamic_message(field, pyproject_path)
         for field in _dynamic_dependency_fields(data)
     ]
-    for gname in groups:
+    # _flatten_group reads every spelling of a group name (PEP 503), so each group is expanded
+    # once, from the first spelling: expanding each spelling would repeat its requirements.
+    first_spellings: dict[str, str] = {}
+    for group in groups:
+        first_spellings.setdefault(canonicalize_name(group), group)
+    for gname in first_spellings.values():
         group_reqs, group_warnings = _flatten_group(groups, gname, pyproject_path=pyproject_path)
-        reqs.extend(group_reqs)
+        scope = f"group:{canonicalize_name(gname)}"
+        reqs.extend((scope, raw) for raw in group_reqs)
         warnings.extend(group_warnings)
     return reqs, list(dict.fromkeys(warnings))
+
+
+def parse_dependencies(raw: str) -> list[str]:
+    """Parse the ``dependencies`` input: a JSON array of package names with an optional scope.
+
+    A name may be followed by ``@`` and the only place to look it up in:
+    ``name@project`` (``[project].dependencies``), ``name@extra:<extra>``
+    (``[project.optional-dependencies]``) or ``name@group:<group>``
+    (``[dependency-groups]``, ``include-group`` expanded). Without a scope, every place is
+    searched. A package name cannot contain ``@``, so the scope is unambiguous.
+
+    Args:
+        raw: The value of the input.
+
+    Returns:
+        The entries as written, in order, duplicates included.
+
+    Raises:
+        MetadataError: If ``raw`` is not a JSON array of strings, or an entry has a scope that is
+            not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name).
+    """
+    entries = parse_string_array(raw, "dependencies")
+    for entry in entries:
+        _, separator, scope = entry.partition("@")
+        kind, _, name = scope.partition(":")
+        if separator and scope != _PROJECT_SCOPE and (kind not in {"extra", "group"} or not name):
+            msg = (
+                f"dependencies entry {entry!r} has an invalid scope: it must be 'project', "
+                "'extra:<name>' or 'group:<name>' (for example 'pytest@group:dev')"
+            )
+            raise MetadataError(msg)
+    return entries
+
+
+def _lookup_key(dependency: str) -> str:
+    """Return the key of the index of the requirements for an entry of ``dependencies``.
+
+    Args:
+        dependency: An entry, as returned by ``parse_dependencies``.
+
+    Returns:
+        The normalized package name (PEP 503), followed by ``@`` and the normalized scope for
+        an entry with a scope, as ``_index_dependencies`` stores them.
+    """
+    name, separator, scope = dependency.partition("@")
+    if not separator:
+        return canonicalize_name(name)
+    kind, colon, scope_name = scope.partition(":")
+    return f"{canonicalize_name(name)}@{kind}{colon}{canonicalize_name(scope_name)}"
 
 
 @functools.lru_cache(maxsize=None)
@@ -832,8 +920,8 @@ def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
     """Parse a requirement string, once per distinct string.
 
     ``build_report`` reads the requirements of ``[project].dependencies`` twice (for
-    ``project-dependencies`` and for the lookup of ``dependencies``): the cache
-    makes each string parsed only once.
+    ``project-dependencies`` and in the index of all the requirements that the
+    lookups of ``dependencies`` share): the cache makes each string parsed only once.
 
     Args:
         raw: The requirement string.
@@ -932,7 +1020,8 @@ def extract_dependency_specifiers(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies: Package names to look up, as returned by
-            ``parse_string_array``.
+            ``parse_dependencies``: a name may be followed by ``@`` and a scope that limits
+            the lookup to ``[project].dependencies``, one extra or one group.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
 
@@ -953,17 +1042,68 @@ def extract_dependency_specifiers(
             type, or a requirement of ``[project].dependencies`` or of an extra
             is not a string.
     """
-    # Like invalid requirements below, structure warnings are only worth
-    # reporting when the caller looks something up.
-    candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
-    found, _, invalid_warnings = _index_requirements(candidates, pyproject_path)
-    # An invalid requirement is only worth a warning when the caller looks
-    # something up: it may be the very entry that was meant to be found.
-    warnings = [*structure_warnings, *invalid_warnings] if dependencies else []
+    found, index_warnings = _index_dependencies(data, pyproject_path)
+    return _specifiers_from_index(found, index_warnings, dependencies, pyproject_path)
+
+
+def _index_dependencies(
+    data: dict[str, Any], pyproject_path: str
+) -> tuple[dict[str, list[tuple[str, str | None]]], list[str]]:
+    """Index every requirement of the file by package, once for all the lookups.
+
+    Args:
+        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
+        pyproject_path: Path of the file ``data`` was read from, used only in
+            error and warning messages.
+
+    Returns:
+        A tuple ``(found, warnings)``. ``found`` is the first result of
+        ``_index_requirements`` on the requirements of ``_scoped_requirements``
+        (in search order), keyed by normalized package name. It also has, for each
+        place that declares requirements, the same index of the requirements of that
+        place only under the key ``"<name>@<scope>"`` (for example ``"numpy@extra:x"``,
+        see ``_lookup_key``), for the entries of ``dependencies`` that have a scope.
+        ``warnings`` lists the warnings of both: dynamic dependency fields,
+        include-group problems and invalid requirements.
+
+    Raises:
+        MetadataError: Under the same conditions as ``_scoped_requirements``.
+    """
+    scoped, structure_warnings = _scoped_requirements(data, pyproject_path)
+    found, _, invalid_warnings = _index_requirements([raw for _, raw in scoped], pyproject_path)
+    for scope in dict.fromkeys(scope for scope, _ in scoped):
+        in_scope, _, _ = _index_requirements(
+            [raw for other, raw in scoped if other == scope], pyproject_path
+        )
+        found.update({f"{key}@{scope}": matches for key, matches in in_scope.items()})
+    return found, [*structure_warnings, *invalid_warnings]
+
+
+def _specifiers_from_index(
+    found: dict[str, list[tuple[str, str | None]]],
+    index_warnings: list[str],
+    dependencies: list[str],
+    pyproject_path: str,
+) -> tuple[dict[str, str | None], list[str]]:
+    """Look up the specifier of each requested package in an index of the requirements.
+
+    Args:
+        found: The index, as returned by ``_index_dependencies``.
+        index_warnings: The warnings returned with the index. They are only
+            worth reporting when ``dependencies`` is not empty: an invalid
+            requirement may be the very entry that was meant to be found.
+        dependencies: Package names to look up, with their optional scope.
+        pyproject_path: Path of the file, used in the warning messages.
+
+    Returns:
+        A tuple ``(specifiers, warnings)``, as returned by
+        ``extract_dependency_specifiers``.
+    """
+    warnings = list(index_warnings) if dependencies else []
 
     result: dict[str, str | None] = {}
     for dep in dependencies:
-        matches = found.get(canonicalize_name(dep))
+        matches = found.get(_lookup_key(dep))
         if not matches:
             result[dep] = None
             continue
@@ -987,7 +1127,8 @@ def extract_dependency_requirements(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies: Package names to look up, as returned by
-            ``parse_string_array``.
+            ``parse_dependencies``: a name may be followed by ``@`` and a scope that limits
+            the lookup to ``[project].dependencies``, one extra or one group.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error messages.
 
@@ -1002,12 +1143,26 @@ def extract_dependency_requirements(
     Raises:
         MetadataError: Under the same conditions as ``extract_dependency_specifiers``.
     """
-    candidates, _ = _candidate_requirements(data, pyproject_path)
-    found, _, _ = _index_requirements(candidates, pyproject_path)
+    found, _ = _index_dependencies(data, pyproject_path)
+    return _requirements_from_index(found, dependencies)
+
+
+def _requirements_from_index(
+    found: dict[str, list[tuple[str, str | None]]], dependencies: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """List the requirements of each requested package in an index of the requirements.
+
+    Args:
+        found: The index, as returned by ``_index_dependencies``.
+        dependencies: Package names to look up, with their optional scope.
+
+    Returns:
+        The mapping returned by ``extract_dependency_requirements``.
+    """
     return {
         dep: [
             {"specifier": specifier, "marker": marker or ""}
-            for specifier, marker in found.get(canonicalize_name(dep), [])
+            for specifier, marker in found.get(_lookup_key(dep), [])
         ]
         for dep in dependencies
     }
@@ -1447,11 +1602,34 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
         raise MetadataError(msg) from exc
 
 
-def _build_parser(prog: str) -> argparse.ArgumentParser:
+class _ArgumentParser(argparse.ArgumentParser):
+    """An argument parser whose usage errors can be GitHub error annotations.
+
+    Attributes:
+        annotate: Whether ``error`` prints a ``::error::`` workflow command (so that GitHub shows
+            an error annotation) instead of the usage and the message.
+    """
+
+    annotate = False
+
+    def error(self, message: str) -> NoReturn:
+        """Print the usage error on stderr and exit with the code 2, like ``argparse``.
+
+        Args:
+            message: What is wrong with the command line.
+        """
+        text = f"{self.format_usage().rstrip()}\n{self.prog}: error: {message}"
+        if self.annotate:
+            text = f"::error::{escape_annotation(text)}"
+        print(text, file=sys.stderr)
+        self.exit(2)
+
+
+def _build_parser(prog: str) -> _ArgumentParser:
     """Build the command line parser."""
     # ``__doc__`` is None when Python runs with -OO, which strips docstrings.
     description = (__doc__ or "").split("\n", 1)[0]
-    parser = argparse.ArgumentParser(prog=prog, description=description)
+    parser = _ArgumentParser(prog=prog, description=description)
     parser.add_argument(
         "--github-output",
         metavar="FILE",
@@ -1519,21 +1697,25 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         options = parse_options(args)
     data = load_pyproject(args.pyproject_path)
     extra_values = parse_string_array(args.extra_values, "extra-values")
-    dependencies = parse_string_array(args.dependencies, "dependencies")
+    dependencies = parse_dependencies(args.dependencies)
     python_candidates = parse_python_candidates(args.python_candidates)
     metadata, warnings = extract_metadata(
         data, extra_values, args.pyproject_path, options.fail_on_dynamic_version
     )
-    specifiers, specifier_warnings = extract_dependency_specifiers(
-        data, dependencies, args.pyproject_path
-    )
+    # Computed in the order of their warnings in the report: the metadata, the Python versions,
+    # the dependencies of the project, then the lookups of the requested dependencies.
     python_versions, python_warnings = compatible_python_versions(
         metadata["requires_python"], python_candidates, args.pyproject_path
     )
-    requirements = extract_dependency_requirements(data, dependencies, args.pyproject_path)
     project_dependencies, project_warnings = extract_project_dependencies(
         data, args.pyproject_path
     )
+    # The requirements of the file are read and parsed once, for both lookups.
+    found, index_warnings = _index_dependencies(data, args.pyproject_path)
+    specifiers, specifier_warnings = _specifiers_from_index(
+        found, index_warnings, dependencies, args.pyproject_path
+    )
+    requirements = _requirements_from_index(found, dependencies)
     warnings.extend(python_warnings)
     warnings.extend(project_warnings)
     warnings.extend(specifier_warnings)
@@ -1601,8 +1783,11 @@ def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
 
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit code."""
+    parser = _build_parser(Path(argv[0]).name)
+    # The arguments are not parsed yet when one is wrong: look for the option as it is written.
+    parser.annotate = any(arg.split("=", 1)[0] == "--github-output" for arg in argv[1:])
     try:
-        args = _build_parser(Path(argv[0]).name).parse_args(argv[1:])
+        args = parser.parse_args(argv[1:])
     except SystemExit as exc:  # argparse exits on bad arguments and on --help
         return exc.code if isinstance(exc.code, int) else 2
 
