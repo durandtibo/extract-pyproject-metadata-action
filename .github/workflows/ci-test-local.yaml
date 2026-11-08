@@ -677,6 +677,33 @@ jobs:
           assert_equal "outcome" "failure" "${{ steps.test-missing-python-executable.outcome }}"
           print_success "python-executable test passed"
 
+      # -----------------------------------------------------------------------
+      # Test 27: no python-candidates version is allowed by requires-python
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test python-versions when no candidate is allowed
+        id: test-no-python-version
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9"]'
+
+      - name: 🧪 Test strict when no candidate is allowed (should fail)
+        id: test-no-python-version-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9"]'
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify the empty python-versions warning
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "python-versions" '[]' '${{ steps.test-no-python-version.outputs.python-versions }}'
+          assert_equal "python-matrix" '{"python-version":[]}' '${{ steps.test-no-python-version.outputs.python-matrix }}'
+          assert_equal "outcome" "failure" "${{ steps.test-no-python-version-strict.outcome }}"
+          print_success "empty python-versions test passed"
+
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
     runs-on: windows-latest
