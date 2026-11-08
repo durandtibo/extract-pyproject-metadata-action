@@ -137,7 +137,10 @@ example `version = "1.2.3"` with `dynamic = ["version"]`) is invalid per
 the static value. With `strict: "true"` this warning fails the step.
 
 The step also prints a one-line `📦` summary of the outputs in the log, with line
-breaks in the values escaped, to help debugging a workflow. With
+breaks in the values escaped, to help debugging a workflow. The line shows
+`name`, `version`, `requires-python`, `python-versions`, `python-min`, `extras`,
+`groups`, `project-dependencies`, `dependency-specifiers`; it leaves out
+`normalized-name` (derived from `name`) and `description` (it may be long). With
 `step-summary: "true"`, the outputs and the warnings are also written to the job
 summary of the run as a Markdown table (values are escaped, so a value from
 `pyproject.toml` cannot add Markdown or HTML to the page). When the step fails,
