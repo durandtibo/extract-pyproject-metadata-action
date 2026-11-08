@@ -702,7 +702,7 @@ jobs:
           print_success "python-executable test passed"
 
       # -----------------------------------------------------------------------
-      # Test 28: dependencies with a scope
+      # Test 29: dependencies with a scope
       # -----------------------------------------------------------------------
       - name: 🧪 Test dependencies with a scope
         id: test-dependency-scopes
@@ -727,7 +727,7 @@ jobs:
           print_success "dependency scopes test passed"
 
       # -----------------------------------------------------------------------
-      # Test 27: build-backend and build-requires outputs
+      # Test 30: build-backend and build-requires outputs
       # -----------------------------------------------------------------------
       - name: 🧪 Test build-backend and build-requires outputs
         id: test-build-system
