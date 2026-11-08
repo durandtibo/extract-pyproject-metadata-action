@@ -1,4 +1,7 @@
-r"""Extract project name, version, and optional-dependency extras from a pyproject.toml.
+r"""Extract project metadata and dependency specifiers from a pyproject.toml.
+
+The metadata is the project name, version, ``requires-python``, optional-dependency
+extras and dependency groups.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
