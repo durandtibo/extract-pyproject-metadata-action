@@ -221,6 +221,9 @@ The action's step fails (non-zero exit) when:
 - `[project].dependencies` or a value of `[project.optional-dependencies]` or
   `[dependency-groups]` is not an array, `[dependency-groups]` is not a table,
   or an `include-group` value is not a string.
+- An entry of a `[dependency-groups]` group is neither a string nor a table whose
+  only key is `include-group` (for example a typo such as
+  `{include_group = "lint"}`). It used to be ignored silently.
 - A requirement of `[project].dependencies` or of a `[project.optional-dependencies]`
   extra is not a string (for example `dependencies = ["numpy", 1]`). It used to be
   ignored silently.
