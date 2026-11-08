@@ -52,6 +52,13 @@ inputs:
     required: false
     default: '["3.10","3.11","3.12","3.13","3.14"]'
 
+  fail-on-dynamic-version:
+    description: >
+      Set to "true" to fail when the version is listed in [project].dynamic,
+      instead of reporting an empty version with a warning ("true" or "false")
+    required: false
+    default: "false"
+
 outputs:
   name:
     description: Project name, as declared in [project].name
@@ -102,6 +109,7 @@ runs:
         DEPENDENCIES: ${{ inputs.dependencies }}
         FAIL_ON_MISSING: ${{ inputs.fail-on-missing }}
         PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
+        FAIL_ON_DYNAMIC_VERSION: ${{ inputs.fail-on-dynamic-version }}
       run: |
         set -euo pipefail
 
@@ -134,4 +142,5 @@ runs:
           --github-output "$GITHUB_OUTPUT" \
           --fail-on-missing "$FAIL_ON_MISSING" \
           --python-candidates "$PYTHON_CANDIDATES" \
+          --fail-on-dynamic-version "$FAIL_ON_DYNAMIC_VERSION" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"
