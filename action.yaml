@@ -101,7 +101,6 @@ runs:
           if venv="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/extract-pyproject-metadata-venv.XXXXXX")" &&
             python3 -m venv --system-site-packages "$venv"; then
             python="$venv/bin/python"
-            [ -x "$python" ] || python="$venv/Scripts/python.exe" # Windows
             "$python" -m pip install --quiet --disable-pip-version-check \
               packaging 'tomli; python_version < "3.11"' || python=""
           else
