@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import importlib.util
 import re
@@ -9,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from packaging.requirements import InvalidRequirement, Requirement
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -17,11 +19,14 @@ from extract_metadata import (  # noqa: E402
     Metadata,
     MetadataError,
     Report,
+    build_report,
+    emit_github_output,
     DEFAULT_PYTHON_CANDIDATES,
     check_no_missing_dependency,
     extract_dependency_specifiers,
     _candidate_requirements,
     _check_array,
+    _check_requirements,
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
@@ -30,16 +35,21 @@ from extract_metadata import (  # noqa: E402
     compatible_python_versions,
     escape_annotation,
     escape_annotation_property,
+    format_error,
     extract_metadata,
     extract_project_dependencies,
     format_outputs,
+    format_step_summary,
     format_summary,
     load_pyproject,
+    lowest_python_version,
     main,
     parse_bool,
     parse_python_candidates,
     parse_string_array,
+    resolve_step_summary,
     write_github_output,
+    write_step_summary,
 )
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
@@ -106,7 +116,57 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
 
     metadata = extract(path)
 
-    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "1.2.3", "requires_python": "", "extras": [], "groups": []}
+    assert metadata == {
+        "name": "coola",
+        "normalized_name": "coola",
+        "version": "1.2.3",
+        "description": "",
+        "requires_python": "",
+        "extras": [],
+        "groups": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("project", "expected"),
+    [
+        ('description = "A fast library"', "A fast library"),
+        ('description = ""', ""),
+        ('description = "Line one\\nline two"', "Line one\nline two"),
+        ('description = "Héllo ✓"', "Héllo ✓"),
+        ('dynamic = ["description"]', ""),
+        ("", ""),
+    ],
+)
+def test_extract_metadata_description(tmp_path: Path, project: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "coola"\nversion = "1"\n{project}\n')
+
+    assert extract(path)["description"] == expected
+
+
+@pytest.mark.parametrize("value", ["1", "true", '["a"]', "{a = 1}"])
+def test_extract_metadata_description_must_be_a_string(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(
+        tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndescription = {value}\n'
+    )
+
+    with pytest.raises(MetadataError, match=r"p\.toml: \[project\]\.description must be a string, got: "):
+        extract_metadata(load_pyproject(str(path)), [], "p.toml")
+
+
+def test_main_description_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\ndescription = "Two\\nlines"\n'
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["description"] == "Two\nlines"
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["description"] == "Two\nlines"
+    assert "description=" not in capsys.readouterr().out
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -242,7 +302,15 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
     )
     metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
 
-    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
+    assert metadata == {
+        "name": "coola",
+        "normalized_name": "coola",
+        "version": "",
+        "description": "",
+        "requires_python": "",
+        "extras": [],
+        "groups": [],
+    }
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
 
@@ -286,10 +354,12 @@ def test_main_dynamic_version_warning_in_json(
         "name": "coola",
         "normalized_name": "coola",
         "version": "",
+        "description": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "python_min": "3.10",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
@@ -399,10 +469,12 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "python_min": "3.10",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
@@ -470,10 +542,12 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "python_min": "3.10",
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
@@ -613,10 +687,12 @@ METADATA = {
     "name": "coola",
     "normalized_name": "coola",
     "version": "1.2.3",
+    "description": "",
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
     "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+    "python_min": "3.10",
     "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "warnings": [],
@@ -628,10 +704,12 @@ def test_format_outputs() -> None:
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
+        "python-min": "3.10",
         "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
     }
@@ -749,22 +827,390 @@ def test_main_github_output_writes_outputs_and_annotations(
         "name": "p",
         "normalized-name": "p",
         "version": "1",
+        "description": "",
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
+        "python-min": "3.10",
         "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         "📦 name=p version=1 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] extras=["","a"] '
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 extras=["","a"] '
         'groups=["base","dev","other"] '
         'project-dependencies={"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"} '
         'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
     )
     assert captured.err == ""
+
+
+def parse_args(*argv: str) -> argparse.Namespace:
+    """Parse a command line like ``main`` does."""
+    return extract_metadata_module._build_parser("extract_metadata.py").parse_args(list(argv))
+
+
+def test_build_report(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    report = build_report(parse_args(str(path), '[""]', '["dup", "missing"]'))
+
+    assert report == {
+        "name": "p",
+        "normalized_name": "p",
+        "version": "1",
+        "description": "",
+        "requires_python": "",
+        "extras": ["", "a"],
+        "groups": ["base", "dev", "other"],
+        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "python_min": "3.10",
+        "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
+        "dependency_specifiers": {"dup": ">=1", "missing": None},
+        "warnings": [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("argv", "match"),
+    [
+        (["--fail-on-missing", "maybe", "{path}", "[]"], r"fail-on-missing must be 'true' or 'false'"),
+        (["--fail-on-dynamic-version", "maybe", "{path}", "[]"], r"fail-on-dynamic-version must be"),
+        (["--python-candidates", "[3]", "{path}", "[]"], r"python-candidates must be a JSON array of strings"),
+        (["--fail-on-missing", "true", "{path}", "[]", '["missing"]'], r"dependencies not found"),
+        (["{path}", "nope"], r"extra-values is not valid JSON"),
+        (["{path}", "[]", "nope"], r"dependencies is not valid JSON"),
+        (["missing.toml", "[]"], r"pyproject\.toml not found at: missing\.toml"),
+    ],
+)
+def test_build_report_errors(tmp_path: Path, argv: list[str], match: str) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    argv = [arg.replace("{path}", str(path)) for arg in argv]
+
+    with pytest.raises(MetadataError, match=match):
+        build_report(parse_args(*argv))
+
+
+def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    with pytest.raises(
+        MetadataError,
+        match=r"^strict is 'true' and there are 1 warning\(s\):\n- dup has different specifiers in ",
+    ):
+        build_report(parse_args("--strict", "true", str(path), "[]", '["dup"]'))
+
+
+def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\nrequires-python = "nope"\n'
+        'dependencies = ["bad requirement!!"]\n',
+    )
+
+    with pytest.raises(MetadataError) as excinfo:
+        build_report(parse_args("--strict", "true", str(path), "[]"))
+
+    lines = str(excinfo.value).splitlines()
+    assert lines[0] == "strict is 'true' and there are 2 warning(s):"
+    assert lines[1].startswith("- ")
+    assert lines[2].startswith("- ")
+
+
+def test_build_report_strict_without_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    report = build_report(parse_args("--strict", "true", str(path), "[]"))
+
+    assert report["warnings"] == []
+
+
+def test_build_report_not_strict_keeps_the_warnings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    report = build_report(parse_args("--strict", "false", str(path), "[]", '["dup"]'))
+
+    assert len(report["warnings"]) == 1
+
+
+def test_main_strict_fails_without_writing_the_outputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    output = tmp_path / "out"
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(output), "--strict", "true", str(path), "[]", '["dup"]']
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.err.startswith(f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- dup")
+    assert captured.out == ""
+    assert not output.exists()
+
+
+def test_main_invalid_strict_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", "--strict", "maybe", str(path), "[]"]) == 1
+    assert "strict must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
+
+
+def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output = tmp_path / "github_output"
+    report = build_report(parse_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["dup"]'))
+
+    emit_github_output(report, "my,file.toml", str(output))
+
+    out_lines = capsys.readouterr().out.splitlines()
+    assert out_lines[0].startswith("::warning file=my%2Cfile.toml::dup has different specifiers")
+    assert out_lines[1].startswith("📦 name=p version=1 ")
+    assert len(out_lines) == 2
+    assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("coola", "<code>coola</code>"),
+        ("", ""),
+        ("a b", "<code>a b</code>"),
+        ("a|b", "<code>a&#124;b</code>"),
+        ("<b>x</b>", "<code>&#60;b&#62;x&#60;&#47;b&#62;</code>"),
+        ("snake_case*", "<code>snake&#95;case&#42;</code>"),
+        ("a\nb", "<code>a&#92;nb</code>"),
+        ("`x`", "<code>&#96;x&#96;</code>"),
+    ],
+)
+def test_html_cell(value: str, expected: str) -> None:
+    assert extract_metadata_module._html_cell(value) == expected
+
+
+def test_format_step_summary_without_warnings() -> None:
+    report = Report(
+        name="coola",
+        normalized_name="coola",
+        version="1.2.3",
+        description="",
+        requires_python="",
+        extras=["", "a"],
+        groups=[],
+        python_versions=["3.12"],
+        python_min="3.12",
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=[],
+    )
+
+    assert format_step_summary(report, format_outputs(report)) == (
+        "### 📦 Project metadata\n"
+        "\n"
+        "| Output | Value |\n"
+        "| --- | --- |\n"
+        "| `name` | <code>coola</code> |\n"
+        "| `normalized-name` | <code>coola</code> |\n"
+        "| `version` | <code>1&#46;2&#46;3</code> |\n"
+        "| `description` |  |\n"
+        "| `requires-python` |  |\n"
+        "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
+        "| `groups` | <code>&#91;&#93;</code> |\n"
+        "| `python-versions` | <code>&#91;&#34;3&#46;12&#34;&#93;</code> |\n"
+        "| `python-min` | <code>3&#46;12</code> |\n"
+        "| `project-dependencies` | <code>&#123;&#125;</code> |\n"
+        "| `dependency-specifiers` | <code>&#123;&#125;</code> |\n"
+    )
+
+
+def test_format_step_summary_lists_the_warnings() -> None:
+    report = Report(
+        name="a",
+        normalized_name="a",
+        version="1",
+        description="",
+        requires_python="",
+        extras=[],
+        groups=[],
+        python_versions=[],
+        python_min="",
+        project_dependencies={},
+        dependency_specifiers={},
+        warnings=["first | one", "second"],
+    )
+
+    summary = format_step_summary(report, format_outputs(report))
+
+    assert summary.endswith(
+        "\n#### ⚠️ Warnings\n\n- <code>first &#124; one</code>\n- <code>second</code>\n"
+    )
+
+
+def test_write_step_summary_appends(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.md"
+    summary.write_text("before\n")
+
+    write_step_summary(str(summary), "# Title\n")
+    write_step_summary(str(summary), "again\n")
+
+    assert summary.read_text() == "before\n# Title\n\nagain\n\n"
+
+
+@pytest.mark.parametrize(
+    ("value", "environ", "expected"),
+    [
+        ("false", {}, None),
+        ("false", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, None),
+        ("true", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
+        (" TRUE ", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
+    ],
+)
+def test_resolve_step_summary(value: str, environ: dict[str, str], expected: str | None) -> None:
+    assert resolve_step_summary(value, environ) == expected
+
+
+@pytest.mark.parametrize("environ", [{}, {"GITHUB_STEP_SUMMARY": ""}])
+def test_resolve_step_summary_without_the_environment_variable(environ: dict[str, str]) -> None:
+    with pytest.raises(MetadataError, match=r"step-summary is 'true' but .*GITHUB_STEP_SUMMARY"):
+        resolve_step_summary("true", environ)
+
+
+def test_resolve_step_summary_invalid_value() -> None:
+    with pytest.raises(MetadataError, match=r"step-summary must be 'true' or 'false', got: 'maybe'"):
+        resolve_step_summary("maybe", {})
+
+
+def test_main_step_summary_writes_the_job_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(tmp_path / "out"),
+            "--step-summary",
+            "true",
+            str(path),
+            "[]",
+            '["dup"]',
+        ]
+    )
+
+    assert exit_code == 0
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("### 📦 Project metadata\n")
+    assert "| `name` | <code>p</code> |" in text
+    assert "#### ⚠️ Warnings" in text
+    assert "<code>dup has different specifiers" in text
+    capsys.readouterr()
+
+
+def test_main_step_summary_is_off_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert not summary.exists()
+
+
+def test_main_step_summary_without_json_output_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    assert main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "p"
+    assert summary.read_text(encoding="utf-8").startswith("### 📦 Project metadata\n")
+
+
+@pytest.mark.parametrize(
+    ("step_summary", "has_variable", "message"),
+    [
+        ("maybe", True, "step-summary must be 'true' or 'false'"),
+        ("true", False, "GITHUB_STEP_SUMMARY is not set"),
+    ],
+)
+def test_main_step_summary_errors_return_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    step_summary: str,
+    has_variable: bool,
+    message: str,
+) -> None:
+    if has_variable:
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
+    else:
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    path = write_pyproject(tmp_path, DEPS_TOML)
+
+    exit_code = main(["extract_metadata.py", "--step-summary", step_summary, str(path), "[]"])
+
+    assert exit_code == 1
+    assert message in capsys.readouterr().err
+    assert not (tmp_path / "summary.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("message", "pyproject_path", "annotate", "expected"),
+    [
+        ("boom", "p.toml", False, "boom"),
+        ("a\nb", "p.toml", False, "a\nb"),
+        ("boom", "p.toml", True, "::error file=p.toml::boom"),
+        ("50%\nnext\r", "a,b:c.toml", True, "::error file=a%2Cb%3Ac.toml::50%25%0Anext%0D"),
+    ],
+)
+def test_format_error(message: str, pyproject_path: str, annotate: bool, expected: str) -> None:
+    assert format_error(message, pyproject_path, annotate) == expected
+
+
+def test_main_error_is_a_plain_message_without_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "nope.toml"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    captured = capsys.readouterr()
+
+    assert captured.err == f"pyproject.toml not found at: {path}\n"
+    assert captured.out == ""
+
+
+def test_main_error_is_an_annotation_with_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "nope.toml"
+
+    exit_code = main(
+        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.err == f"::error file={path}::pyproject.toml not found at: {path}\n"
+
+
+def test_main_error_annotation_cannot_inject_a_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = 3\n')
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert len(captured.err.splitlines()) == 1
+    assert captured.err.startswith("::error file=")
 
 
 @pytest.mark.parametrize(
@@ -829,16 +1275,18 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
+        "python-min": "3.10",
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
     }
     assert result.stdout == (
         "📦 name=coola version=1.2.3 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] extras=["","numpy"] groups=[] '
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 extras=["","numpy"] groups=[] '
         "project-dependencies={} dependency-specifiers={}\n"
     )
 
@@ -934,12 +1382,51 @@ def test_candidate_requirements_empty() -> None:
     assert _candidate_requirements({}) == ([], [])
 
 
-def test_candidate_requirements_ignores_non_string_entries() -> None:
-    data = {
-        "project": {"dependencies": ["a", 1, None], "optional-dependencies": {"x": [{"b": 1}, "c"]}}
-    }
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        (
+            {"project": {"dependencies": ["a", 1]}},
+            r"p\.toml: \[project\]\.dependencies must contain only strings, got: 1",
+        ),
+        (
+            {"project": {"dependencies": [None]}},
+            r"\[project\]\.dependencies must contain only strings, got: None",
+        ),
+        (
+            {"project": {"optional-dependencies": {"x": ["c", {"b": 1}]}}},
+            r"\[project\.optional-dependencies\]\.x must contain only strings, got: \{'b': 1\}",
+        ),
+    ],
+)
+def test_candidate_requirements_non_string_entries(data: dict, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _candidate_requirements(data, "p.toml")
 
-    assert _candidate_requirements(data)[0] == ["a", "c"]
+
+def test_candidate_requirements_does_not_modify_the_data() -> None:
+    data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
+
+    assert _candidate_requirements(data)[0] == ["a", "b"]
+    assert data == {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
+
+
+@pytest.mark.parametrize("value", [[], ["a"], ["a", "B_c>=1"]])
+def test_check_requirements_returns_the_strings(value: list[str]) -> None:
+    assert _check_requirements(value, "[x]", "p.toml") == value
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ("a", r"^p\.toml: \[x\] must be an array, got: 'a'"),
+        (["a", 2], r"^p\.toml: \[x\] must contain only strings, got: 2$"),
+        ([["a"]], r"^p\.toml: \[x\] must contain only strings, got: \['a'\]$"),
+    ],
+)
+def test_check_requirements_wrong_types(value: object, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        _check_requirements(value, "[x]", "p.toml")
 
 
 @pytest.mark.parametrize(
@@ -1044,10 +1531,12 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "python_min": "3.10",
         "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
@@ -1776,7 +2265,7 @@ def test_main_fail_on_missing_true_fails_for_a_missing_dependency(
 
     assert exit_code == 1
     assert captured.err == (
-        f"{path}: dependencies not found in [project].dependencies, "
+        f"::error file={path}::{path}: dependencies not found in [project].dependencies, "
         "[project.optional-dependencies] or [dependency-groups]: ['missing', 'other']\n"
     )
     assert captured.out == ""
@@ -1919,7 +2408,7 @@ def test_extract_metadata_valid_names(tmp_path: Path, name: str) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB", "a\\nb", " a", "a "],
+    ["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB", "a\\nb", " a", "a ", "a\\n"],
 )
 def test_extract_metadata_invalid_names(tmp_path: Path, name: str) -> None:
     path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
@@ -2065,7 +2554,8 @@ def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    "raw", ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]']
+    "raw",
+    ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]', '["3.12\\n"]'],
 )
 def test_parse_python_candidates_not_major_minor(raw: str) -> None:
     with pytest.raises(MetadataError, match=r"python-candidates must contain 'major.minor' versions"):
@@ -2076,6 +2566,66 @@ def test_parse_python_candidates_not_major_minor(raw: str) -> None:
 def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
     with pytest.raises(MetadataError, match=r"python-candidates (is not valid JSON|must be a JSON array)"):
         parse_python_candidates(raw)
+
+
+@pytest.mark.parametrize(
+    ("versions", "expected"),
+    [
+        ([], ""),
+        (["3.12"], "3.12"),
+        (["3.11", "3.12", "3.13"], "3.11"),
+        (["3.13", "3.11", "3.12"], "3.11"),
+        (["3.10", "3.9"], "3.9"),
+        (["3.10", "3.2", "2.7"], "2.7"),
+        (("3.10", "3.9"), "3.9"),
+    ],
+)
+def test_lowest_python_version(versions: list[str], expected: str) -> None:
+    assert lowest_python_version(versions) == expected
+
+
+def test_main_python_min_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["python_min"] == "3.11"
+
+
+def test_main_python_min_is_empty_without_allowed_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
+    )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (report["python_versions"], report["python_min"]) == ([], "")
+
+
+def test_main_python_min_compares_versions_as_numbers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    exit_code = main(
+        ["extract_metadata.py", "--python-candidates", '["3.10","3.9"]', str(path), "[]"]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["python_min"] == "3.9"
+
+
+def test_main_github_output_python_min(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.13"\n'
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["python-min"] == "3.13"
 
 
 def test_main_python_versions_in_json(
@@ -2197,6 +2747,69 @@ def test_readme_default_of_python_candidates_matches_the_script() -> None:
     assert f"| `{DEFAULT_PYTHON_CANDIDATES}` |" in readme
 
 
+def test_parse_requirement_valid() -> None:
+    requirement = extract_metadata_module._parse_requirement("Foo_Bar[x]>=1; python_version<'3.12'")
+
+    assert isinstance(requirement, Requirement)
+    assert (requirement.name, str(requirement.specifier)) == ("Foo_Bar", ">=1")
+
+
+def test_parse_requirement_invalid_is_returned_not_raised() -> None:
+    error = extract_metadata_module._parse_requirement("bad requirement!!")
+
+    assert isinstance(error, InvalidRequirement)
+
+
+def test_parse_requirement_is_called_once_per_distinct_string() -> None:
+    parse = extract_metadata_module._parse_requirement
+    parse.cache_clear()
+
+    assert parse("numpy>=1") is parse("numpy>=1")
+    assert parse("bad!!") is parse("bad!!")
+    assert parse.cache_info().misses == 2
+
+
+def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\ndependencies = ["x>=1", "y"]\n\n'
+        '[project.optional-dependencies]\nz = ["w"]\n',
+    )
+    extract_metadata_module._parse_requirement.cache_clear()
+
+    assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
+    # "x>=1", "y" and "w": "x>=1" and "y" are read for both outputs.
+    assert extract_metadata_module._parse_requirement.cache_info().misses == 3
+    assert extract_metadata_module._parse_requirement.cache_info().hits == 2
+
+
+def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
+    parser = extract_metadata_module._build_parser("extract_metadata.py")
+
+    assert parser.description == extract_metadata_module.__doc__.splitlines()[0]
+
+
+def test_build_parser_without_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Python runs with -OO strip the docstrings.
+    monkeypatch.setattr(extract_metadata_module, "__doc__", None)
+
+    assert extract_metadata_module._build_parser("extract_metadata.py").description == ""
+
+
+def test_script_runs_with_stripped_docstrings(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+
+    result = subprocess.run(
+        [sys.executable, "-OO", str(SCRIPT_PATH), str(path), "[]"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["name"] == "coola"
+
+
 def test_extract_project_dependencies() -> None:
     data = {"project": {"dependencies": ["numpy>=1.20,<3", "Foo_Bar", "tqdm[extra]~=4.0"]}}
 
@@ -2246,11 +2859,22 @@ def test_extract_project_dependencies_keeps_the_first_spelling_of_the_name() -> 
     ]
 
 
-def test_extract_project_dependencies_ignores_non_string_entries() -> None:
-    assert extract_project_dependencies({"project": {"dependencies": ["a", 1, None, {"b": 1}]}}) == (
-        {"a": ""},
-        [],
+def test_extract_project_dependencies_non_string_entry() -> None:
+    with pytest.raises(
+        MetadataError, match=r"p\.toml: \[project\]\.dependencies must contain only strings, got: 1"
+    ):
+        extract_project_dependencies({"project": {"dependencies": ["a", 1]}}, "p.toml")
+
+
+def test_main_non_string_requirement_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1"\ndependencies = ["a", 1]\n'
     )
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert "[project].dependencies must contain only strings, got: 1" in capsys.readouterr().err
 
 
 def test_extract_project_dependencies_invalid_requirement_warns() -> None:
@@ -2409,7 +3033,7 @@ def test_test_requirements_include_the_script_requirements() -> None:
 def test_format_summary() -> None:
     assert format_summary(format_outputs(METADATA)) == (
         "📦 name=coola version=1.2.3 requires-python=>=3.10 "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14"] extras=["","numpy"] '
+        'python-versions=["3.10","3.11","3.12","3.13","3.14"] python-min=3.10 extras=["","numpy"] '
         'groups=["dev","test"] '
         'project-dependencies={"numpy":">=1","Foo_Bar":""} '
         'dependency-specifiers={"numpy":">=1","missing":null}'

@@ -349,6 +349,9 @@ jobs:
           assert_equal "python-versions" '["3.10","3.11","3.12","3.13","3.14"]' '${{ steps.test-python-versions.outputs.python-versions }}'
           assert_equal "python-versions" '["3.10","3.12"]' '${{ steps.test-python-candidates.outputs.python-versions }}'
           assert_equal "python-versions" '["3.9","3.12"]' '${{ steps.test-python-versions-undeclared.outputs.python-versions }}'
+          assert_equal "python-min" "3.10" "${{ steps.test-python-versions.outputs.python-min }}"
+          assert_equal "python-min" "3.10" "${{ steps.test-python-candidates.outputs.python-min }}"
+          assert_equal "python-min" "3.9" "${{ steps.test-python-versions-undeclared.outputs.python-min }}"
           print_success "python-versions test passed"
 
       - name: 🧪 Test invalid python-candidates (should fail)
@@ -439,6 +442,119 @@ jobs:
             exit 1
           fi
           print_success "invalid fail-on-dynamic-version correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 18: step-summary input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test step-summary
+        id: test-step-summary
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          step-summary: "true"
+
+      - name: ✓ Verify step-summary does not change the outputs
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "deps-pkg" "${{ steps.test-step-summary.outputs.name }}"
+          print_success "step-summary test passed"
+
+      - name: 🧪 Test invalid step-summary (should fail)
+        id: test-invalid-step-summary
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          step-summary: "maybe"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid step-summary fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-step-summary.outcome }}" = "success" ]; then
+            print_error "Invalid step-summary should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid step-summary correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 19: strict input
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test strict without warnings
+        id: test-strict-ok
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "true"
+
+      - name: ✓ Verify strict succeeds without warnings
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-strict-ok.outputs.name }}"
+          print_success "strict (no warning) test passed"
+
+      - name: 🧪 Test strict with a warning (should fail)
+        id: test-strict-warning
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify strict fails the step on a warning
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-strict-warning.outcome }}"
+          print_success "strict correctly failed"
+
+      - name: 🧪 Test the same file without strict
+        id: test-not-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+
+      - name: ✓ Verify a warning does not fail the step without strict
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "dynamic-pkg" "${{ steps.test-not-strict.outputs.name }}"
+          print_success "warning without strict test passed"
+
+      - name: 🧪 Test invalid strict (should fail)
+        id: test-invalid-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "maybe"
+        continue-on-error: true
+
+      - name: ✓ Verify invalid strict fails the step
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-invalid-strict.outcome }}"
+          print_success "invalid strict correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 20: description output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test description output
+        id: test-description
+        uses: ./
+        with:
+          pyproject-path: test-data/description/pyproject.toml
+
+      - name: 🧪 Test description output when not declared
+        id: test-no-description
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify description
+        env:
+          DESCRIPTION: ${{ steps.test-description.outputs.description }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "description" 'A package, with a description: "quoted" | piped' "$DESCRIPTION"
+          assert_equal "description" "" "${{ steps.test-no-description.outputs.description }}"
+          print_success "description test passed"
 
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
