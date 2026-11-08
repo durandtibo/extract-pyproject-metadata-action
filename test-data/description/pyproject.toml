@@ -1,0 +1,4 @@
+[project]
+name = "described-pkg"
+version = "0.1.0"
+description = "A package, with a description: \"quoted\" | piped"

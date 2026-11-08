@@ -116,7 +116,57 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
 
     metadata = extract(path)
 
-    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "1.2.3", "requires_python": "", "extras": [], "groups": []}
+    assert metadata == {
+        "name": "coola",
+        "normalized_name": "coola",
+        "version": "1.2.3",
+        "description": "",
+        "requires_python": "",
+        "extras": [],
+        "groups": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("project", "expected"),
+    [
+        ('description = "A fast library"', "A fast library"),
+        ('description = ""', ""),
+        ('description = "Line one\\nline two"', "Line one\nline two"),
+        ('description = "Héllo ✓"', "Héllo ✓"),
+        ('dynamic = ["description"]', ""),
+        ("", ""),
+    ],
+)
+def test_extract_metadata_description(tmp_path: Path, project: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "coola"\nversion = "1"\n{project}\n')
+
+    assert extract(path)["description"] == expected
+
+
+@pytest.mark.parametrize("value", ["1", "true", '["a"]', "{a = 1}"])
+def test_extract_metadata_description_must_be_a_string(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(
+        tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndescription = {value}\n'
+    )
+
+    with pytest.raises(MetadataError, match=r"p\.toml: \[project\]\.description must be a string, got: "):
+        extract_metadata(load_pyproject(str(path)), [], "p.toml")
+
+
+def test_main_description_in_json_and_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\ndescription = "Two\\nlines"\n'
+    )
+    output = tmp_path / "github_output"
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["description"] == "Two\nlines"
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["description"] == "Two\nlines"
+    assert "description=" not in capsys.readouterr().out
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -252,7 +302,15 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
     )
     metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
 
-    assert metadata == {"name": "coola", "normalized_name": "coola", "version": "", "requires_python": "", "extras": [], "groups": []}
+    assert metadata == {
+        "name": "coola",
+        "normalized_name": "coola",
+        "version": "",
+        "description": "",
+        "requires_python": "",
+        "extras": [],
+        "groups": [],
+    }
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
 
@@ -296,6 +354,7 @@ def test_main_dynamic_version_warning_in_json(
         "name": "coola",
         "normalized_name": "coola",
         "version": "",
+        "description": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -410,6 +469,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires_python": "",
         "extras": [],
         "groups": [],
@@ -482,6 +542,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
@@ -626,6 +687,7 @@ METADATA = {
     "name": "coola",
     "normalized_name": "coola",
     "version": "1.2.3",
+    "description": "",
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
@@ -642,6 +704,7 @@ def test_format_outputs() -> None:
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
@@ -764,6 +827,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "name": "p",
         "normalized-name": "p",
         "version": "1",
+        "description": "",
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
@@ -797,6 +861,7 @@ def test_build_report(tmp_path: Path) -> None:
         "name": "p",
         "normalized_name": "p",
         "version": "1",
+        "description": "",
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
@@ -929,6 +994,7 @@ def test_format_step_summary_without_warnings() -> None:
         name="coola",
         normalized_name="coola",
         version="1.2.3",
+        description="",
         requires_python="",
         extras=["", "a"],
         groups=[],
@@ -947,6 +1013,7 @@ def test_format_step_summary_without_warnings() -> None:
         "| `name` | <code>coola</code> |\n"
         "| `normalized-name` | <code>coola</code> |\n"
         "| `version` | <code>1&#46;2&#46;3</code> |\n"
+        "| `description` |  |\n"
         "| `requires-python` |  |\n"
         "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
         "| `groups` | <code>&#91;&#93;</code> |\n"
@@ -962,6 +1029,7 @@ def test_format_step_summary_lists_the_warnings() -> None:
         name="a",
         normalized_name="a",
         version="1",
+        description="",
         requires_python="",
         extras=[],
         groups=[],
@@ -1207,6 +1275,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -1462,6 +1531,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "name": "coola",
         "normalized_name": "coola",
         "version": "1.2.3",
+        "description": "",
         "requires_python": "",
         "extras": [],
         "groups": [],

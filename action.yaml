@@ -84,6 +84,11 @@ outputs:
   version:
     description: Project version, as declared in [project].version
     value: ${{ steps.metadata.outputs.version }}
+  description:
+    description: >
+      Project description, as declared in [project].description (empty if not
+      declared)
+    value: ${{ steps.metadata.outputs.description }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty
