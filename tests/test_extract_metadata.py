@@ -4584,6 +4584,29 @@ def test_run_sh_installs_packaging_in_a_venv_when_it_cannot_be_imported(tmp_path
     assert len(result.created_venvs) == 1
 
 
+def test_run_sh_says_in_the_log_that_it_installs_the_requirements(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1")
+
+    assert result.process.stdout == (
+        "'packaging' is missing or too old in 'python3': installing "
+        "packaging>=23.0,<27 in a private virtual environment\n"
+    )
+
+
+def test_run_sh_names_the_python_executable_in_the_log(tmp_path: Path) -> None:
+    custom = tmp_path / "custom-python"
+    custom.write_text(STUB_SYSTEM_PYTHON.replace("python3", "custom"))
+    custom.chmod(0o755)
+
+    result = run_run_sh(tmp_path, ["a"], PYTHON_EXECUTABLE=str(custom), STUB_PROBE_STATUS="1")
+
+    assert f"in '{custom}': installing" in result.process.stdout
+
+
+def test_run_sh_does_not_say_anything_when_the_requirements_are_available(tmp_path: Path) -> None:
+    assert run_run_sh(tmp_path, ["a"]).process.stdout == ""
+
+
 @pytest.mark.parametrize("probe_status", ["0", "1"])
 @pytest.mark.parametrize("status", [1, 2, 3])
 def test_run_sh_exits_with_the_status_of_the_script(tmp_path: Path, probe_status: str, status: int) -> None:

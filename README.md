@@ -16,7 +16,7 @@ private virtual environment under `$RUNNER_TEMP` (removed at the end of the
 step), with the versions listed in
 `scripts/requirements.txt` (`packaging>=23.0,<27`; a `packaging` that is already
 installed is used as it is when it is `23.0` or later, even when it is newer than
-the upper bound). It never modifies the Python environment of the caller.
+the upper bound). The step logs when it installs it. It never modifies the Python environment of the caller.
 
 That installation needs a package index: PyPI by default, or the one that `pip`
 is configured to use (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `pip.conf`, ...). On
