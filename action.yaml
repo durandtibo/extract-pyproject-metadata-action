@@ -10,7 +10,8 @@
 # to the scripts and their output to the action outputs. Requires the
 # repository to already be checked out and a Python 3.11+ interpreter to be
 # available on PATH (python3, or the python-executable input). If "packaging"
-# is missing, it is installed in a private virtual environment.
+# is missing or too old (see scripts/requirements.txt), it is installed in a
+# private virtual environment.
 #
 # Only Linux and macOS runners are supported. On a Windows runner the step
 # fails with an explicit error (the step expects python3 and a POSIX bash).
@@ -23,6 +24,7 @@ inputs:
     description: Path to pyproject.toml
     required: false
     default: pyproject.toml
+
   extra-values:
     description: >
       JSON array of additional values to prepend to the extras read from
@@ -30,13 +32,17 @@ inputs:
       too (e.g. '[""]' for a "no extra" baseline, or '["all"]').
     required: false
     default: "[]"
+
   dependencies:
     description: >
       JSON array of package names whose version specifier is looked up in
       [project].dependencies, [project.optional-dependencies] and
-      [dependency-groups] (e.g. '["invoke-tasklib"]').
+      [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@"
+      and "project", "extra:<name>" or "group:<name>" is looked up there only
+      (e.g. '["pytest@group:dev"]').
     required: false
     default: "[]"
+
   fail-on-missing:
     description: >
       Set to "true" to fail when a package listed in dependencies is not found,
@@ -50,7 +56,7 @@ inputs:
       JSON array of "major.minor" Python versions to choose from for the
       python-versions output (e.g. '["3.11","3.12"]')
     required: false
-    default: '["3.10","3.11","3.12","3.13","3.14"]'
+    default: '["3.11","3.12","3.13","3.14","3.15"]'
 
   fail-on-dynamic-version:
     description: >
@@ -67,6 +73,7 @@ inputs:
       ignored)
     required: false
     default: "false"
+
   python-executable:
     description: >
       Python interpreter that runs the action, a command found on PATH or a
@@ -74,6 +81,7 @@ inputs:
       the interpreter to use
     required: false
     default: python3
+
   step-summary:
     description: >
       Set to "true" to also write the outputs and the warnings to the job
