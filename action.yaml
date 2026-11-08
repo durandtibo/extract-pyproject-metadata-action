@@ -23,6 +23,7 @@ inputs:
     description: Path to pyproject.toml
     required: false
     default: pyproject.toml
+
   extra-values:
     description: >
       JSON array of additional values to prepend to the extras read from
@@ -30,6 +31,7 @@ inputs:
       too (e.g. '[""]' for a "no extra" baseline, or '["all"]').
     required: false
     default: "[]"
+
   dependencies:
     description: >
       JSON array of package names whose version specifier is looked up in
@@ -37,6 +39,7 @@ inputs:
       [dependency-groups] (e.g. '["invoke-tasklib"]').
     required: false
     default: "[]"
+
   fail-on-missing:
     description: >
       Set to "true" to fail when a package listed in dependencies is not found,
@@ -67,6 +70,7 @@ inputs:
       ignored)
     required: false
     default: "false"
+
   python-executable:
     description: >
       Python interpreter that runs the action, a command found on PATH or a
@@ -74,6 +78,7 @@ inputs:
       the interpreter to use
     required: false
     default: python3
+
   step-summary:
     description: >
       Set to "true" to also write the outputs and the warnings to the job
