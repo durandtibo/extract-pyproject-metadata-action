@@ -99,6 +99,11 @@ outputs:
       Path of the readme file, from [project].readme (a string, or the file of a
       table); empty if not declared or inline
     value: ${{ steps.metadata.outputs.readme }}
+  license:
+    description: >
+      License, from [project].license (an SPDX expression, or the text of the
+      table); empty if not declared or a file
+    value: ${{ steps.metadata.outputs.license }}
   requires-python:
     description: >
       Python version specifier, as declared in [project].requires-python (empty

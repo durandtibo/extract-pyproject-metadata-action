@@ -587,14 +587,14 @@ jobs:
       # -----------------------------------------------------------------------
       # Test 21: readme output
       # -----------------------------------------------------------------------
-      - name: 🧪 Test readme output
-        id: test-readme
+      - name: 🧪 Test the project fields (readme, license)
+        id: test-project-fields
         uses: ./
         with:
           pyproject-path: test-data/project-fields/pyproject.toml
 
-      - name: 🧪 Test readme output when not declared
-        id: test-no-readme
+      - name: 🧪 Test the project fields when not declared
+        id: test-no-project-fields
         uses: ./
         with:
           pyproject-path: test-data/minimal/pyproject.toml
@@ -602,9 +602,19 @@ jobs:
       - name: ✓ Verify readme
         run: |
           source scripts/test-helper.sh
-          assert_equal "readme" "docs/README.md" "${{ steps.test-readme.outputs.readme }}"
-          assert_equal "readme" "" "${{ steps.test-no-readme.outputs.readme }}"
+          assert_equal "readme" "docs/README.md" "${{ steps.test-project-fields.outputs.readme }}"
+          assert_equal "readme" "" "${{ steps.test-no-project-fields.outputs.readme }}"
           print_success "readme test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 22: license output
+      # -----------------------------------------------------------------------
+      - name: ✓ Verify license
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "license" "MIT" "${{ steps.test-project-fields.outputs.license }}"
+          assert_equal "license" "" "${{ steps.test-no-project-fields.outputs.license }}"
+          print_success "license test passed"
 
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
