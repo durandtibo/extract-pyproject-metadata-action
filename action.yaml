@@ -23,6 +23,13 @@ inputs:
       too (e.g. '[""]' for a "no extra" baseline, or '["all"]').
     required: false
     default: "[]"
+  dependencies:
+    description: >
+      JSON array of package names whose version specifier is looked up in
+      [project].dependencies, [project.optional-dependencies] and
+      [dependency-groups] (e.g. '["invoke-tasklib"]').
+    required: false
+    default: "[]"
 
 outputs:
   name:
@@ -34,6 +41,11 @@ outputs:
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}
+  dependency-specifiers:
+    description: >
+      JSON object mapping each requested package to its specifier (null if
+      not found, empty string if it has no specifier)
+    value: ${{ steps.metadata.outputs.dependency-specifiers }}
 
 runs:
   using: composite
@@ -43,16 +55,20 @@ runs:
       env:
         PYPROJECT_PATH: ${{ inputs.pyproject-path }}
         EXTRA_VALUES: ${{ inputs.extra-values }}
+        DEPENDENCIES: ${{ inputs.dependencies }}
       run: |
         set -euo pipefail
         python3 -c "import tomllib" 2>/dev/null || python3 -c "import tomli" 2>/dev/null || pip install --quiet --disable-pip-version-check tomli
-        metadata=$(python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" "$PYPROJECT_PATH" "$EXTRA_VALUES")
+        python3 -c "import packaging" 2>/dev/null || pip install --quiet --disable-pip-version-check packaging
+        metadata=$(python3 "$GITHUB_ACTION_PATH/scripts/extract_metadata.py" "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES")
 
         name=$(jq -r '.name' <<< "$metadata")
         version=$(jq -r '.version' <<< "$metadata")
         extras=$(jq -c '.extras' <<< "$metadata")
+        dependency_specifiers=$(jq -c '.dependency_specifiers' <<< "$metadata")
 
         echo "📦 name=$name version=$version extras=$extras"
         echo "name=$name" >> "$GITHUB_OUTPUT"
         echo "version=$version" >> "$GITHUB_OUTPUT"
         echo "extras=$extras" >> "$GITHUB_OUTPUT"
+        echo "dependency-specifiers=$dependency_specifiers" >> "$GITHUB_OUTPUT"

@@ -51,6 +51,7 @@ the example above outputs:
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------- |
 | `pyproject-path`  | Path to `pyproject.toml`.                                                                                                                            | No       | `pyproject.toml` |
 | `extra-values`    | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`). | No       | `[]`             |
+| `dependencies`    | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins, names compared per PEP 503. | No       | `[]`             |
 
 ## Outputs
 
@@ -59,6 +60,7 @@ the example above outputs:
 | `name`    | Project name, as declared in `[project].name`.                  |
 | `version` | Project version, as declared in `[project].version`.             |
 | `extras`  | JSON array of extra names, sorted, with `extra-values` prepended. |
+| `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found, `""` if the requirement has no specifier. A warning is emitted if different specifiers are found. |
 
 ## Failure modes
 
@@ -68,6 +70,7 @@ The action's step fails (non-zero exit) when:
 - The file is not valid TOML.
 - `[project]` is missing the required `name` or `version` key.
 - `extra-values` is not valid JSON, or is not a JSON array.
+- `dependencies` is not a JSON array of strings.
 
 ## Development
 
