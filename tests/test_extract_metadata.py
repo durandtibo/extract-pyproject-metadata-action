@@ -3013,6 +3013,19 @@ def test_readme_documents_the_inputs_and_outputs_of_action_yaml(
     assert sorted(_readme_table_names(heading)) == sorted(_action_section_keys(section))
 
 
+def test_readme_lists_the_outputs_of_the_log_line() -> None:
+    readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
+    listed = ", ".join(f"`{field}`" for field in extract_metadata_module._SUMMARY_FIELDS)
+
+    assert f"The line shows {listed};" in readme
+
+
+def test_log_line_leaves_out_only_normalized_name_and_description() -> None:
+    omitted = set(_action_section_keys("outputs")) - set(extract_metadata_module._SUMMARY_FIELDS)
+
+    assert omitted == {"normalized-name", "description"}
+
+
 def test_readme_default_of_python_candidates_matches_the_script() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
 
