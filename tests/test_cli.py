@@ -25,13 +25,15 @@ from helpers import (
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
-from extract_pyproject_metadata.cli import build_report, main
+import extract_pyproject_metadata.report as report_module
+from extract_pyproject_metadata.cli import main
 from extract_pyproject_metadata.dependencies.lookup import check_no_missing_dependency
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import Options, parse_bool, parse_options
 from extract_pyproject_metadata.output.github import format_error
 from extract_pyproject_metadata.output.summary import format_error_summary, resolve_step_summary
 from extract_pyproject_metadata.pyproject import load_pyproject
+from extract_pyproject_metadata.report import build_report
 
 
 def test_main_returns_one_for_an_invalid_utf8_file(
@@ -328,7 +330,7 @@ def test_main_parses_the_file_once(
         calls.append(pyproject_path)
         return load_pyproject(pyproject_path)
 
-    monkeypatch.setattr(extract_metadata_module, "load_pyproject", counting_load)
+    monkeypatch.setattr(report_module, "load_pyproject", counting_load)
 
     exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
     capsys.readouterr()
@@ -1635,7 +1637,7 @@ def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFi
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["schema_version"] == extract_metadata_module.SCHEMA_VERSION == 1
+    assert json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 1
 
 
 

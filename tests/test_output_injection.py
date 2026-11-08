@@ -17,13 +17,14 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import extract_pyproject_metadata.output.github as output_github_module
-from extract_pyproject_metadata.cli import _build_parser, build_report, main
+from extract_pyproject_metadata.cli import _build_parser, main
 from extract_pyproject_metadata.output.github import (
     format_outputs,
     format_summary,
     write_github_output,
 )
 from extract_pyproject_metadata.output.summary import format_step_summary
+from extract_pyproject_metadata.report import build_report
 
 HOSTILE_VALUES = [
     "plain",

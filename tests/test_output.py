@@ -20,7 +20,7 @@ from helpers import (
 import extract_pyproject_metadata.output.escaping as output_escaping_module
 import extract_pyproject_metadata.output.github as output_github_module
 import extract_pyproject_metadata.output.summary as output_summary_module
-from extract_pyproject_metadata.cli import build_report, main
+from extract_pyproject_metadata.cli import main
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.output.escaping import escape_annotation, escape_annotation_property
 from extract_pyproject_metadata.output.github import (
@@ -30,6 +30,7 @@ from extract_pyproject_metadata.output.github import (
     write_github_output,
 )
 from extract_pyproject_metadata.output.summary import format_step_summary, write_step_summary
+from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Report
 
 
