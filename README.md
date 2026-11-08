@@ -55,12 +55,12 @@ the example above outputs:
 
 ## Outputs
 
-| Name                    | Description                                                                                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                  | Project name, as declared in `[project].name`.                                                                                                                                                                                    |
-| `version`               | Project version, as declared in `[project].version`.                                                                                                                                                                              |
-| `extras`                | JSON array of extra names, sorted, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept).                                                                                                          |
-| `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found, `""` if the requirement has no specifier. A warning is emitted if different specifiers are found. |
+| Name                    | Description                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                  | Project name, as declared in `[project].name`.                                                                                                                                                                                                                                                   |
+| `version`               | Project version, as declared in `[project].version`.                                                                                                                                                                                                                                             |
+| `extras`                | JSON array of extra names, sorted, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept).                                                                                                                                                                         |
+| `dependency-specifiers` | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found, `""` if the requirement has no specifier. A warning is emitted if different specifiers are found, or if a requirement string in the file is invalid and ignored. |
 
 ## Failure modes
 
