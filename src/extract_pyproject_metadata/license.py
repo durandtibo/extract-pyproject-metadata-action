@@ -1,4 +1,4 @@
-"""The license of [project]: its text and the validation of an SPDX expression."""
+"""The license of ``[project]``: its text and the validation of an SPDX expression."""
 
 from __future__ import annotations
 

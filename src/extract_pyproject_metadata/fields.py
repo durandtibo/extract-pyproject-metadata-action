@@ -1,4 +1,4 @@
-"""Reading of the optional fields of [project] and [build-system]."""
+"""Reading of the optional fields of ``[project]`` and ``[build-system]``."""
 
 from __future__ import annotations
 
