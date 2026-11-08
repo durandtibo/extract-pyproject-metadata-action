@@ -80,6 +80,10 @@ expected shape, a Python candidate is not a "major.minor" string,
 ``--fail-on-dynamic-version true`` is given and the version is dynamic,
 ``--strict true`` is given and there is a warning, or ``--fail-on-missing true``
 is given and a requested dependency is not found.
+
+A wrong command line (which the action never builds) prints the usage and the
+problem on stderr and exits with the code 2, as ``argparse`` does; with
+``--github-output FILE`` it is one ``::error::`` workflow command instead.
 """
 
 from __future__ import annotations
@@ -96,7 +100,7 @@ import tomllib
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple, TypedDict
+from typing import Any, NamedTuple, NoReturn, TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -1318,11 +1322,34 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
         raise MetadataError(msg) from exc
 
 
-def _build_parser(prog: str) -> argparse.ArgumentParser:
+class _ArgumentParser(argparse.ArgumentParser):
+    """An argument parser whose usage errors can be GitHub error annotations.
+
+    Attributes:
+        annotate: Whether ``error`` prints a ``::error::`` workflow command (so that GitHub shows
+            an error annotation) instead of the usage and the message.
+    """
+
+    annotate = False
+
+    def error(self, message: str) -> NoReturn:
+        """Print the usage error on stderr and exit with the code 2, like ``argparse``.
+
+        Args:
+            message: What is wrong with the command line.
+        """
+        text = f"{self.format_usage().rstrip()}\n{self.prog}: error: {message}"
+        if self.annotate:
+            text = f"::error::{escape_annotation(text)}"
+        print(text, file=sys.stderr)
+        self.exit(2)
+
+
+def _build_parser(prog: str) -> _ArgumentParser:
     """Build the command line parser."""
     # ``__doc__`` is None when Python runs with -OO, which strips docstrings.
     description = (__doc__ or "").split("\n", 1)[0]
-    parser = argparse.ArgumentParser(prog=prog, description=description)
+    parser = _ArgumentParser(prog=prog, description=description)
     parser.add_argument(
         "--github-output",
         metavar="FILE",
@@ -1472,8 +1499,11 @@ def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
 
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit code."""
+    parser = _build_parser(Path(argv[0]).name)
+    # The arguments are not parsed yet when one is wrong: look for the option as it is written.
+    parser.annotate = any(arg.split("=", 1)[0] == "--github-output" for arg in argv[1:])
     try:
-        args = _build_parser(Path(argv[0]).name).parse_args(argv[1:])
+        args = parser.parse_args(argv[1:])
     except SystemExit as exc:  # argparse exits on bad arguments and on --help
         return exc.code if isinstance(exc.code, int) else 2
 
