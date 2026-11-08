@@ -1,9 +1,9 @@
 """End-to-end tests of the command line with malformed arguments.
 
-Each test starts the script in a new process, like ``scripts/run.sh`` does, and checks the
-contract of a bad input: exit code 1, an error on stderr without a Python traceback and
-nothing on stdout. Errors of the individual parsers are tested in
-``tests/unit``.
+Each test starts the script in a new process, like ``scripts/run.sh``
+does, and checks the contract of a bad input: exit code 1, an error on
+stderr without a Python traceback and nothing on stdout. Errors of the
+individual parsers are tested in ``tests/unit``.
 """
 
 from __future__ import annotations
@@ -11,11 +11,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.helpers import SCRIPT_PATH
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 VALID = '[project]\nname = "coola"\nversion = "1.2.3"\n'
 
@@ -23,7 +26,8 @@ VALID = '[project]\nname = "coola"\nversion = "1.2.3"\n'
 def run_script(
     tmp_path: Path, args: list[str], content: str = VALID
 ) -> subprocess.CompletedProcess[str]:
-    """Write ``content`` to a pyproject.toml, then run the script with ``args``.
+    """Write ``content`` to a pyproject.toml, then run the script with
+    ``args``.
 
     ``{path}`` in ``args`` is replaced by the path of the file.
     """
@@ -148,8 +152,7 @@ def test_booleans_are_case_insensitive_and_trimmed(tmp_path: Path, value: str) -
 
 
 CYCLE = (
-    '[project]\nname = "a"\nversion = "1"\n'
-    '[dependency-groups]\ndev = [{include-group = "dev"}]\n'
+    '[project]\nname = "a"\nversion = "1"\n[dependency-groups]\ndev = [{include-group = "dev"}]\n'
 )
 
 

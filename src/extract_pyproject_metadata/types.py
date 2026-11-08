@@ -31,7 +31,8 @@ class Metadata(TypedDict):
 
 
 class Report(Metadata):
-    """The metadata, Python versions, lowest Python version, dependency specifiers and warnings built by ``build_report``."""
+    """The metadata, Python versions, lowest Python version, dependency
+    specifiers and warnings built by ``build_report``."""
 
     python_versions: list[str]
     python_min: str

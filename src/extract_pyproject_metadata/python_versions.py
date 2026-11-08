@@ -3,14 +3,23 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 
-__all__ = ["DEFAULT_PYTHON_CANDIDATES", "compatible_python_versions", "highest_python_version", "lowest_python_version", "parse_python_candidates"]
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+__all__ = [
+    "DEFAULT_PYTHON_CANDIDATES",
+    "compatible_python_versions",
+    "highest_python_version",
+    "lowest_python_version",
+    "parse_python_candidates",
+]
 
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
@@ -51,7 +60,8 @@ def parse_python_candidates(raw: str) -> list[str]:
 def compatible_python_versions(
     requires_python: str, candidates: list[str], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
-    """Select the candidate Python versions that ``requires-python`` allows.
+    """Select the candidate Python versions that ``requires-python``
+    allows.
 
     A "major.minor" candidate is allowed when some release of it can satisfy the
     specifier. This is checked on each ``X.Y.0`` to ``X.Y.99`` (CPython patch
@@ -89,10 +99,7 @@ def compatible_python_versions(
     versions = [
         candidate
         for candidate in candidates
-        if any(
-            specifier.contains(f"{candidate}.{patch}")
-            for patch in _PATCH_RELEASES
-        )
+        if any(specifier.contains(f"{candidate}.{patch}") for patch in _PATCH_RELEASES)
     ]
     if candidates and not versions:
         # GitHub rejects a matrix vector without values, far from the cause.
@@ -106,7 +113,8 @@ def compatible_python_versions(
 
 
 def _minor_version_key(version: str) -> tuple[int, ...]:
-    """Return the numbers of a "major.minor" version, to compare versions as numbers."""
+    """Return the numbers of a "major.minor" version, to compare
+    versions as numbers."""
     return tuple(int(part) for part in version.split("."))
 
 
@@ -127,7 +135,8 @@ def lowest_python_version(versions: Sequence[str]) -> str:
 
 
 def highest_python_version(versions: Sequence[str]) -> str:
-    """Return the highest of "major.minor" versions, compared as numbers.
+    """Return the highest of "major.minor" versions, compared as
+    numbers.
 
     Args:
         versions: Versions such as ``"3.9"`` and ``"3.10"``, as returned by

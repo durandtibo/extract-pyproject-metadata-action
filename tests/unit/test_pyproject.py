@@ -1,4 +1,5 @@
-"""Tests of ``extract_pyproject_metadata.pyproject``: reading the file."""
+"""Tests of ``extract_pyproject_metadata.pyproject``: reading the
+file."""
 
 from __future__ import annotations
 
@@ -61,12 +62,10 @@ def test_load_pyproject_invalid_utf8(tmp_path: Path) -> None:
         load_pyproject(str(path))
 
 
-def test_load_pyproject_unreadable_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_pyproject_unreadable_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    def deny(self: Path, *args: object, **kwargs: object) -> None:
+    def deny(_self: Path, *_args: object, **_kwargs: object) -> None:
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(Path, "open", deny)

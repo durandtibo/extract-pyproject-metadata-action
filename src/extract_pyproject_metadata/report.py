@@ -1,8 +1,9 @@
-"""Build the report from the parsed command line and the pyproject.toml."""
+"""Build the report from the parsed command line and the
+pyproject.toml."""
 
 from __future__ import annotations
 
-import argparse
+from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata.dependencies.lookup import (
     check_no_missing_dependency,
@@ -27,6 +28,9 @@ from extract_pyproject_metadata.python_versions import (
 )
 from extract_pyproject_metadata.types import Report
 
+if TYPE_CHECKING:
+    import argparse
+
 __all__ = ["SCHEMA_VERSION", "build_report"]
 
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
@@ -34,7 +38,8 @@ SCHEMA_VERSION = 1
 
 
 def build_report(args: argparse.Namespace, options: Options | None = None) -> Report:
-    """Read the pyproject.toml and the inputs of the command line, and build the report.
+    """Read the pyproject.toml and the inputs of the command line, and
+    build the report.
 
     Args:
         args: The parsed command line, as returned by ``_build_parser``.
@@ -64,9 +69,7 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
     python_versions, python_warnings = compatible_python_versions(
         metadata["requires_python"], python_candidates, args.pyproject_path
     )
-    project_dependencies, project_warnings = extract_project_dependencies(
-        data, args.pyproject_path
-    )
+    project_dependencies, project_warnings = extract_project_dependencies(data, args.pyproject_path)
     # The requirements of the file are read and parsed once, for both lookups.
     found, index_warnings = index_dependencies(data, args.pyproject_path)
     specifiers, specifier_warnings = specifiers_from_index(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,6 +13,9 @@ from tests.helpers import (
     parse_args,
     write_pyproject,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_build_report(tmp_path: Path) -> None:
@@ -56,9 +59,18 @@ def test_build_report(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("argv", "match"),
     [
-        (["--fail-on-missing", "maybe", "{path}", "[]"], r"fail-on-missing must be 'true' or 'false'"),
-        (["--fail-on-dynamic-version", "maybe", "{path}", "[]"], r"fail-on-dynamic-version must be"),
-        (["--python-candidates", "[3]", "{path}", "[]"], r"python-candidates must be a JSON array of strings"),
+        (
+            ["--fail-on-missing", "maybe", "{path}", "[]"],
+            r"fail-on-missing must be 'true' or 'false'",
+        ),
+        (
+            ["--fail-on-dynamic-version", "maybe", "{path}", "[]"],
+            r"fail-on-dynamic-version must be",
+        ),
+        (
+            ["--python-candidates", "[3]", "{path}", "[]"],
+            r"python-candidates must be a JSON array of strings",
+        ),
         (["--fail-on-missing", "true", "{path}", "[]", '["missing"]'], r"dependencies not found"),
         (["{path}", "nope"], r"extra-values is not valid JSON"),
         (["{path}", "[]", "nope"], r"dependencies is not valid JSON"),

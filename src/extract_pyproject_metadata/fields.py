@@ -1,4 +1,5 @@
-"""Reading of the optional fields of ``[project]`` and ``[build-system]``."""
+"""Reading of the optional fields of ``[project]`` and ``[build-
+system]``."""
 
 from __future__ import annotations
 
@@ -9,13 +10,22 @@ from packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
 
-__all__ = ["read_authors", "read_build_system", "read_extra_names", "read_group_names", "read_readme_path", "read_string_table", "read_urls"]
+__all__ = [
+    "read_authors",
+    "read_build_system",
+    "read_extra_names",
+    "read_group_names",
+    "read_readme_path",
+    "read_string_table",
+    "read_urls",
+]
 
 
 def read_extra_names(
     project: dict[str, Any], extra_values: list[str], pyproject_path: str
 ) -> list[str]:
-    """Return the extra names: ``extra_values`` first, then the sorted extras.
+    """Return the extra names: ``extra_values`` first, then the sorted
+    extras.
 
     Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
     "foo-bar" are one extra. The first spelling of each is kept, at the
@@ -43,7 +53,8 @@ def read_extra_names(
 
 
 def read_build_system(data: dict[str, Any], pyproject_path: str) -> tuple[str, list[str]]:
-    """Return the build backend and the build requirements of ``[build-system]``.
+    """Return the build backend and the build requirements of ``[build-
+    system]``.
 
     Args:
         data: The parsed pyproject.toml.
@@ -62,12 +73,15 @@ def read_build_system(data: dict[str, Any], pyproject_path: str) -> tuple[str, l
     build_backend = check_str(
         table.get("build-backend", ""), "[build-system].build-backend", pyproject_path
     )
-    requires = check_string_array(table.get("requires", []), "[build-system].requires", pyproject_path)
+    requires = check_string_array(
+        table.get("requires", []), "[build-system].requires", pyproject_path
+    )
     return build_backend, list(requires)
 
 
 def read_group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
-    """Return the names of ``[dependency-groups]``, sorted by normalized name.
+    """Return the names of ``[dependency-groups]``, sorted by normalized
+    name.
 
     Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
 
@@ -89,7 +103,8 @@ def read_group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
 
 
 def read_readme_path(readme: object, pyproject_path: str) -> str:
-    """Return the path of the readme file declared by ``[project].readme``.
+    """Return the path of the readme file declared by
+    ``[project].readme``.
 
     Args:
         readme: The value of ``[project].readme``: a path (string), or a table
@@ -163,7 +178,8 @@ def read_urls(project: dict[str, Any], pyproject_path: str) -> dict[str, str]:
 
 
 def read_string_table(project: dict[str, Any], key: str, pyproject_path: str) -> dict[str, str]:
-    """Return a table of ``[project]`` whose values are strings, such as ``[project.urls]``.
+    """Return a table of ``[project]`` whose values are strings, such as
+    ``[project.urls]``.
 
     Args:
         project: The ``[project]`` table.

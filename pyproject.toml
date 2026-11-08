@@ -1,36 +1,240 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
+[build-system]
+requires = ["hatchling>=1.33"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+sources = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/extract_pyproject_metadata"]
+
+[project]
+name = "extract-pyproject-metadata-action"
+version = "0.0.0"
+description = "GitHub composite action that reads the metadata of a pyproject.toml"
+readme = "README.md"
+authors = [{ name = "Thibaut Durand", email = "durand.tibo+gh@gmail.com" }]
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+# Keep the bounds in sync with scripts/requirements.txt (the script only depends on packaging).
+dependencies = ["packaging>=23.0,<27"]
+
+[project.urls]
+Homepage = "https://github.com/durandtibo/extract-pyproject-metadata-action"
+Repository = "https://github.com/durandtibo/extract-pyproject-metadata-action"
+Issues = "https://github.com/durandtibo/extract-pyproject-metadata-action/issues"
+
+[dependency-groups]
+dev = [
+  "codespell>=2.4,<3.0",
+  "coverage[toml]>=7.17.0,<8.0",
+  "docformatter>=1.7.8,<2.0",
+  "hypothesis>=6.100,<7.0",
+  "import-linter>=2.0,<3.0",
+  "invoke-tasklib>=0.1.0a0,<1.0",
+  "invoke>=3.0,<4.0",
+  "mypy>=1.18,<2.0",
+  "pre-commit>=4.6,<5.0",
+  "pytest-cov>=7.1,<8.0",
+  "pytest-timeout>=2.4,<3.0",
+  "pytest>=9.1,<10.0",
+  "ruff>=0.16,<1.0",
+  "ty>=0.0.99,<1.0",
+  "xdoctest>=1.3,<2.0",
+]
+
+[tool.codespell]
+skip = "*.lock,./.git,./htmlcov,coverage.xml,./.venv,./.make"
+# Invalid values on purpose in the tests: a misspelt boolean and a Latin-1 byte.
+ignore-words-list = "tru,caf"
 
 [tool.coverage.run]
+branch = true
 source = ["src/extract_pyproject_metadata"]
 
 [tool.coverage.report]
 # The unit tests cover the whole script on every supported Python version.
 fail_under = 100
 show_missing = true
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-extend-exclude = [".venv"]
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "PT", "RUF"]
-ignore = [
-  "E501", # line length: the code is not reformatted by a tool
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "^\\s*\\.\\.\\.$",
+  "\\)( -> .+)?: \\.\\.\\.$",
 ]
 
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests/"]
+pythonpath = ["src"]
+log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+addopts = [
+  "--color",
+  "yes",
+  "--durations",
+  "10",
+  "-rf",
+  "--strict-markers",
+  "--strict-config",
+]
+xfail_strict = true
+timeout = 300
+filterwarnings = ["error"]
+# Configuration of the short test summary info
+# https://docs.pytest.org/en/stable/usage.html#detailed-summary-report
+
+[tool.docformatter]
+recursive = true
+wrap-summaries = 72
+wrap-descriptions = 72
+syntax = "google"
+
+[tool.ruff]
+# List of rules: https://docs.astral.sh/ruff/rules/
+lint.select = [
+  "A",    # builtins
+  "ANN",  # annotations
+  "ARG",  # flake8-unused-arguments
+  "B",    # bugbear
+  "BLE",  # flake8-blind-except
+  "C4",   # flake8-comprehensions
+  "C90",  # mccabe complexity
+  "D",    # pydocstyle
+  "DTZ",  # flake8-datetimez
+  "E",    # pycodestyle (Error)
+  "EM",   # flake8-errmsg
+  "EXE",  # flake8-executable
+  "F",    # pyflakes
+  "FA",   # flake8-future-annotations
+  "FURB", # refurb
+  "G",    # flake8-logging-format
+  "I",    # isort
+  "ICN",  # flake8-import-conventions
+  "INP",  # flake8-no-pep420
+  "ISC",  # flake8-implicit-str-concat
+  "LOG",  # logging
+  "N",    # naming
+  "PERF", # Perflint
+  "PGH",  # pygrep-hooks
+  "PIE",  # flake8-pie
+  "PL",   # Pylint
+  "PT",   # flake8-pytest-style
+  "PTH",  # pathlib
+  "PYI",  # flake8-pyi
+  "Q",    # flake8-quotes
+  "RET",  # flake8-return
+  "RSE",  # flake8-raise
+  "RUF",  # Ruff-specific rules
+  "S",    # flake8-bandit
+  "SIM",  # flake8-simplify
+  "T20",  # flake8-print
+  "TC",   # flake8-type-checking
+  "TD",   # flake8-todos
+  "TID",  # flake8-tidy-imports
+  "TRY",  # tryceratops
+  "UP",   # pyupgrade
+  "W",    # pycodestyle (Warning)
+]
+lint.ignore = [
+  "A003",    # Class attribute `{name}` is shadowing a python builtin
+  "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed.
+  "E501",    # Line lengths are recommended to be no greater than 79 characters.
+  "W505",    # Doc line too long
+  "PLR0913", # Too many arguments in function definition (8 > 5)
+  "PLR2004", # Magic value used in comparison, consider replacing 0.0 with a constant variable
+
+  # The following rules are ignored because they conflict with another library like docformatter.
+  "D102", # Missing docstring in public method
+  "D105", # Missing docstring in magic method
+  "D107", # Missing docstring in `__init__`
+  "D205", # 1 blank line required between summary line and description
+  "D209", # Multi-line docstring closing quotes should be on a separate line
+]
+
+# Enable on top of the Google convention.
+lint.extend-select = ["D400", "D401", "D404"]
+
+line-length = 100
+target-version = "py311"
+src = ["src"]
+extend-exclude = [".venv"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = [
-  "S101", # assert is how pytest tests check
+# The launcher is run as a script (``scripts/run.sh``), it is not a package.
+"scripts/**" = ["INP001"]
+# The command line writes its result and its errors to stdout and stderr.
+"src/extract_pyproject_metadata/cli.py" = ["T201"]
+"src/extract_pyproject_metadata/output/github.py" = ["T201"]
+# Ignore all directories named `tests`.
+"tests/**" = [
+  "D",       # pydocstyle
+  "PLR0917", # Too many positional arguments: the fixtures and the parameters of a test
+  "S101", # flake8-bandit: assert is how pytest tests check
   "S108", # fake /tmp paths in the tests
   "S603", # the tests start the script and run.sh with fixed arguments
   "S607", # ... and a stand-in for python3 found on PATH
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = false
+combine-as-imports = true
+known-first-party = ["extract_pyproject_metadata"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 files = ["src/extract_pyproject_metadata", "scripts/extract_metadata.py"]
 mypy_path = "src"
+
+[tool.ty.src]
+include = ["src", "scripts", "tests"]
+
+[tool.ty.environment]
+python-version = "3.11"
+root = ["src", "."]
+
+[tool.importlinter]
+root_package = "extract_pyproject_metadata"
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Imports go one way, from the top of the architecture to the bottom"
+type = "layers"
+containers = ["extract_pyproject_metadata"]
+layers = [
+  "cli",
+  "report",
+  "dependencies | python_versions",
+  "metadata",
+  "fields | license | pyproject",
+  "inputs | checks",
+  "types | errors",
+]
+
+[[tool.importlinter.contracts]]
+name = "Output only depends on types and errors"
+type = "forbidden"
+source_modules = ["extract_pyproject_metadata.output"]
+forbidden_modules = [
+  "extract_pyproject_metadata.cli",
+  "extract_pyproject_metadata.report",
+  "extract_pyproject_metadata.dependencies",
+  "extract_pyproject_metadata.python_versions",
+  "extract_pyproject_metadata.metadata",
+  "extract_pyproject_metadata.fields",
+  "extract_pyproject_metadata.license",
+  "extract_pyproject_metadata.pyproject",
+  "extract_pyproject_metadata.inputs",
+  "extract_pyproject_metadata.checks",
+]

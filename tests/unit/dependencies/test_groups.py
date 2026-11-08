@@ -1,8 +1,9 @@
-"""Tests of ``extract_pyproject_metadata.dependencies.groups`` and of the groups in the requirements."""
+"""Tests of ``extract_pyproject_metadata.dependencies.groups`` and of
+the groups in the requirements."""
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,6 +22,9 @@ from tests.helpers import (
     specifiers,
     write_pyproject,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_dependency_include_group_only(tmp_path: Path) -> None:
@@ -91,7 +95,9 @@ def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
 
 
 def test_flatten_group_group_must_be_an_array() -> None:
-    with pytest.raises(MetadataError, match=r"custom\.toml: \[dependency-groups\]\.a must be an array"):
+    with pytest.raises(
+        MetadataError, match=r"custom\.toml: \[dependency-groups\]\.a must be an array"
+    ):
         flatten_group({"a": "x"}, "a", pyproject_path="custom.toml")
 
 
@@ -134,24 +140,38 @@ def test_flatten_group_self_include_adds_a_warning() -> None:
 
 
 def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
-    groups = {"c": [{"include-group": "a"}], "a": [{"include-group": "b"}], "b": [{"include-group": "c"}]}
+    groups = {
+        "c": [{"include-group": "a"}],
+        "a": [{"include-group": "b"}],
+        "b": [{"include-group": "c"}],
+    }
     _, warnings = flatten_group(groups, "b")
 
-    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: a -> b -> c -> a"]
+    assert warnings == [
+        "pyproject.toml: [dependency-groups] has an include-group cycle: a -> b -> c -> a"
+    ]
 
 
 def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
-    groups = {"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": [{"include-group": "b"}]}
+    groups = {
+        "a": [{"include-group": "b"}],
+        "b": [{"include-group": "c"}],
+        "c": [{"include-group": "b"}],
+    }
     _, warnings = flatten_group(groups, "a")
 
-    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: b -> c -> b"]
+    assert warnings == [
+        "pyproject.toml: [dependency-groups] has an include-group cycle: b -> c -> b"
+    ]
 
 
 def test_flatten_group_cycle_uses_canonical_names() -> None:
     groups = {"My_Group": [{"include-group": "my-group"}]}
     _, warnings = flatten_group(groups, "My_Group")
 
-    assert warnings == ["pyproject.toml: [dependency-groups] has an include-group cycle: my-group -> my-group"]
+    assert warnings == [
+        "pyproject.toml: [dependency-groups] has an include-group cycle: my-group -> my-group"
+    ]
 
 
 def test_flatten_group_no_cycle_adds_no_warning() -> None:
@@ -171,7 +191,8 @@ def test_flatten_group_follows_a_chain_up_to_the_depth_limit() -> None:
 
 def test_flatten_group_rejects_a_chain_deeper_than_the_limit() -> None:
     with pytest.raises(
-        MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries are nested more than 100 levels deep"
+        MetadataError,
+        match=r"^p.toml: \[dependency-groups\] include-group entries are nested more than 100 levels deep",
     ):
         flatten_group(chain_of_groups(101), "g0", pyproject_path="p.toml")
 
@@ -190,7 +211,8 @@ def test_flatten_group_expands_a_diamond_within_the_budget() -> None:
 
 def test_flatten_group_rejects_an_exponential_expansion() -> None:
     with pytest.raises(
-        MetadataError, match=r"^p.toml: \[dependency-groups\] include-group entries expand more than 10000 groups in total"
+        MetadataError,
+        match=r"^p.toml: \[dependency-groups\] include-group entries expand more than 10000 groups in total",
     ):
         flatten_group(diamond_of_groups(25), "g0", pyproject_path="p.toml")
 
@@ -206,15 +228,17 @@ def test_flatten_group_shares_the_budget_between_the_included_groups() -> None:
 
 def test_flatten_group_missing_include_group_adds_a_warning() -> None:
     result, warnings = flatten_group(
-        {"dev": [{"include-group": "tset"}, "x"]}, "dev", pyproject_path="p.toml")
+        {"dev": [{"include-group": "tset"}, "x"]}, "dev", pyproject_path="p.toml"
+    )
 
     assert result == ["x"]
-    assert warnings == ["p.toml: [dependency-groups].dev: include-group 'tset' does not match any group"]
+    assert warnings == [
+        "p.toml: [dependency-groups].dev: include-group 'tset' does not match any group"
+    ]
 
 
 def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warning() -> None:
-    result, warnings = flatten_group(
-        {"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
+    result, warnings = flatten_group({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
 
     assert result == ["y"]
     assert warnings == []
@@ -224,7 +248,9 @@ def test_flatten_group_missing_include_group_is_reported_once_per_group() -> Non
     groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
     _, warnings = _candidate_requirements({"dependency-groups": groups}, "p.toml")
 
-    assert warnings == ["p.toml: [dependency-groups].a: include-group 'nope' does not match any group"]
+    assert warnings == [
+        "p.toml: [dependency-groups].a: include-group 'nope' does not match any group"
+    ]
 
 
 def test_extract_metadata_groups_are_sorted(tmp_path: Path) -> None:
@@ -250,7 +276,7 @@ def test_extract_metadata_groups_empty_table(tmp_path: Path) -> None:
     [
         ('Foo_Bar = []\n"foo-bar" = []', ["Foo_Bar"]),
         ('"foo-bar" = []\nFoo_Bar = []', ["foo-bar"]),
-        ('b = []\nA = []\nc = []', ["A", "b", "c"]),
+        ("b = []\nA = []\nc = []", ["A", "b", "c"]),
     ],
 )
 def test_extract_metadata_groups_are_deduplicated_per_pep_503(

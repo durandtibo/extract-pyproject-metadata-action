@@ -1,10 +1,11 @@
-"""Tests of ``extract_pyproject_metadata.dependencies.lookup``: the requested dependencies."""
+"""Tests of ``extract_pyproject_metadata.dependencies.lookup``: the
+requested dependencies."""
 
 from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -29,6 +30,9 @@ from tests.helpers import (
     write_pyproject,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None:
     path = write_pyproject(
@@ -46,9 +50,7 @@ def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("value", ['["a"]', '"numpy"', "1"])
-def test_extract_metadata_optional_dependencies_must_be_a_table(
-    tmp_path: Path, value: str
-) -> None:
+def test_extract_metadata_optional_dependencies_must_be_a_table(tmp_path: Path, value: str) -> None:
     path = write_pyproject(
         tmp_path,
         f"""
@@ -59,9 +61,7 @@ def test_extract_metadata_optional_dependencies_must_be_a_table(
         """,
     )
 
-    with pytest.raises(
-        MetadataError, match=r"\[project\]\.optional-dependencies must be a table"
-    ):
+    with pytest.raises(MetadataError, match=r"\[project\]\.optional-dependencies must be a table"):
         extract(path)
 
 
@@ -84,8 +84,7 @@ def test_dependency_specifiers(tmp_path: Path, name: str, expected: str | None) 
 
 def test_dependency_duplicate_adds_a_warning(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
-    result, warnings = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["dup"], str(path))
+    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["dup"], str(path))
 
     assert result == {"dup": ">=1"}
     assert warnings == [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"]
@@ -101,7 +100,8 @@ def test_dependency_no_duplicate_adds_no_warning(tmp_path: Path) -> None:
 def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, INVALID_TOML)
     result, warnings = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["good", "dev-pkg", "missing"], str(path))
+        load_pyproject(str(path)), ["good", "dev-pkg", "missing"], str(path)
+    )
 
     assert result == {"good": ">=1", "dev-pkg": ">=2", "missing": None}
     assert len(warnings) == 3
@@ -145,7 +145,10 @@ def test_dependency_name_matches_across_pep_503_spellings(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     ("content", "match"),
     [
-        ('[project]\ndependencies = "numpy"', r"\[project\]\.dependencies must be an array, got: 'numpy'"),
+        (
+            '[project]\ndependencies = "numpy"',
+            r"\[project\]\.dependencies must be an array, got: 'numpy'",
+        ),
         ("[project]\ndependencies = 1", r"\[project\]\.dependencies must be an array, got: 1"),
         (
             '[project.optional-dependencies]\nx = "numpy"',
@@ -155,10 +158,16 @@ def test_dependency_name_matches_across_pep_503_spellings(tmp_path: Path) -> Non
             "[project.optional-dependencies]\nx = 1",
             r"\[project\.optional-dependencies\]\.x must be an array, got: 1",
         ),
-        ("[project]\noptional-dependencies = []", r"\[project\]\.optional-dependencies must be a table"),
+        (
+            "[project]\noptional-dependencies = []",
+            r"\[project\]\.optional-dependencies must be a table",
+        ),
         ("dependency-groups = []", r"\[dependency-groups\] must be a table, got: \[\]"),
         ('dependency-groups = "dev"', r"\[dependency-groups\] must be a table, got: 'dev'"),
-        ('[dependency-groups]\ndev = "numpy"', r"\[dependency-groups\]\.dev must be an array, got: 'numpy'"),
+        (
+            '[dependency-groups]\ndev = "numpy"',
+            r"\[dependency-groups\]\.dev must be an array, got: 'numpy'",
+        ),
         ("[dependency-groups]\ndev = 1", r"\[dependency-groups\]\.dev must be an array, got: 1"),
         (
             "[dependency-groups]\ndev = [{include-group = 1}]",
@@ -202,7 +211,8 @@ def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
         """,
     )
     result, warnings = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["x", "y"], str(path))
+        load_pyproject(str(path)), ["x", "y"], str(path)
+    )
 
     assert result == {"x": ">=1", "y": ">=2"}
     assert warnings == [f"{path}: [dependency-groups] has an include-group cycle: a -> b -> a"]
@@ -246,7 +256,8 @@ def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requeste
 def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, MARKERS_TOML)
     result, warnings = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["numpy"], str(path))
+        load_pyproject(str(path)), ["numpy"], str(path)
+    )
 
     assert result == {"numpy": ">=1.20"}
     assert warnings == []
@@ -256,20 +267,22 @@ def test_dependency_same_marker_different_specifiers_warns_with_the_marker(
     tmp_path: Path,
 ) -> None:
     path = write_pyproject(tmp_path, MARKERS_TOML)
-    result, warnings = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["same"], str(path))
+    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["same"], str(path))
 
     assert result == {"same": ">=1"}
     assert warnings == [
-        f"same has different specifiers for marker 'sys_platform == \"linux\"' in {path}: "
-        "['>=1', '>=2']; using '>=1'"
+        (
+            f"same has different specifiers for marker 'sys_platform == \"linux\"' in {path}: "
+            "['>=1', '>=2']; using '>=1'"
+        )
     ]
 
 
 def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, MARKERS_TOML)
     result, warnings = extract_dependency_specifiers(
-        load_pyproject(str(path)), ["mixed"], str(path))
+        load_pyproject(str(path)), ["mixed"], str(path)
+    )
 
     assert result == {"mixed": ">=1"}
     assert warnings == []
@@ -278,7 +291,7 @@ def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
 def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
-        '[project]\ndependencies = ["a>=1; os_name == \'nt\'", "a>=1; os_name == \'posix\'"]\n',
+        "[project]\ndependencies = [\"a>=1; os_name == 'nt'\", \"a>=1; os_name == 'posix'\"]\n",
     )
     _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path))
 
@@ -299,8 +312,10 @@ def test_dependency_one_warning_per_conflicting_marker(tmp_path: Path) -> None:
     _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["a"], str(path))
 
     assert warnings == [
-        f"a has different specifiers for marker 'os_name == \"nt\"' in {path}: "
-        "['>=1', '>=2']; using '>=1'",
+        (
+            f"a has different specifiers for marker 'os_name == \"nt\"' in {path}: "
+            "['>=1', '>=2']; using '>=1'"
+        ),
         f"a has different specifiers in {path}: ['>=3', '>=4']; using '>=1'",
     ]
 
@@ -353,7 +368,9 @@ def test_specifiers_from_index_without_dependencies_ignores_the_index_warnings()
 
 
 def test_requirements_from_index() -> None:
-    found = {"numpy": [(">=1", "python_version < '3.12'"), ("", None)]}
+    found: dict[str, list[tuple[str, str | None]]] = {
+        "numpy": [(">=1", "python_version < '3.12'"), ("", None)]
+    }
 
     assert requirements_from_index(found, ["NumPy", "other"]) == {
         "NumPy": [
@@ -380,16 +397,29 @@ def test_parse_dependencies(raw: str) -> None:
 
 @pytest.mark.parametrize(
     "entry",
-    ["numpy@dev", "numpy@", "numpy@extra", "numpy@extra:", "numpy@group:", "numpy@Project", "numpy@feature:x", "numpy@@project"],
+    [
+        "numpy@dev",
+        "numpy@",
+        "numpy@extra",
+        "numpy@extra:",
+        "numpy@group:",
+        "numpy@Project",
+        "numpy@feature:x",
+        "numpy@@project",
+    ],
 )
 def test_parse_dependencies_invalid_scope(entry: str) -> None:
-    with pytest.raises(MetadataError, match=rf"^dependencies entry {re.escape(repr(entry))} has an invalid scope: "):
+    with pytest.raises(
+        MetadataError, match=rf"^dependencies entry {re.escape(repr(entry))} has an invalid scope: "
+    ):
         parse_dependencies(json.dumps([entry]))
 
 
 @pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[1]"])
 def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
-    with pytest.raises(MetadataError, match=r"^dependencies (is not valid JSON|must be a JSON array of strings)"):
+    with pytest.raises(
+        MetadataError, match=r"^dependencies (is not valid JSON|must be a JSON array of strings)"
+    ):
         parse_dependencies(raw)
 
 
@@ -416,10 +446,19 @@ def test_lookup_key(dependency: str, expected: str) -> None:
         ('["numpy@extra:Fast"]', {"numpy@extra:Fast": ">=2"}),
         ('["numpy@extra:slow"]', {"numpy@extra:slow": "<2"}),
         ('["NumPy@group:dev"]', {"NumPy@group:dev": ">=1.26"}),
-        ('["ruff@group:dev", "ruff@group:lint"]', {"ruff@group:dev": ">=0.5", "ruff@group:lint": ">=0.5"}),
-        ('["ujson@project", "ujson@extra:fast", "ujson@group:dev"]', {"ujson@project": None, "ujson@extra:fast": "", "ujson@group:dev": None}),
+        (
+            '["ruff@group:dev", "ruff@group:lint"]',
+            {"ruff@group:dev": ">=0.5", "ruff@group:lint": ">=0.5"},
+        ),
+        (
+            '["ujson@project", "ujson@extra:fast", "ujson@group:dev"]',
+            {"ujson@project": None, "ujson@extra:fast": "", "ujson@group:dev": None},
+        ),
         ('["tqdm@extra:fast"]', {"tqdm@extra:fast": None}),
-        ('["numpy@extra:missing", "numpy@group:missing"]', {"numpy@extra:missing": None, "numpy@group:missing": None}),
+        (
+            '["numpy@extra:missing", "numpy@group:missing"]',
+            {"numpy@extra:missing": None, "numpy@group:missing": None},
+        ),
     ],
 )
 def test_dependency_specifiers_with_a_scope(
@@ -436,7 +475,7 @@ def test_extract_dependency_requirements_lists_every_requirement_with_its_marker
     path = write_pyproject(
         tmp_path,
         "[project]\n"
-        'dependencies = ["numpy>=1.20; python_version < \'3.12\'", '
+        "dependencies = [\"numpy>=1.20; python_version < '3.12'\", "
         '"numpy>=1.26; python_version >= \'3.12\'", "Foo_Bar"]\n\n'
         '[project.optional-dependencies]\nx = ["numpy<3"]\n\n'
         '[dependency-groups]\ndev = ["numpy>=2"]\n',
@@ -484,7 +523,9 @@ def test_extract_dependency_requirements_keeps_duplicates() -> None:
 
 
 def test_extract_dependency_requirements_wrong_type() -> None:
-    with pytest.raises(MetadataError, match=r"custom.toml: \[project\].dependencies must be an array"):
+    with pytest.raises(
+        MetadataError, match=r"custom.toml: \[project\].dependencies must be an array"
+    ):
         extract_dependency_requirements({"project": {"dependencies": 1}}, ["numpy"], "custom.toml")
 
 

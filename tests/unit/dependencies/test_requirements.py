@@ -118,7 +118,10 @@ def test_candidate_requirements_does_not_modify_the_data() -> None:
         ({"project": 1}, r"\[project\] must be a table"),
         ({"project": {"dependencies": "a"}}, r"\[project\]\.dependencies must be an array"),
         ({"project": {"optional-dependencies": 1}}, r"optional-dependencies must be a table"),
-        ({"project": {"optional-dependencies": {"x": 1}}}, r"optional-dependencies\]\.x must be an array"),
+        (
+            {"project": {"optional-dependencies": {"x": 1}}},
+            r"optional-dependencies\]\.x must be an array",
+        ),
         ({"dependency-groups": 1}, r"\[dependency-groups\] must be a table"),
     ],
 )
@@ -146,8 +149,14 @@ def test_candidate_requirements_reports_a_cycle_once() -> None:
         ([("==1", None), ("==1", None)], []),
         ([("==1", "os_name == 'nt'"), ("==2", "os_name == 'posix'")], []),
         ([("==1", None), ("==2", "os_name == 'nt'")], []),
-        ([("==1", None), ("==2", None)], ["a has different specifiers in p.toml: ['==1', '==2']; using '==1'"]),
-        ([("==2", None), ("==1", None), ("==2", None)], ["a has different specifiers in p.toml: ['==1', '==2']; using '==2'"]),
+        (
+            [("==1", None), ("==2", None)],
+            ["a has different specifiers in p.toml: ['==1', '==2']; using '==1'"],
+        ),
+        (
+            [("==2", None), ("==1", None), ("==2", None)],
+            ["a has different specifiers in p.toml: ['==1', '==2']; using '==2'"],
+        ),
     ],
 )
 def test_conflict_warnings(matches: list[tuple[str, str | None]], expected: list[str]) -> None:
@@ -176,7 +185,9 @@ def test_dynamic_dependency_fields(data: dict, expected: list[str]) -> None:
 
 
 def test_parse_requirement_valid() -> None:
-    requirement = dependencies_requirements_module._parse_requirement("Foo_Bar[x]>=1; python_version<'3.12'")
+    requirement = dependencies_requirements_module._parse_requirement(
+        "Foo_Bar[x]>=1; python_version<'3.12'"
+    )
 
     assert isinstance(requirement, Requirement)
     assert (requirement.name, str(requirement.specifier)) == ("Foo_Bar", ">=1")
@@ -211,8 +222,7 @@ def test_index_dependencies() -> None:
     }
     assert warnings == [
         "p.toml: [dependency-groups].dev: include-group 'missing' does not match any group",
-        "Ignoring invalid requirement 'not valid!' in p.toml: "
-        + str(_parse_error("not valid!")),
+        "Ignoring invalid requirement 'not valid!' in p.toml: " + str(_parse_error("not valid!")),
     ]
 
 
@@ -287,7 +297,9 @@ def test_extract_project_dependencies_dynamic_dependencies_warns() -> None:
 
     assert extract_project_dependencies(data, "p.toml") == (
         {},
-        ["p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it"],
+        [
+            "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it"
+        ],
     )
 
 

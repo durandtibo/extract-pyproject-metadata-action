@@ -1,0 +1,7 @@
+tasklib:
+  package:
+    name: extract-pyproject-metadata-action
+    import_name: extract_pyproject_metadata
+  groups:
+    install: dev
+    update: dev

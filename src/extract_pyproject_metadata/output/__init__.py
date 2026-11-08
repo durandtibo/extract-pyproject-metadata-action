@@ -1,4 +1,5 @@
-"""Formatting and writing of the outputs: workflow commands, action outputs and job summary."""
+"""Formatting and writing of the outputs: workflow commands, action
+outputs and job summary."""
 
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
-"""End-to-end tests that start the command line in a new process or as ``__main__``."""
+"""End-to-end tests that start the command line in a new process or as
+``__main__``."""
 
 from __future__ import annotations
 
@@ -7,7 +8,7 @@ import json
 import runpy
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,12 +19,17 @@ from tests.helpers import (
     write_pyproject,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPatch) -> None:
     # packaging before 24.2 has no ``packaging.licenses``: importing it raises ImportError.
     monkeypatch.setitem(sys.modules, "packaging.licenses", None)
 
-    spec = importlib.util.spec_from_file_location("license_without_licenses", PACKAGE_PATH / "license.py")
+    spec = importlib.util.spec_from_file_location(
+        "license_without_licenses", PACKAGE_PATH / "license.py"
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -100,7 +106,8 @@ def test_cli_end_to_end_error_exit_code(tmp_path: Path) -> None:
 
 def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
     path = write_pyproject(
-        tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n[project.optional-dependencies]\nnumpy = ["numpy"]\n'
+        tmp_path,
+        '[project]\nname = "coola"\nversion = "1.2.3"\n[project.optional-dependencies]\nnumpy = ["numpy"]\n',
     )
     output = tmp_path / "github_output"
 
@@ -119,12 +126,12 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "description": "",
         "readme": "",
         "license": "",
-        "license-files": '[]',
-        "authors": '[]',
-        "urls": '{}',
-        "keywords": '[]',
-        "classifiers": '[]',
-        "scripts": '{}',
+        "license-files": "[]",
+        "authors": "[]",
+        "urls": "{}",
+        "keywords": "[]",
+        "classifiers": "[]",
+        "scripts": "{}",
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
@@ -237,7 +244,9 @@ def test_running_the_script_as_main_exits_with_the_code_of_main(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
     output = tmp_path / "github_output"
-    monkeypatch.setattr(sys, "argv", ["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    monkeypatch.setattr(
+        sys, "argv", ["extract_metadata.py", "--github-output", str(output), str(path), "[]"]
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
@@ -273,7 +282,9 @@ def test_running_the_package_with_dash_m_exits_with_the_code_of_main(
 
 
 def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])  # would exit with a usage error if main() ran
+    monkeypatch.setattr(
+        sys, "argv", ["extract_metadata.py"]
+    )  # would exit with a usage error if main() ran
     spec = importlib.util.spec_from_file_location("extract_metadata_imported", SCRIPT_PATH)
     assert spec is not None
     assert spec.loader is not None

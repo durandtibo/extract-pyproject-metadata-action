@@ -1,20 +1,22 @@
-"""Tests that a hostile value from ``pyproject.toml`` cannot forge outputs or workflow commands.
+"""Tests that a hostile value from ``pyproject.toml`` cannot forge
+outputs or workflow commands.
 
-The values of the file reach three places: ``$GITHUB_OUTPUT``, the log (workflow commands read
-from stdout) and the job summary (``$GITHUB_STEP_SUMMARY``, Markdown). Each test builds a value
-that tries to end its container and start something else, then reads the result back.
+The values of the file reach three places: ``$GITHUB_OUTPUT``, the log
+(workflow commands read from stdout) and the job summary
+(``$GITHUB_STEP_SUMMARY``, Markdown). Each test builds a value that
+tries to end its container and start something else, then reads the
+result back.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from hypothesis import given, settings
-from hypothesis import strategies as st
+from hypothesis import given, settings, strategies as st
 
 from extract_pyproject_metadata.cli import _build_parser, main
 from extract_pyproject_metadata.output.github import (
@@ -24,6 +26,9 @@ from extract_pyproject_metadata.output.github import (
 )
 from extract_pyproject_metadata.output.summary import format_step_summary
 from extract_pyproject_metadata.report import build_report
+
+if TYPE_CHECKING:
+    import argparse
 
 HOSTILE_VALUES = [
     "plain",
@@ -45,7 +50,10 @@ HOSTILE_VALUES = [
 
 
 def parse_github_output(content: str) -> dict[str, str]:
-    """Parse a ``$GITHUB_OUTPUT`` file like the runner: ``name<<delimiter`` blocks."""
+    """Parse a ``$GITHUB_OUTPUT`` file like the runner:
+
+    ``name<<delimiter`` blocks.
+    """
     outputs: dict[str, str] = {}
     lines = content.split("\n")
     index = 0
@@ -136,7 +144,17 @@ def test_stdout_has_only_the_workflow_commands_of_the_script(
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary"))
 
-    status = main(["extract_metadata.py", "--github-output", str(output), "--step-summary", "true", str(path), "[]"])
+    status = main(
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(output),
+            "--step-summary",
+            "true",
+            str(path),
+            "[]",
+        ]
+    )
 
     assert status == 0
     lines = capsys.readouterr().out.splitlines()

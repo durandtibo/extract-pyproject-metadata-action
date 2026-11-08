@@ -1,4 +1,5 @@
-r"""Extract project metadata and dependency specifiers from a pyproject.toml.
+r"""Extract project metadata and dependency specifiers from a
+pyproject.toml.
 
 The metadata is the project name and version (and their normalized forms), the
 description, readme, license, authors, URLs, ``requires-python``,
@@ -131,7 +132,8 @@ __all__ = ["main"]
 
 
 class _ArgumentParser(argparse.ArgumentParser):
-    """An argument parser whose usage errors can be GitHub error annotations.
+    """An argument parser whose usage errors can be GitHub error
+    annotations.
 
     Attributes:
         annotate: Whether ``error`` prints a ``::error::`` workflow command (so that GitHub shows
@@ -141,7 +143,8 @@ class _ArgumentParser(argparse.ArgumentParser):
     annotate = False
 
     def error(self, message: str) -> NoReturn:
-        """Print the usage error on stderr and exit with the code 2, like ``argparse``.
+        """Print the usage error on stderr and exit with the code 2,
+        like ``argparse``.
 
         Args:
             message: What is wrong with the command line.
@@ -205,7 +208,8 @@ def _build_parser(prog: str) -> _ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
-    """Run the command line interface and return the process exit code."""
+    """Run the command line interface and return the process exit
+    code."""
     parser = _build_parser(Path(argv[0]).name)
     # The arguments are not parsed yet when one is wrong: look for the option as it is written.
     parser.annotate = any(arg.split("=", 1)[0] == "--github-output" for arg in argv[1:])
@@ -235,4 +239,3 @@ def main(argv: list[str]) -> int:
                 write_step_summary(summary_path, format_error_summary(str(exc)))
         return 1
     return 0
-

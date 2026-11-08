@@ -10,7 +10,8 @@ __all__ = ["check_array", "check_str", "check_string_array", "get_table"]
 
 
 def check_str(value: object, label: str, pyproject_path: str) -> str:
-    """Return ``value`` if it is a string, and raise ``MetadataError`` otherwise.
+    """Return ``value`` if it is a string, and raise ``MetadataError``
+    otherwise.
 
     Args:
         value: The value read from the file.
@@ -30,7 +31,8 @@ def check_str(value: object, label: str, pyproject_path: str) -> str:
 
 
 def check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
-    """Return ``value`` if it is an array, and raise ``MetadataError`` otherwise."""
+    """Return ``value`` if it is an array, and raise ``MetadataError``
+    otherwise."""
     if not isinstance(value, list):
         msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
         raise MetadataError(msg)
@@ -38,9 +40,11 @@ def check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
 
 
 def check_string_array(value: object, label: str, pyproject_path: str) -> list[str]:
-    """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise.
+    """Return ``value`` if it is an array of strings, and raise
+    ``MetadataError`` otherwise.
 
-    Used for the arrays of requirement strings and for ``[project].dynamic``.
+    Used for the arrays of requirement strings and for
+    ``[project].dynamic``.
     """
     entries = check_array(value, label, pyproject_path)
     for entry in entries:
@@ -53,7 +57,8 @@ def check_string_array(value: object, label: str, pyproject_path: str) -> list[s
 def get_table(
     container: dict[str, Any], key: str, label: str, pyproject_path: str
 ) -> dict[str, Any]:
-    """Return ``container[key]`` (an empty table if absent), checking that it is a table.
+    """Return ``container[key]`` (an empty table if absent), checking
+    that it is a table.
 
     Args:
         container: The table that holds ``key``.

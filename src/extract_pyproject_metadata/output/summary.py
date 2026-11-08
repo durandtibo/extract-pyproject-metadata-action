@@ -3,25 +3,35 @@
 from __future__ import annotations
 
 import string
-from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.output.escaping import (
     single_line,
 )
-from extract_pyproject_metadata.types import Report
 
-__all__ = ["format_error_summary", "format_step_summary", "resolve_step_summary", "write_step_summary"]
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from extract_pyproject_metadata.types import Report
+
+__all__ = [
+    "format_error_summary",
+    "format_step_summary",
+    "resolve_step_summary",
+    "write_step_summary",
+]
 
 
 def _html_cell(value: str) -> str:
     """Escape ``value`` for a cell of a Markdown table, shown as code.
 
-    Every ASCII punctuation character is replaced by its numeric character
-    reference, so that nothing in a value from the file can be interpreted as
-    Markdown or HTML (a ``|`` ends the cell, ``<`` starts a tag, ``_`` is
-    emphasis...). Line breaks are escaped as in the summary line of the log.
+    Every ASCII punctuation character is replaced by its numeric
+    character reference, so that nothing in a value from the file can be
+    interpreted as Markdown or HTML (a ``|`` ends the cell, ``<`` starts
+    a tag, ``_`` is emphasis...). Line breaks are escaped as in the
+    summary line of the log.
     """
     escaped = "".join(
         f"&#{ord(char)};" if char in string.punctuation else char for char in single_line(value)
@@ -75,7 +85,8 @@ def format_error_summary(message: str) -> str:
 
 
 def write_step_summary(summary_path: str, markdown: str) -> None:
-    """Append ``markdown`` to the job summary file, followed by a blank line.
+    """Append ``markdown`` to the job summary file, followed by a blank
+    line.
 
     Raises:
         MetadataError: If the file cannot be written.
@@ -89,7 +100,8 @@ def write_step_summary(summary_path: str, markdown: str) -> None:
 
 
 def resolve_step_summary(enabled: bool, environ: Mapping[str, str]) -> str | None:
-    """Return the path of the job summary file, or None if it is not requested.
+    """Return the path of the job summary file, or None if it is not
+    requested.
 
     Args:
         enabled: The parsed ``--step-summary`` option.

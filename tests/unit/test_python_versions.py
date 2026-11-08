@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from packaging.specifiers import SpecifierSet
@@ -17,8 +17,13 @@ from extract_pyproject_metadata.python_versions import (
 )
 from tests.helpers import CANDIDATES, README_PATH, extract, write_pyproject
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-@pytest.mark.parametrize("requires_python", [">=3.10", ">=3.10,<4", "~=3.9", "==3.*", ">= 3.10", ""])
+
+@pytest.mark.parametrize(
+    "requires_python", [">=3.10", ">=3.10,<4", "~=3.9", "==3.*", ">= 3.10", ""]
+)
 def test_extract_metadata_requires_python(tmp_path: Path, requires_python: str) -> None:
     path = write_pyproject(
         tmp_path,
@@ -48,7 +53,9 @@ def test_extract_metadata_requires_python_must_be_a_string(tmp_path: Path, value
         tmp_path, f'[project]\nname = "p"\nversion = "1"\nrequires-python = {value}\n'
     )
 
-    with pytest.raises(MetadataError, match=r"\[project\]\.requires-python must be a string, got: "):
+    with pytest.raises(
+        MetadataError, match=r"\[project\]\.requires-python must be a string, got: "
+    ):
         extract(path)
 
 
@@ -93,9 +100,11 @@ def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> 
     assert compatible_python_versions(requires_python, CANDIDATES, "p.toml") == (
         [],
         [
-            "p.toml: no python-candidates version satisfies [project].requires-python "
-            f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
-            "matrix built from them is rejected by GitHub"
+            (
+                "p.toml: no python-candidates version satisfies [project].requires-python "
+                f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
+                "matrix built from them is rejected by GitHub"
+            )
         ],
     )
 
@@ -145,13 +154,17 @@ def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
     ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]', '["3.12\\n"]'],
 )
 def test_parse_python_candidates_not_major_minor(raw: str) -> None:
-    with pytest.raises(MetadataError, match=r"python-candidates must contain 'major.minor' versions"):
+    with pytest.raises(
+        MetadataError, match=r"python-candidates must contain 'major.minor' versions"
+    ):
         parse_python_candidates(raw)
 
 
 @pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[3.12]"])
 def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
-    with pytest.raises(MetadataError, match=r"python-candidates (is not valid JSON|must be a JSON array)"):
+    with pytest.raises(
+        MetadataError, match=r"python-candidates (is not valid JSON|must be a JSON array)"
+    ):
         parse_python_candidates(raw)
 
 
