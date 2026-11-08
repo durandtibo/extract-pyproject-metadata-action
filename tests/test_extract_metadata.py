@@ -553,8 +553,8 @@ def test_main_dynamic_version_warning_in_json(
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.10",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
     "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {},
@@ -677,8 +677,8 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.10",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
     "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {},
@@ -791,8 +791,8 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "numpy"],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.10",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
     "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {},
@@ -945,8 +945,8 @@ METADATA = {
     "requires_python": ">=3.10",
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
-    "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"],
-    "python_min": "3.10",
+    "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+    "python_min": "3.11",
     "python_max": "3.15",
     "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
@@ -973,10 +973,10 @@ def test_format_outputs() -> None:
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
-        "python-versions": '["3.10","3.11","3.12","3.13","3.14","3.15"]',
-        "python-min": "3.10",
+        "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
+        "python-min": "3.11",
         "python-max": "3.15",
-        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14","3.15"]}',
+        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
         "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
         "dependency-requirements": '{"numpy":[{"specifier":">=1","marker":""}],"missing":[]}',
@@ -1119,10 +1119,10 @@ def test_main_github_output_writes_outputs_and_annotations(
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
-        "python-versions": '["3.10","3.11","3.12","3.13","3.14","3.15"]',
-        "python-min": "3.10",
+        "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
+        "python-min": "3.11",
         "python-max": "3.15",
-        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14","3.15"]}',
+        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
         "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
         "dependency-requirements": (
@@ -1133,7 +1133,7 @@ def test_main_github_output_writes_outputs_and_annotations(
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         "📦 name=p version=1 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14","3.15"] python-min=3.10 python-max=3.15 extras=["","a"] '
+        'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
         'groups=["base","dev","other"] '
         'project-dependencies={"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"} '
         'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
@@ -1164,8 +1164,8 @@ def test_build_report(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.10",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
     "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
@@ -1737,17 +1737,17 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "requires-python": "",
         "extras": '["","numpy"]',
         "groups": "[]",
-        "python-versions": '["3.10","3.11","3.12","3.13","3.14","3.15"]',
-        "python-min": "3.10",
+        "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
+        "python-min": "3.11",
         "python-max": "3.15",
-        "python-matrix": '{"python-version":["3.10","3.11","3.12","3.13","3.14","3.15"]}',
+        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
         "project-dependencies": "{}",
         "dependency-specifiers": "{}",
         "dependency-requirements": "{}",
     }
     assert result.stdout == (
         "📦 name=coola version=1.2.3 requires-python= "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14","3.15"] python-min=3.10 python-max=3.15 extras=["","numpy"] groups=[] '
+        'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","numpy"] groups=[] '
         "project-dependencies={} dependency-specifiers={}\n"
     )
 
@@ -2044,8 +2044,8 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.10",
+        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+        "python_min": "3.11",
     "python_max": "3.15",
         "python_max": "3.15",
         "project_dependencies": {"numpy": ">=1.20"},
@@ -3118,7 +3118,7 @@ def test_compatible_python_versions_invalid_specifier_warns(requires_python: str
         ('["3.12"]', ["3.12"]),
         ('["3.10", "3.9", "3.10"]', ["3.10", "3.9"]),
         ('["0.1", "10.20"]', ["0.1", "10.20"]),
-        (DEFAULT_PYTHON_CANDIDATES, ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]),
+        (DEFAULT_PYTHON_CANDIDATES, ["3.11", "3.12", "3.13", "3.14", "3.15"]),
     ],
 )
 def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
@@ -4397,7 +4397,7 @@ def test_test_requirements_include_the_script_requirements() -> None:
 def test_format_summary() -> None:
     assert format_summary(format_outputs(METADATA)) == (
         "📦 name=coola version=1.2.3 requires-python=>=3.10 "
-        'python-versions=["3.10","3.11","3.12","3.13","3.14","3.15"] python-min=3.10 python-max=3.15 extras=["","numpy"] '
+        'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","numpy"] '
         'groups=["dev","test"] '
         'project-dependencies={"numpy":">=1","Foo_Bar":""} '
         'dependency-specifiers={"numpy":">=1","missing":null}'
