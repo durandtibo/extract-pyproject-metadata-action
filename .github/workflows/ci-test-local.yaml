@@ -627,6 +627,21 @@ jobs:
           print_success "license-files test passed"
 
       # -----------------------------------------------------------------------
+      # Test 22c: an invalid license expression is only a warning
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test an invalid license expression
+        id: test-invalid-license
+        uses: ./
+        with:
+          pyproject-path: test-data/invalid-license/pyproject.toml
+
+      - name: ✓ Verify the license is still output
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "license" "MIT License" "${{ steps.test-invalid-license.outputs.license }}"
+          print_success "invalid license test passed"
+
+      # -----------------------------------------------------------------------
       # Test 23: authors output
       # -----------------------------------------------------------------------
       - name: ✓ Verify authors
