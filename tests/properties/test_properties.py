@@ -1,7 +1,7 @@
 """Property-based tests (Hypothesis) of the parsers and the escaping functions.
 
 The examples are derandomized, so a run is reproducible: a failure on CI fails the same way
-locally. The unit tests with literal inputs are in ``test_extract_metadata.py``.
+locally. The unit tests with literal inputs are in ``tests/unit``.
 """
 
 from __future__ import annotations

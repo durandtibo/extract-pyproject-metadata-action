@@ -19,12 +19,12 @@ from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.metadata import extract_metadata
 from extract_pyproject_metadata.pyproject import load_pyproject
 
+ROOT_PATH = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
 PACKAGE_PATH = Path(__file__).resolve().parents[1] / "src" / "extract_pyproject_metadata"
 RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
 
 
-RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
 REQUIREMENTS_PATH = Path(__file__).resolve().parents[1] / "scripts" / "requirements.txt"
 
 
@@ -212,7 +212,6 @@ CANDIDATES = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 ACTION_PATH = Path(__file__).resolve().parents[1] / "action.yaml"
 
 
-ACTION_PATH = Path(__file__).resolve().parents[1] / "action.yaml"
 README_PATH = Path(__file__).resolve().parents[1] / "README.md"
 
 

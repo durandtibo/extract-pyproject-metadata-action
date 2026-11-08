@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
+from tests.helpers import SCRIPT_PATH
+
 HEADER = '[project]\nname = "a"\nversion = "1"\n'
 
 

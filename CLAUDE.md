@@ -61,15 +61,19 @@ fixtures used by the integration workflows.
 
 ## Tests
 
-- Unit tests are in `tests/`, one module per area: `test_metadata.py` (the
-  fields of the file), `test_dependencies.py`, `test_python_versions.py`,
-  `test_output.py` (outputs, workflow commands, summary), `test_cli.py` (`main`
-  and the options), `test_run_sh.py` and `test_contract.py` (`action.yaml` and
-  `README.md` agree with the script). Put a new test in the module of its area.
-  Write one for every new or changed function, including private ones, and for
-  every bug fixed (check that it fails without the fix).
-- Shared builders and constants are in `tests/helpers.py`, fixtures in `tests/conftest.py`. The import path of `src/` is the `pythonpath` of
-  `pyproject.toml`.
+- The tests mirror the package. `tests/unit/` has one module per module of
+  `src/extract_pyproject_metadata/` (`tests/unit/test_metadata.py`,
+  `tests/unit/dependencies/test_lookup.py`, `tests/unit/output/test_github.py`,
+  ...). `tests/integration/` runs the command line in a new process
+  (`test_cli_process.py`, `test_cli_invalid_arguments.py`, `test_limits.py`),
+  `run.sh` (`test_run_sh.py`) and checks that `action.yaml` and `README.md`
+  agree with the code (`test_contract.py`); `tests/properties/` has the
+  property-based tests. Put a new test in the module of its area. Write one
+  for every new or changed function, including private ones, and for every bug
+  fixed (check that it fails without the fix).
+- Shared builders and constants are in `tests/helpers.py` (import them with
+  `from tests.helpers import ...`; every test directory has an `__init__.py`).
+  The import path of `src/` is the `pythonpath` of `pyproject.toml`.
 - Build `pyproject.toml` contents with `tmp_path` and `write_pyproject`; no
   network, no sleeps.
 - One behaviour per test, with `pytest.mark.parametrize` for the same check on
