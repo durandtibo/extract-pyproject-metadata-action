@@ -50,6 +50,11 @@ outputs:
   version:
     description: Project version, as declared in [project].version
     value: ${{ steps.metadata.outputs.version }}
+  requires-python:
+    description: >
+      Python version specifier, as declared in [project].requires-python (empty
+      if not declared)
+    value: ${{ steps.metadata.outputs.requires-python }}
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}

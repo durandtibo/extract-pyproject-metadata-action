@@ -5,20 +5,20 @@ Usage:
         <extra-values-json> [<dependencies-json>]
 
 Without ``--github-output``, prints a single JSON object to stdout:
-    {"name": ..., "normalized_name": ..., "version": ..., "extras": [...],
-     "dependency_specifiers": {...}, "warnings": [...]}
+    {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
+     "extras": [...], "dependency_specifiers": {...}, "warnings": [...]}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``extras`` and
-``dependency-specifiers`` to
-FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that values may
-contain line breaks) and prints to stdout one ``::warning file=<path>::``
-workflow command per warning, where ``<path>`` is the pyproject path, so that
-GitHub attaches the annotation to the file, followed by a one-line summary. Warnings are printed on stdout
-because GitHub only parses workflow commands there.
+outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
+``extras`` and ``dependency-specifiers`` to FILE (the format of
+``$GITHUB_OUTPUT``, with a delimiter so that values may contain line breaks)
+and prints to stdout one ``::warning file=<path>::`` workflow command per
+warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
+annotation to the file, followed by a one-line summary. Warnings are printed
+on stdout because GitHub only parses workflow commands there.
 
 Exits non-zero with a message on stderr if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, a
@@ -92,18 +92,21 @@ def extract_metadata(
 
     Returns:
         A dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, and ``extras``. ``version`` is
+        ``version``, ``requires_python`` and ``extras``. ``version`` is
         an empty string when ``[project].version`` is declared in
-        ``[project].dynamic`` and has no static value. ``extras``
-        lists the ``extra_values`` first, then the extras sorted by normalized
-        name. Names are compared per PEP 685 (like package names), so
-        spellings of the same extra are duplicates: the first one is kept.
+        ``[project].dynamic`` and has no static value. ``requires_python``
+        is ``[project].requires-python`` as written, or an empty string if it is
+        not declared. ``extras`` lists the ``extra_values`` first, then the
+        extras sorted by normalized name. Names are compared per PEP 685 (like
+        package names), so spellings of the same extra are duplicates: the
+        first one is kept.
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
             is not an array, a ``name`` that is not a non-empty string, a
-            ``version`` that is not a string or not a valid PEP 440 version, an
+            ``version`` that is not a string or not a valid PEP 440 version, a
+            ``requires-python`` that is not a string, an
             ``optional-dependencies`` that is not a table, or
             ``extra_values_json`` is not a JSON array of strings.
     """
@@ -148,6 +151,14 @@ def extract_metadata(
             )
             raise MetadataError(msg) from exc
 
+    requires_python = project.get("requires-python", "")
+    if not isinstance(requires_python, str):
+        msg = (
+            f"{pyproject_path}: [project].requires-python must be a string, "
+            f"got: {requires_python!r}"
+        )
+        raise MetadataError(msg)
+
     optional_dependencies = project.get("optional-dependencies", {})
     if not isinstance(optional_dependencies, dict):
         msg = (
@@ -180,6 +191,7 @@ def extract_metadata(
         "name": name,
         "normalized_name": canonicalize_name(name),
         "version": version,
+        "requires_python": requires_python,
         "extras": list(unique_extras.values()),
     }
 
@@ -431,8 +443,8 @@ def format_outputs(metadata: dict) -> dict[str, str]:
 
     Args:
         metadata: The dict built by ``main``, with keys ``name``,
-            ``normalized_name``, ``version``, ``extras`` and
-            ``dependency_specifiers``.
+            ``normalized_name``, ``version``, ``requires_python``, ``extras``
+            and ``dependency_specifiers``.
 
     Returns:
         A dict mapping each output name of ``action.yaml`` to its value, with
@@ -442,6 +454,7 @@ def format_outputs(metadata: dict) -> dict[str, str]:
         "name": metadata["name"],
         "normalized-name": metadata["normalized_name"],
         "version": metadata["version"],
+        "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "dependency-specifiers": json.dumps(
             metadata["dependency_specifiers"], separators=(",", ":"), ensure_ascii=False
