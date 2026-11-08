@@ -4248,6 +4248,19 @@ def test_action_yaml_separates_the_inputs_with_a_blank_line() -> None:
     assert [inputs[index - 1] for index in starts[1:]] == [""] * (len(starts) - 1)
 
 
+def test_action_yaml_inputs_do_not_repeat_the_default_of_required() -> None:
+    action = ACTION_PATH.read_text(encoding="utf-8")
+
+    assert "required:" not in action
+
+
+def test_action_yaml_every_input_has_a_default() -> None:
+    lines = ACTION_PATH.read_text(encoding="utf-8").splitlines()
+    inputs = "\n".join(lines[lines.index("inputs:") : lines.index("outputs:")])
+
+    assert inputs.count("    default:") == len(_action_section_keys("inputs"))
+
+
 def test_action_section_keys_finds_the_inputs_and_outputs() -> None:
     assert "pyproject-path" in _action_section_keys("inputs")
     assert "normalized-name" in _action_section_keys("outputs")
