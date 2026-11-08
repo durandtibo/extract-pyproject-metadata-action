@@ -18,7 +18,7 @@ from helpers import (
 )
 
 import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.cli import DEFAULT_PYTHON_CANDIDATES
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.types import Metadata, Report
 
 
