@@ -473,6 +473,7 @@ def test_main_dynamic_version_warning_in_json(
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
+        "schema_version": 1,
     }
 
 
@@ -595,6 +596,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
+        "schema_version": 1,
     }
 
 
@@ -675,6 +677,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
+        "schema_version": 1,
     }
 
 
@@ -826,6 +829,7 @@ METADATA = {
     "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "warnings": [],
+    "schema_version": 1,
 }
 
 
@@ -1021,6 +1025,7 @@ def test_build_report(tmp_path: Path) -> None:
         "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
         "dependency_specifiers": {"dup": ">=1", "missing": None},
         "warnings": [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"],
+        "schema_version": 1,
     }
 
 
@@ -1848,6 +1853,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
+        "schema_version": 1,
     }
 
 
@@ -3415,6 +3421,21 @@ def test_main_invalid_urls_returns_one(tmp_path: Path, capsys: pytest.CaptureFix
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     assert "[project.urls] must be a table" in capsys.readouterr().err
+
+
+def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["schema_version"] == extract_metadata_module.SCHEMA_VERSION == 1
+
+
+def test_github_output_has_no_schema_version(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+    output = tmp_path / "out"
+
+    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert "schema-version" not in parse_github_output(output.read_text(encoding="utf-8"))
 
 
 def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

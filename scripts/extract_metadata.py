@@ -18,10 +18,14 @@ characters are kept as they are, as in the action outputs):
      "requires_python": ...,
      "extras": [...], "groups": [...], "python_versions": [...], "python_min": ..., "python_max": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
-     "warnings": [...]}
+     "warnings": [...], "schema_version": 1}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.
+
+"schema_version" is the version of this JSON object: it increases when a key is
+renamed, removed or changes type, not when a key is added, so that a tool that
+reads the object can check it.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``normalized-version``, ``description``, ``readme``, ``license``, ``authors``, ``urls``, ``requires-python``,
@@ -88,6 +92,9 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+# The version of the JSON printed to stdout (the ``schema_version`` key of the report).
+SCHEMA_VERSION = 1
+
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
 
@@ -130,6 +137,7 @@ class Report(Metadata):
     project_dependencies: dict[str, str]
     dependency_specifiers: dict[str, str | None]
     warnings: list[str]
+    schema_version: int
 
 
 class Options(NamedTuple):
@@ -1371,6 +1379,7 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         project_dependencies=project_dependencies,
         dependency_specifiers=specifiers,
         warnings=warnings,
+        schema_version=SCHEMA_VERSION,
     )
 
 
