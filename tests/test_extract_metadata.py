@@ -16,8 +16,10 @@ from extract_metadata import (  # noqa: E402
     check_no_missing_dependency,
     extract_dependency_specifiers,
     _candidate_requirements,
+    _check_array,
     _conflict_warnings,
     _flatten_group,
+    _get_table,
     _parse_dependencies,
     escape_annotation,
     escape_annotation_property,
@@ -1900,3 +1902,28 @@ def test_cli_end_to_end_fail_on_missing(tmp_path: Path) -> None:
     assert "dependencies not found" in result.stderr
     assert "['pandas']" in result.stderr
     assert result.stdout == ""
+
+
+def test_get_table() -> None:
+    assert _get_table({"project": {"name": "a"}}, "project", "[project]", "p.toml") == {"name": "a"}
+
+
+@pytest.mark.parametrize("container", [{}, {"other": 1}])
+def test_get_table_absent_is_empty(container: dict) -> None:
+    assert _get_table(container, "project", "[project]", "p.toml") == {}
+
+
+@pytest.mark.parametrize("value", [1, "text", [], [{"a": 1}]])
+def test_get_table_not_a_table(value: object) -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[project\] must be a table, got: "):
+        _get_table({"project": value}, "project", "[project]", "p.toml")
+
+
+def test_check_array() -> None:
+    assert _check_array(["a", 1], "[x]", "p.toml") == ["a", 1]
+
+
+@pytest.mark.parametrize("value", [{}, "text", 1])
+def test_check_array_not_an_array(value: object) -> None:
+    with pytest.raises(MetadataError, match=r"^p.toml: \[x\] must be an array, got: "):
+        _check_array(value, "[x]", "p.toml")
