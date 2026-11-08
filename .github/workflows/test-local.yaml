@@ -234,3 +234,25 @@ jobs:
           assert_equal "name" "My_Package.Name" "${{ steps.test-normalized-name.outputs.name }}"
           assert_equal "normalized-name" "my-package-name" "${{ steps.test-normalized-name.outputs.normalized-name }}"
           print_success "normalized-name test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 12: requires-python output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test requires-python output
+        id: test-requires-python
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+
+      - name: 🧪 Test requires-python output when not declared
+        id: test-no-requires-python
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify requires-python
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "requires-python" ">=3.10,<4" '${{ steps.test-requires-python.outputs.requires-python }}'
+          assert_equal "requires-python" "" '${{ steps.test-no-requires-python.outputs.requires-python }}'
+          print_success "requires-python test passed"
