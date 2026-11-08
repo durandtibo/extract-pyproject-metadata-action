@@ -23,11 +23,13 @@ from extract_metadata import (  # noqa: E402
     _conflict_warnings,
     _dynamic_dependency_fields,
     _flatten_group,
+    _index_requirements,
     _get_table,
     compatible_python_versions,
     escape_annotation,
     escape_annotation_property,
     extract_metadata,
+    extract_project_dependencies,
     format_outputs,
     load_pyproject,
     main,
@@ -283,6 +285,7 @@ def test_main_dynamic_version_warning_in_json(
         "extras": [],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
     }
@@ -395,6 +398,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "extras": [],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
     }
@@ -465,6 +469,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "extras": ["", "numpy"],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "project_dependencies": {},
         "dependency_specifiers": {},
         "warnings": [],
     }
@@ -607,6 +612,7 @@ METADATA = {
     "extras": ["", "numpy"],
     "groups": ["dev", "test"],
     "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+    "project_dependencies": {"numpy": ">=1", "Foo_Bar": ""},
     "dependency_specifiers": {"numpy": ">=1", "missing": None},
     "warnings": [],
 }
@@ -621,6 +627,7 @@ def test_format_outputs() -> None:
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
+        "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
     }
 
@@ -741,6 +748,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
+        "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
@@ -816,6 +824,7 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         "extras": '["","numpy"]',
         "groups": "[]",
         "python-versions": '["3.10","3.11","3.12","3.13","3.14"]',
+        "project-dependencies": "{}",
         "dependency-specifiers": "{}",
     }
     assert result.stdout == '📦 name=coola version=1.2.3 extras=["","numpy"]\n'
@@ -1026,6 +1035,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "extras": [],
         "groups": [],
         "python_versions": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+        "project_dependencies": {"numpy": ">=1.20"},
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "warnings": [],
     }
@@ -2131,3 +2141,137 @@ def test_action_yaml_default_of_python_candidates_matches_the_script() -> None:
     action = (Path(__file__).resolve().parents[1] / "action.yaml").read_text(encoding="utf-8")
 
     assert f"default: '{DEFAULT_PYTHON_CANDIDATES}'" in action
+
+
+def test_extract_project_dependencies() -> None:
+    data = {"project": {"dependencies": ["numpy>=1.20,<3", "Foo_Bar", "tqdm[extra]~=4.0"]}}
+
+    assert extract_project_dependencies(data) == (
+        {"numpy": "<3,>=1.20", "Foo_Bar": "", "tqdm": "~=4.0"},
+        [],
+    )
+
+
+@pytest.mark.parametrize(
+    "data", [{}, {"project": {}}, {"project": {"dependencies": []}}, {"project": {"name": "a"}}]
+)
+def test_extract_project_dependencies_empty(data: dict) -> None:
+    assert extract_project_dependencies(data) == ({}, [])
+
+
+def test_extract_project_dependencies_ignores_extras_and_groups() -> None:
+    data = {
+        "project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}},
+        "dependency-groups": {"dev": ["c"]},
+    }
+
+    assert extract_project_dependencies(data) == ({"a": ""}, [])
+
+
+def test_extract_project_dependencies_first_requirement_wins() -> None:
+    data = {
+        "project": {
+            "dependencies": [
+                "numpy>=1.20; python_version < '3.12'",
+                "numpy>=1.26; python_version >= '3.12'",
+            ]
+        }
+    }
+
+    assert extract_project_dependencies(data) == ({"numpy": ">=1.20"}, [])
+
+
+def test_extract_project_dependencies_keeps_the_first_spelling_of_the_name() -> None:
+    data = {"project": {"dependencies": ["Zope_Interface>=5", "zope.interface>=6"]}}
+
+    result, warnings = extract_project_dependencies(data, "p.toml")
+
+    assert result == {"Zope_Interface": ">=5"}
+    assert warnings == [
+        "Zope_Interface has different specifiers in p.toml: ['>=5', '>=6']; using '>=5'"
+    ]
+
+
+def test_extract_project_dependencies_ignores_non_string_entries() -> None:
+    assert extract_project_dependencies({"project": {"dependencies": ["a", 1, None, {"b": 1}]}}) == (
+        {"a": ""},
+        [],
+    )
+
+
+def test_extract_project_dependencies_invalid_requirement_warns() -> None:
+    result, warnings = extract_project_dependencies(
+        {"project": {"dependencies": ["good>=1", "bad requirement!!"]}}, "p.toml"
+    )
+
+    assert result == {"good": ">=1"}
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Ignoring invalid requirement 'bad requirement!!' in p.toml: ")
+
+
+def test_extract_project_dependencies_dynamic_dependencies_warns() -> None:
+    data = {"project": {"dynamic": ["dependencies"]}}
+
+    assert extract_project_dependencies(data, "p.toml") == (
+        {},
+        ["p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        ({"project": 1}, r"\[project\] must be a table"),
+        ({"project": {"dependencies": "a"}}, r"\[project\]\.dependencies must be an array"),
+    ],
+)
+def test_extract_project_dependencies_wrong_type(data: dict, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        extract_project_dependencies(data)
+
+
+def test_index_requirements() -> None:
+    found, names, warnings = _index_requirements(
+        ["Foo_Bar>=1; os_name == 'nt'", "foo-bar<3", "oops==", "x"], "p.toml"
+    )
+
+    assert found == {
+        "foo-bar": [(">=1", 'os_name == "nt"'), ("<3", None)],
+        "x": [("", None)],
+    }
+    assert names == {"foo-bar": "Foo_Bar", "x": "x"}
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Ignoring invalid requirement 'oops==' in p.toml: ")
+
+
+def test_index_requirements_empty() -> None:
+    assert _index_requirements([], "p.toml") == ({}, {}, [])
+
+
+def test_main_project_dependencies_in_json_and_warnings_are_not_duplicated(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\ndependencies = ["dup>=1", "dup>=2"]\n'
+    )
+
+    exit_code = main(["extract_metadata.py", str(path), "[]", '["dup"]'])
+    report = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert report["project_dependencies"] == {"dup": ">=1"}
+    assert report["warnings"] == [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"]
+
+
+def test_main_github_output_project_dependencies(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\nversion = "1"\ndependencies = ["numpy>=1.20"]\n'
+    )
+    output = tmp_path / "github_output"
+
+    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+
+    assert exit_code == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["project-dependencies"] == (
+        '{"numpy":">=1.20"}'
+    )

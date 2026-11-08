@@ -378,3 +378,25 @@ jobs:
             exit 1
           fi
           print_success "invalid python-candidates correctly failed"
+
+      # -----------------------------------------------------------------------
+      # Test 16: project-dependencies output
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test project-dependencies output
+        id: test-project-dependencies
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+
+      - name: 🧪 Test project-dependencies output without dependencies
+        id: test-no-project-dependencies
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify project-dependencies
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "project-dependencies" '{"invoke-tasklib":"<1.0.0,>=0.0.8","Foo_Bar":"==2.1","nospec":""}' '${{ steps.test-project-dependencies.outputs.project-dependencies }}'
+          assert_equal "project-dependencies" '{}' '${{ steps.test-no-project-dependencies.outputs.project-dependencies }}'
+          print_success "project-dependencies test passed"
