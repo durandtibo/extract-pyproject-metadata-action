@@ -3,3 +3,7 @@ name = "fields-pkg"
 version = "1.0"
 readme = "docs/README.md"
 license = "MIT"
+authors = [
+  { name = "Ada Lovelace", email = "ada@example.com" },
+  { name = "Bob" },
+]
