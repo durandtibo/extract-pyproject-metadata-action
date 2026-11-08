@@ -166,3 +166,55 @@ jobs:
           assert_equal "version" "" "${{ steps.test-dynamic-version.outputs.version }}"
           assert_equal "extras" '["numpy"]' '${{ steps.test-dynamic-version.outputs.extras }}'
           print_success "dynamic version test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 8: dependencies input is looked up in the pyproject.toml
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test dependencies input
+        id: test-dependencies
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["invoke-tasklib","foo.bar","nospec","numpy","grp-pkg","dev-pkg","missing"]'
+
+      - name: ✓ Verify dependency-specifiers
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "deps-pkg" "${{ steps.test-dependencies.outputs.name }}"
+          assert_equal "dependency-specifiers" '{"invoke-tasklib":"<1.0.0,>=0.0.8","foo.bar":"==2.1","nospec":"","numpy":"~=2.0","grp-pkg":">=1.5","dev-pkg":"<3","missing":null}' '${{ steps.test-dependencies.outputs.dependency-specifiers }}'
+          print_success "dependencies test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 9: dependency-specifiers is an empty object by default
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test default dependencies
+        id: test-default-dependencies
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+
+      - name: ✓ Verify default dependency-specifiers
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "dependency-specifiers" '{}' '${{ steps.test-default-dependencies.outputs.dependency-specifiers }}'
+          print_success "default dependencies test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 10: invalid dependencies JSON should fail the step
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test invalid dependencies (should fail)
+        id: test-invalid-dependencies
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '{"not": "an array"}'
+        continue-on-error: true
+
+      - name: ✓ Verify invalid dependencies fails the step
+        run: |
+          source scripts/test-helper.sh
+          if [ "${{ steps.test-invalid-dependencies.outcome }}" = "success" ]; then
+            print_error "Invalid dependencies should cause the step to fail"
+            exit 1
+          fi
+          print_success "invalid dependencies correctly failed"
