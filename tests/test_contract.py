@@ -2,6 +2,7 @@
 
 
 
+import ast
 import re
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from extract_metadata import (
 from helpers import (
     ACTION_PATH,
     README_PATH,
+    SCRIPT_PATH,
     _action_section_keys,
     _readme_table_names,
     extract,
@@ -90,3 +92,22 @@ def test_module_docstring_lists_the_keys_of_the_json() -> None:
     section = docstring.split("prints a single JSON object", 1)[1].split("\n\n", 1)[0]
 
     assert sorted(re.findall(r'"([a-z_]+)":', section)) == sorted(Report.__annotations__)
+
+
+def test_script_defines_each_top_level_name_once() -> None:
+    names = [
+        target.id
+        for node in ast.parse(SCRIPT_PATH.read_text(encoding="utf-8")).body
+        for target in _defined_names(node)
+    ]
+
+    assert [name for name in names if names.count(name) > 1] == []
+
+
+def _defined_names(node: ast.stmt) -> list[ast.Name]:
+    """Return the names that a top-level statement assigns."""
+    if isinstance(node, ast.Assign):
+        return [target for target in node.targets if isinstance(target, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return [node.target]
+    return []
