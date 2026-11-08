@@ -264,6 +264,24 @@ def test_extract_metadata_missing_name(tmp_path: Path) -> None:
         extract(path)
 
 
+@pytest.mark.parametrize("dynamic", ['["name"]', '["name", "version"]', '["readme", "name"]'])
+def test_extract_metadata_dynamic_name_is_an_error(tmp_path: Path, dynamic: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nversion = "1.2.3"\ndynamic = {dynamic}\n')
+
+    with pytest.raises(
+        MetadataError, match=r"\[project\]\.name is listed in \[project\]\.dynamic.*static name"
+    ):
+        extract(path)
+
+
+def test_extract_metadata_static_name_wins_over_dynamic(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndynamic = ["name"]\n'
+    )
+
+    assert extract(path)["name"] == "coola"
+
+
 @pytest.mark.parametrize(
     ("project", "match"),
     [

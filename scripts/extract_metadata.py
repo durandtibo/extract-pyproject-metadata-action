@@ -176,7 +176,8 @@ def extract_metadata(
         empty if there is no such table.
 
     Raises:
-        MetadataError: If ``[project]`` is not a table, is missing ``name`` or
+        MetadataError: If ``[project]`` is not a table, is missing ``name`` (also
+            when ``name`` is listed in ``dynamic``, which PEP 621 forbids) or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
             is not an array, a ``name`` that is not a non-empty string or not a
             valid PEP 508 name, a
@@ -190,6 +191,13 @@ def extract_metadata(
     try:
         name = project["name"]
     except KeyError as exc:
+        if "name" in dynamic:
+            # PEP 621: the name cannot be dynamic, so the build backend cannot supply it.
+            msg = (
+                f"{pyproject_path}: [project].name is listed in [project].dynamic, but "
+                "PEP 621 requires a static name"
+            )
+            raise MetadataError(msg) from exc
         msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
         raise MetadataError(msg) from exc
     warnings: list[str] = []

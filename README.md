@@ -205,6 +205,8 @@ The action's step fails (non-zero exit) when:
 - The file is not valid TOML.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
 - `[project].dynamic` is not an array.
+- `name` is listed in `[project].dynamic` and not set in `[project]` (PEP 621 requires
+  a static name; the error says so instead of reporting a missing key).
 - `[project]` is not a table, `name` is not a non-empty string, or `version` is
   not a string (for example `version = 1.0` is a TOML float; write
   `version = "1.0"`).
