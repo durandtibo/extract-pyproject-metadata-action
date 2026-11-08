@@ -11,7 +11,8 @@ installs.
 Requires the repository to already be checked out and a Python 3 interpreter
 available on `PATH`. If the `packaging` package (or, on Python < 3.11 without
 stdlib `tomllib`, the `tomli` backport) is missing, the action installs it in a
-private virtual environment under `$RUNNER_TEMP`. It never modifies the Python
+private virtual environment under `$RUNNER_TEMP`, with the versions listed in
+`scripts/requirements.txt`. It never modifies the Python
 environment of the caller.
 
 > [!NOTE]
