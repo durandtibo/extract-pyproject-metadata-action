@@ -185,7 +185,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert json.loads(captured.out) == {"name": "coola", "version": "1.2.3", "extras": []}
+    assert json.loads(captured.out) == {"name": "coola", "version": "1.2.3", "extras": [], "dependency_specifiers": {}}
 
 
 def test_main_returns_nonzero_on_error(
@@ -230,6 +230,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "name": "coola",
         "version": "1.2.3",
         "extras": ["", "numpy"],
+        "dependency_specifiers": {},
     }
 
 
@@ -245,3 +246,59 @@ def test_cli_end_to_end_error_exit_code(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "not found" in result.stderr
+
+
+from extract_metadata import extract_dependency_specifiers  # noqa: E402
+
+DEPS_TOML = """
+[project]
+name = "p"
+version = "1"
+dependencies = ["Foo_Bar>=1,<2; python_version>'3'", "nospec", "withextra[x]>=3"]
+
+[project.optional-dependencies]
+a = ["extra-pkg~=2.0", "dup>=1"]
+
+[dependency-groups]
+base = ["grp-pkg==1.0"]
+dev = [{include-group = "base"}, "dev-pkg>=0.1"]
+other = ["dup>=2"]
+"""
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("foo.bar", "<2,>=1"),
+        ("nospec", ""),
+        ("withextra", ">=3"),
+        ("EXTRA_pkg", "~=2.0"),
+        ("grp-pkg", "==1.0"),
+        ("dev-pkg", ">=0.1"),
+        ("missing", None),
+    ],
+)
+def test_dependency_specifiers(tmp_path: Path, name: str, expected: str | None) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    assert extract_dependency_specifiers(str(path), json.dumps([name])) == {name: expected}
+
+
+def test_dependency_include_group_only(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[dependency-groups]\nbase = ["x>=1"]\ndev = [{include-group = "base"}]\n',
+    )
+    assert extract_dependency_specifiers(str(path), '["x"]') == {"x": ">=1"}
+
+
+def test_dependency_duplicate_warns(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    assert extract_dependency_specifiers(str(path), '["dup"]') == {"dup": ">=1"}
+    assert "::warning::" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["nope", '{"a": 1}', "[1]"])
+def test_dependency_invalid_input(tmp_path: Path, value: str) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    with pytest.raises(MetadataError):
+        extract_dependency_specifiers(str(path), value)
