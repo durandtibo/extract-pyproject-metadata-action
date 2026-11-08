@@ -1,2 +1,10 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["scripts"]
+
+[tool.coverage.report]
+# The unit tests cover the whole script on every supported Python version.
+fail_under = 100
+show_missing = true
