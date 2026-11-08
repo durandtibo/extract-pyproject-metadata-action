@@ -70,12 +70,13 @@ from packaging.version import InvalidVersion, Version
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
 
-# A "major.minor" Python version, such as "3.12".
-_MINOR_VERSION = re.compile(r"^[0-9]+\.[0-9]+$")
+# A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
+# also match before a trailing line break.
+_MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
 
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
-# letter or a digit.
-_VALID_NAME = re.compile(r"^([A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9])$", re.IGNORECASE)
+# letter or a digit. Always used with ``fullmatch``.
+_VALID_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
 
 
 class MetadataError(Exception):
@@ -197,7 +198,7 @@ def extract_metadata(
     if not isinstance(name, str) or not name:
         msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
         raise MetadataError(msg)
-    if not _VALID_NAME.match(name):
+    if not _VALID_NAME.fullmatch(name):
         msg = (
             f"{pyproject_path}: [project].name is not a valid project name (letters, digits, "
             f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
@@ -616,7 +617,7 @@ def parse_python_candidates(raw: str) -> list[str]:
     """
     candidates = parse_string_array(raw, "python-candidates")
     for candidate in candidates:
-        if not _MINOR_VERSION.match(candidate):
+        if not _MINOR_VERSION.fullmatch(candidate):
             msg = f"python-candidates must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
             raise MetadataError(msg)
     return list(dict.fromkeys(candidates))

@@ -1919,7 +1919,7 @@ def test_extract_metadata_valid_names(tmp_path: Path, name: str) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB", "a\\nb", " a", "a "],
+    ["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB", "a\\nb", " a", "a ", "a\\n"],
 )
 def test_extract_metadata_invalid_names(tmp_path: Path, name: str) -> None:
     path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
@@ -2065,7 +2065,8 @@ def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    "raw", ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]']
+    "raw",
+    ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]', '["3.12\\n"]'],
 )
 def test_parse_python_candidates_not_major_minor(raw: str) -> None:
     with pytest.raises(MetadataError, match=r"python-candidates must contain 'major.minor' versions"):
