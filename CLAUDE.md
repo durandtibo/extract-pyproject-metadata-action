@@ -9,6 +9,35 @@ project name, version, extra names and dependency specifiers from a
 only wires its inputs and outputs. `test-data/` holds the `pyproject.toml`
 fixtures used by the integration workflows.
 
+## Architecture
+
+The package `src/extract_pyproject_metadata/` is split by concern. Imports go one
+way, from the bottom of this list to the top, and a module never imports from a
+module above it:
+
+1. `errors` (`MetadataError`), `types` (`Metadata`, `Report`), `checks` (type
+   checks of the values read from the file), `inputs` (JSON and boolean inputs,
+   `Options`).
+2. `pyproject` (read and parse the file), `license`, `fields` (optional fields
+   of `[project]` and `[build-system]`), `metadata` (`extract_metadata`: name,
+   version and the other fields).
+3. `dependencies/` (`groups`, `requirements`, `lookup`) and `python_versions`.
+4. `output/` (`escaping`, `github`, `summary`): action outputs, workflow
+   commands and job summary. It only depends on `types` and `errors`.
+5. `report` (`build_report`) wires 2 to 4 together; `cli` (argument parser and
+   `main`) is the top.
+
+- Put a new function in the module of its concern; create a module (and its
+  test module) instead of growing one past a few hundred lines. A constant
+  lives in the module that uses it.
+- A name used by another module is public (no leading underscore) and listed in
+  the `__all__` of its module; `tests/unit/test_package.py` checks the lists.
+  Use a verb prefix (`read_`, `parse_`, `format_`) so that a function is not
+  shadowed by the variable that holds its result.
+- Pass a collaborator that a test needs to replace (a delimiter factory, a
+  path) as an argument with a default, instead of monkeypatching a module.
+- Every module has a docstring, and `from __future__ import annotations`.
+
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then

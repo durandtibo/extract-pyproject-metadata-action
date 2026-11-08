@@ -9,6 +9,8 @@ from packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array
 from extract_pyproject_metadata.errors import MetadataError
 
+__all__ = ["flatten_group"]
+
 # Limits that turn a pathological dependency-groups table into an error instead of a Python
 # traceback (include-group chain deeper than the recursion limit) or a run that never ends
 # (a group that includes the same group twice, 25 levels deep, expands to 2**25 entries).

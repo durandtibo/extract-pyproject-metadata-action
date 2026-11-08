@@ -12,6 +12,8 @@ except ImportError:  # packaging before 24.2 cannot validate license expressions
     InvalidLicenseExpression = None  # type: ignore[assignment,misc]
     canonicalize_license_expression = None  # type: ignore[assignment]
 
+__all__ = ["license_warnings", "read_license_text"]
+
 
 def read_license_text(license_: object, pyproject_path: str) -> str:
     """Return the license declared by ``[project].license``.

@@ -8,6 +8,8 @@ from typing import Any
 
 from extract_pyproject_metadata.errors import MetadataError
 
+__all__ = ["UTF8_BOM", "load_pyproject"]
+
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
 

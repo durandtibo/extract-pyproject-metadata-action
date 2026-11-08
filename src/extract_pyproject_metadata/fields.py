@@ -9,6 +9,8 @@ from packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array, check_str, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
 
+__all__ = ["read_authors", "read_build_system", "read_extra_names", "read_group_names", "read_readme_path", "read_string_table", "read_urls"]
+
 
 def read_extra_names(
     project: dict[str, Any], extra_values: list[str], pyproject_path: str

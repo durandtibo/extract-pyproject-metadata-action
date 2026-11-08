@@ -22,6 +22,8 @@ from extract_pyproject_metadata.fields import (
 from extract_pyproject_metadata.license import license_warnings, read_license_text
 from extract_pyproject_metadata.types import Metadata
 
+__all__ = ["extract_metadata"]
+
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit. Always used with ``fullmatch``.
 _VALID_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)

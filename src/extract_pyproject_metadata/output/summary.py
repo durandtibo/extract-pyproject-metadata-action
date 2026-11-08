@@ -12,6 +12,8 @@ from extract_pyproject_metadata.output.escaping import (
 )
 from extract_pyproject_metadata.types import Report
 
+__all__ = ["format_error_summary", "format_step_summary", "resolve_step_summary", "write_step_summary"]
+
 
 def _html_cell(value: str) -> str:
     """Escape ``value`` for a cell of a Markdown table, shown as code.

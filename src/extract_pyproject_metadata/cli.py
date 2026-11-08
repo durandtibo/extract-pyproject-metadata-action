@@ -127,6 +127,8 @@ from extract_pyproject_metadata.python_versions import (
 )
 from extract_pyproject_metadata.report import build_report
 
+__all__ = ["main"]
+
 
 class _ArgumentParser(argparse.ArgumentParser):
     """An argument parser whose usage errors can be GitHub error annotations.
