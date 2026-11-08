@@ -12,7 +12,7 @@ fixtures used by the integration workflows.
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
   `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
-  `.venv/bin/pytest`.
+  `.venv/bin/pytest`, `.venv/bin/ruff check scripts tests` (must pass).
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
 - Only Python >= 3.11 is supported (the script uses `tomllib`). The script must
