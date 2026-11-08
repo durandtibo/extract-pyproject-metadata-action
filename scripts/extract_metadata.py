@@ -5,13 +5,15 @@ extras and dependency groups.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--fail-on-dynamic-version true|false]
+        [--fail-on-dynamic-version true|false] [--step-summary true|false]
+        [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
 Without ``--github-output``, prints a single JSON object to stdout:
-    {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
-     "extras": [...], "groups": [...], "python_versions": [...],
+    {"name": ..., "normalized_name": ..., "version": ..., "description": ...,
+     "requires_python": ...,
+     "extras": [...], "groups": [...], "python_versions": [...], "python_min": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
      "warnings": [...]}
 
@@ -19,15 +21,21 @@ Without ``--github-output``, prints a single JSON object to stdout:
 input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
-outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
-``extras``, ``groups``, ``python-versions``, ``project-dependencies`` and
+outputs ``name``, ``normalized-name``, ``version``, ``description``, ``requires-python``,
+``extras``, ``groups``, ``python-versions``, ``python-min``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
-delimiter so that values may contain line breaks)
-and prints to stdout one ``::warning file=<path>::`` workflow command per
-warning, where ``<path>`` is the pyproject path, so that GitHub attaches the
-annotation to the file, followed by a one-line summary of the outputs.
-Warnings are printed
-on stdout because GitHub only parses workflow commands there.
+delimiter so that values may contain line breaks) and prints to stdout one
+``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
+the pyproject path, so that GitHub attaches the annotation to the file,
+followed by a one-line summary of the outputs. Warnings are printed on stdout
+because GitHub only parses workflow commands there.
+
+With ``--step-summary true``, also appends a Markdown table of the outputs
+and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
+environment variable (the job summary of GitHub), whichever the other options.
+
+With ``--strict true``, any warning is an error instead: the outputs are not
+written and the message lists the warnings.
 
 With ``--fail-on-missing true``, a requested dependency that is not found
 is an error instead of a ``null`` specifier.
@@ -37,9 +45,12 @@ With ``--fail-on-dynamic-version true``, a ``version`` that is listed in
 instead of a warning.
 
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
-"major.minor" strings) that ``[project].requires-python`` allows.
+"major.minor" strings) that ``[project].requires-python`` allows, and
+``python_min`` is the lowest of them (an empty string if there is none).
 
-Exits non-zero with a message on stderr if the file is missing, is not
+Exits non-zero with a message on stderr (with ``--github-output FILE``, an
+``::error file=<path>::`` workflow command, so that GitHub shows an error
+annotation on the file) if the file is missing, is not
 valid TOML, [project] is missing the required "name"/"version" keys, a
 dependency table ([project].dependencies, [project.optional-dependencies] or
 [dependency-groups]) has the wrong type, an input is not valid JSON of the
@@ -51,31 +62,33 @@ expected shape, a Python candidate is not a "major.minor" string,
 from __future__ import annotations
 
 import argparse
+import functools
 import json
+import os
 import re
 import sys
+import string
 import tomllib
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-
-
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.10","3.11","3.12","3.13","3.14"]'
 
-# A "major.minor" Python version, such as "3.12".
-_MINOR_VERSION = re.compile(r"^[0-9]+\.[0-9]+$")
+# A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
+# also match before a trailing line break.
+_MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
 
 # A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
-# letter or a digit.
-_VALID_NAME = re.compile(r"^([A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9])$", re.IGNORECASE)
+# letter or a digit. Always used with ``fullmatch``.
+_VALID_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
 
 
 class MetadataError(Exception):
@@ -88,21 +101,23 @@ class Metadata(TypedDict):
     name: str
     normalized_name: str
     version: str
+    description: str
     requires_python: str
     extras: list[str]
     groups: list[str]
 
 
 class Report(Metadata):
-    """The metadata, Python versions, dependency specifiers and warnings built by ``main``."""
+    """The metadata, Python versions, lowest Python version, dependency specifiers and warnings built by ``main``."""
 
     python_versions: list[str]
+    python_min: str
     project_dependencies: dict[str, str]
     dependency_specifiers: dict[str, str | None]
     warnings: list[str]
 
 
-def load_pyproject(pyproject_path: str) -> dict:
+def load_pyproject(pyproject_path: str) -> dict[str, Any]:
     """Read and parse a pyproject.toml file.
 
     Args:
@@ -127,7 +142,7 @@ def load_pyproject(pyproject_path: str) -> dict:
 
 
 def extract_metadata(
-    data: dict,
+    data: dict[str, Any],
     extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
     fail_on_dynamic_version: bool = False,
@@ -148,11 +163,12 @@ def extract_metadata(
         A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
         messages (for example when the version is dynamic). ``metadata`` is a
         ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
+        ``version``, ``description``, ``requires_python``, ``extras`` and ``groups``. ``version`` is
         an empty string when ``[project].version`` is declared in
         ``[project].dynamic`` and has no static value. ``requires_python``
         is ``[project].requires-python`` as written, or an empty string if it is
-        not declared. ``extras`` lists the ``extra_values`` first, then the
+        not declared. ``description`` is ``[project].description`` as written,
+        or an empty string if it is not declared. ``extras`` lists the ``extra_values`` first, then the
         extras sorted by normalized name. Names are compared per PEP 685 (like
         package names), so spellings of the same extra are duplicates: the
         first one is kept. ``groups`` lists the names of ``[dependency-groups]``
@@ -165,7 +181,7 @@ def extract_metadata(
             is not an array, a ``name`` that is not a non-empty string or not a
             valid PEP 508 name, a
             ``version`` that is not a string or not a valid PEP 440 version, a
-            ``requires-python`` that is not a string, an
+            ``description`` or ``requires-python`` that is not a string, an
             ``optional-dependencies`` or ``dependency-groups`` that is not a
             table, or a dynamic version when ``fail_on_dynamic_version`` is true.
     """
@@ -197,7 +213,7 @@ def extract_metadata(
     if not isinstance(name, str) or not name:
         msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
         raise MetadataError(msg)
-    if not _VALID_NAME.match(name):
+    if not _VALID_NAME.fullmatch(name):
         msg = (
             f"{pyproject_path}: [project].name is not a valid project name (letters, digits, "
             f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
@@ -215,6 +231,11 @@ def extract_metadata(
                 f"{version!r}"
             )
             raise MetadataError(msg) from exc
+
+    description = project.get("description", "")
+    if not isinstance(description, str):
+        msg = f"{pyproject_path}: [project].description must be a string, got: {description!r}"
+        raise MetadataError(msg)
 
     requires_python = project.get("requires-python", "")
     if not isinstance(requires_python, str):
@@ -246,6 +267,7 @@ def extract_metadata(
         name=name,
         normalized_name=canonicalize_name(name),
         version=version,
+        description=description,
         requires_python=requires_python,
         extras=list(unique_extras.values()),
         groups=groups,
@@ -277,7 +299,7 @@ def parse_string_array(raw: str, input_name: str) -> list[str]:
     return values
 
 
-def _check_array(value: object, label: str, pyproject_path: str) -> list:
+def _check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
     """Return ``value`` if it is an array, and raise ``MetadataError`` otherwise."""
     if not isinstance(value, list):
         msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
@@ -285,7 +307,19 @@ def _check_array(value: object, label: str, pyproject_path: str) -> list:
     return value
 
 
-def _get_table(container: dict, key: str, label: str, pyproject_path: str) -> dict:
+def _check_requirements(value: object, label: str, pyproject_path: str) -> list[str]:
+    """Return ``value`` if it is an array of strings, and raise ``MetadataError`` otherwise."""
+    entries = _check_array(value, label, pyproject_path)
+    for entry in entries:
+        if not isinstance(entry, str):
+            msg = f"{pyproject_path}: {label} must contain only strings, got: {entry!r}"
+            raise MetadataError(msg)
+    return entries
+
+
+def _get_table(
+    container: dict[str, Any], key: str, label: str, pyproject_path: str
+) -> dict[str, Any]:
     """Return ``container[key]`` (an empty table if absent), checking that it is a table.
 
     Args:
@@ -320,7 +354,7 @@ def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
 
 
 def _flatten_group(
-    groups: dict,
+    groups: dict[str, Any],
     name: str,
     seen: tuple[str, ...] = (),
     pyproject_path: str = "pyproject.toml",
@@ -389,7 +423,7 @@ def _dynamic_message(field: str, pyproject_path: str) -> str:
     )
 
 
-def _dynamic_dependency_fields(data: dict) -> list[str]:
+def _dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
     """Return the dependency fields that only the build backend can provide.
 
     A field is returned when it is listed in ``[project].dynamic`` and has no
@@ -410,7 +444,7 @@ def _dynamic_dependency_fields(data: dict) -> list[str]:
 
 
 def _candidate_requirements(
-    data: dict, pyproject_path: str = "pyproject.toml"
+    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
     """All requirement strings, in search order.
 
@@ -423,20 +457,22 @@ def _candidate_requirements(
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
             ``[project.optional-dependencies]``, ``[dependency-groups]`` or one
-            of their values has the wrong type.
+            of their values has the wrong type, or if a requirement of
+            ``[project].dependencies`` or of an extra is not a string.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    dependencies = _check_array(
-        project.get("dependencies", []), "[project].dependencies", pyproject_path
+    # A copy: the lists below are extended, and the parsed document must stay as it is.
+    reqs = list(
+        _check_requirements(
+            project.get("dependencies", []), "[project].dependencies", pyproject_path
+        )
     )
-    reqs = [r for r in dependencies if isinstance(r, str)]
     optional_dependencies = _get_table(
         project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
-        extra_reqs = _check_array(extra_reqs, label, pyproject_path)
-        reqs.extend(r for r in extra_reqs if isinstance(r, str))
+        reqs.extend(_check_requirements(extra_reqs, label, pyproject_path))
     groups = _get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
         _dynamic_message(field, pyproject_path)
@@ -447,6 +483,28 @@ def _candidate_requirements(
         reqs.extend(group_reqs)
         warnings.extend(group_warnings)
     return reqs, list(dict.fromkeys(warnings))
+
+
+@functools.lru_cache(maxsize=None)
+def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
+    """Parse a requirement string, once per distinct string.
+
+    ``main`` reads the requirements of ``[project].dependencies`` twice (for
+    ``project-dependencies`` and for the lookup of ``dependencies``): the cache
+    makes each string parsed only once.
+
+    Args:
+        raw: The requirement string.
+
+    Returns:
+        The parsed requirement, or the ``InvalidRequirement`` that was raised
+        (returned and not raised, so that the cache keeps it too). The result
+        is shared and must not be modified.
+    """
+    try:
+        return Requirement(raw)
+    except InvalidRequirement as exc:
+        return exc
 
 
 def _index_requirements(
@@ -470,10 +528,9 @@ def _index_requirements(
     names: dict[str, str] = {}
     warnings: list[str] = []
     for raw in raws:
-        try:
-            req = Requirement(raw)
-        except InvalidRequirement as exc:
-            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
+        req = _parse_requirement(raw)
+        if isinstance(req, InvalidRequirement):
+            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {req}")
             continue
         key = canonicalize_name(req.name)
         marker = None if req.marker is None else str(req.marker)
@@ -483,7 +540,7 @@ def _index_requirements(
 
 
 def extract_project_dependencies(
-    data: dict, pyproject_path: str = "pyproject.toml"
+    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
 ) -> tuple[dict[str, str], list[str]]:
     """Map each package of ``[project].dependencies`` to its specifier.
 
@@ -505,16 +562,14 @@ def extract_project_dependencies(
         a ``dynamic`` ``dependencies``.
 
     Raises:
-        MetadataError: If ``[project]`` is not a table or
-            ``[project].dependencies`` is not an array.
+        MetadataError: If ``[project]`` is not a table, or
+            ``[project].dependencies`` is not an array of strings.
     """
     project = _get_table(data, "project", "[project]", pyproject_path)
-    entries = _check_array(
+    entries = _check_requirements(
         project.get("dependencies", []), "[project].dependencies", pyproject_path
     )
-    found, names, warnings = _index_requirements(
-        [entry for entry in entries if isinstance(entry, str)], pyproject_path
-    )
+    found, names, warnings = _index_requirements(entries, pyproject_path)
     if "dependencies" in _dynamic_dependency_fields(data):
         warnings.append(_dynamic_message("dependencies", pyproject_path))
     dependencies: dict[str, str] = {}
@@ -526,7 +581,7 @@ def extract_project_dependencies(
 
 
 def extract_dependency_specifiers(
-    data: dict,
+    data: dict[str, Any],
     dependencies: list[str],
     pyproject_path: str = "pyproject.toml",
 ) -> tuple[dict[str, str | None], list[str]]:
@@ -553,19 +608,19 @@ def extract_dependency_specifiers(
     Raises:
         MetadataError: If ``[project].dependencies``, ``[project.optional-dependencies]``
             or ``[dependency-groups]`` (or one of their values) has the wrong
-            type.
+            type, or a requirement of ``[project].dependencies`` or of an extra
+            is not a string.
     """
-    deps = dependencies
     # Like invalid requirements below, structure warnings are only worth
     # reporting when the caller looks something up.
     candidates, structure_warnings = _candidate_requirements(data, pyproject_path)
     found, _, invalid_warnings = _index_requirements(candidates, pyproject_path)
     # An invalid requirement is only worth a warning when the caller looks
     # something up: it may be the very entry that was meant to be found.
-    warnings = [*structure_warnings, *invalid_warnings] if deps else []
+    warnings = [*structure_warnings, *invalid_warnings] if dependencies else []
 
     result: dict[str, str | None] = {}
-    for dep in deps:
+    for dep in dependencies:
         matches = found.get(canonicalize_name(dep))
         if not matches:
             result[dep] = None
@@ -624,7 +679,7 @@ def parse_python_candidates(raw: str) -> list[str]:
     """
     candidates = parse_string_array(raw, "python-candidates")
     for candidate in candidates:
-        if not _MINOR_VERSION.match(candidate):
+        if not _MINOR_VERSION.fullmatch(candidate):
             msg = f"python-candidates must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
             raise MetadataError(msg)
     return list(dict.fromkeys(candidates))
@@ -670,6 +725,22 @@ def compatible_python_versions(
         if any(specifier.contains(f"{candidate}.{patch}") for patch in (0, 9999))
     ]
     return versions, []
+
+
+def lowest_python_version(versions: Sequence[str]) -> str:
+    """Return the lowest of "major.minor" versions, compared as numbers.
+
+    Args:
+        versions: Versions such as ``"3.9"`` and ``"3.10"``, as returned by
+            ``compatible_python_versions``.
+
+    Returns:
+        The lowest version (``"3.9"`` is lower than ``"3.10"``), or an empty
+        string if ``versions`` is empty.
+    """
+    if not versions:
+        return ""
+    return min(versions, key=lambda version: tuple(int(part) for part in version.split(".")))
 
 
 def parse_bool(value: str, name: str) -> bool:
@@ -752,12 +823,14 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "name": metadata["name"],
         "normalized-name": metadata["normalized_name"],
         "version": metadata["version"],
+        "description": metadata["description"],
         "requires-python": metadata["requires_python"],
         "extras": json.dumps(metadata["extras"], separators=(",", ":"), ensure_ascii=False),
         "groups": json.dumps(metadata["groups"], separators=(",", ":"), ensure_ascii=False),
         "python-versions": json.dumps(
             metadata["python_versions"], separators=(",", ":"), ensure_ascii=False
         ),
+        "python-min": metadata["python_min"],
         "project-dependencies": json.dumps(
             metadata["project_dependencies"], separators=(",", ":"), ensure_ascii=False
         ),
@@ -777,12 +850,14 @@ def _single_line(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
 
 
-# The outputs shown in the summary line, in order (normalized-name is derived from name).
+# The outputs shown in the summary line, in order (normalized-name is derived from name, and
+# description may be long).
 _SUMMARY_FIELDS = (
     "name",
     "version",
     "requires-python",
     "python-versions",
+    "python-min",
     "extras",
     "groups",
     "project-dependencies",
@@ -804,6 +879,75 @@ def format_summary(outputs: dict[str, str]) -> str:
     """
     fields = " ".join(f"{field}={_single_line(outputs[field])}" for field in _SUMMARY_FIELDS)
     return f"📦 {fields}"
+
+
+def _html_cell(value: str) -> str:
+    """Escape ``value`` for a cell of a Markdown table, shown as code.
+
+    Every ASCII punctuation character is replaced by its numeric character
+    reference, so that nothing in a value from the file can be interpreted as
+    Markdown or HTML (a ``|`` ends the cell, ``<`` starts a tag, ``_`` is
+    emphasis...). Line breaks are escaped as in the summary line of the log.
+    """
+    escaped = "".join(
+        f"&#{ord(char)};" if char in string.punctuation else char for char in _single_line(value)
+    )
+    return f"<code>{escaped}</code>" if escaped else ""
+
+
+def format_step_summary(report: Report, outputs: dict[str, str]) -> str:
+    """Build the Markdown of the job summary.
+
+    Args:
+        report: The report built by ``build_report``.
+        outputs: The action outputs, as returned by ``format_outputs``.
+
+    Returns:
+        A heading, a table with one row per output and, if there are warnings,
+        a list of them. Values are escaped by ``_html_cell``.
+    """
+    lines = [
+        "### 📦 Project metadata",
+        "",
+        "| Output | Value |",
+        "| --- | --- |",
+    ]
+    lines.extend(f"| `{key}` | {_html_cell(value)} |" for key, value in outputs.items())
+    if report["warnings"]:
+        lines.extend(["", "#### ⚠️ Warnings", ""])
+        lines.extend(f"- {_html_cell(warning)}" for warning in report["warnings"])
+    return "\n".join(lines) + "\n"
+
+
+def write_step_summary(summary_path: str, markdown: str) -> None:
+    """Append ``markdown`` to the job summary file, followed by a blank line."""
+    with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
+        f.write(f"{markdown}\n")
+
+
+def resolve_step_summary(value: str, environ: Mapping[str, str]) -> str | None:
+    """Return the path of the job summary file, or None if it is not requested.
+
+    Args:
+        value: The ``--step-summary`` option, ``"true"`` or ``"false"``.
+        environ: The environment variables.
+
+    Returns:
+        The value of ``GITHUB_STEP_SUMMARY`` when ``value`` is ``"true"``,
+        None when it is ``"false"``.
+
+    Raises:
+        MetadataError: If ``value`` is neither ``"true"`` nor ``"false"``, or
+            is ``"true"`` and ``GITHUB_STEP_SUMMARY`` is not set (the action
+            is not running in a GitHub workflow).
+    """
+    if not parse_bool(value, "step-summary"):
+        return None
+    summary_path = environ.get("GITHUB_STEP_SUMMARY", "")
+    if not summary_path:
+        msg = "step-summary is 'true' but the environment variable GITHUB_STEP_SUMMARY is not set"
+        raise MetadataError(msg)
+    return summary_path
 
 
 def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
@@ -828,7 +972,9 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
 
 def _build_parser(prog: str) -> argparse.ArgumentParser:
     """Build the command line parser."""
-    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
+    # ``__doc__`` is None when Python runs with -OO, which strips docstrings.
+    description = (__doc__ or "").split("\n", 1)[0]
+    parser = argparse.ArgumentParser(prog=prog, description=description)
     parser.add_argument(
         "--github-output",
         metavar="FILE",
@@ -847,6 +993,18 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
         help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
     )
     parser.add_argument(
+        "--strict",
+        metavar="BOOL",
+        default="false",
+        help="'true' to fail when there is a warning (default: false)",
+    )
+    parser.add_argument(
+        "--step-summary",
+        metavar="BOOL",
+        default="false",
+        help="'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY (default: false)",
+    )
+    parser.add_argument(
         "--python-candidates",
         metavar="JSON",
         default=DEFAULT_PYTHON_CANDIDATES,
@@ -863,6 +1021,100 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
     return parser
 
 
+def build_report(args: argparse.Namespace) -> Report:
+    """Read the pyproject.toml and the inputs of the command line, and build the report.
+
+    Args:
+        args: The parsed command line, as returned by ``_build_parser``.
+
+    Returns:
+        The report: the metadata, the Python versions, the dependency
+        specifiers and the warnings (without duplicates).
+
+    Raises:
+        MetadataError: If an input or the pyproject.toml is invalid, the version
+            is dynamic with ``--fail-on-dynamic-version true``, a dependency
+            is not found with ``--fail-on-missing true``, or there is a
+            warning with ``--strict true``.
+    """
+    fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
+    fail_on_dynamic_version = parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version")
+    strict = parse_bool(args.strict, "strict")
+    data = load_pyproject(args.pyproject_path)
+    extra_values = parse_string_array(args.extra_values, "extra-values")
+    dependencies = parse_string_array(args.dependencies, "dependencies")
+    python_candidates = parse_python_candidates(args.python_candidates)
+    metadata, warnings = extract_metadata(
+        data, extra_values, args.pyproject_path, fail_on_dynamic_version
+    )
+    specifiers, specifier_warnings = extract_dependency_specifiers(
+        data, dependencies, args.pyproject_path
+    )
+    python_versions, python_warnings = compatible_python_versions(
+        metadata["requires_python"], python_candidates, args.pyproject_path
+    )
+    project_dependencies, project_warnings = extract_project_dependencies(
+        data, args.pyproject_path
+    )
+    warnings.extend(python_warnings)
+    warnings.extend(project_warnings)
+    warnings.extend(specifier_warnings)
+    if fail_on_missing:
+        check_no_missing_dependency(
+            specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
+        )
+    warnings = list(dict.fromkeys(warnings))
+    if strict and warnings:
+        listed = "".join(f"\n- {warning}" for warning in warnings)
+        msg = f"strict is 'true' and there are {len(warnings)} warning(s):{listed}"
+        raise MetadataError(msg)
+    return Report(
+        **metadata,
+        python_versions=python_versions,
+        python_min=lowest_python_version(python_versions),
+        project_dependencies=project_dependencies,
+        dependency_specifiers=specifiers,
+        warnings=warnings,
+    )
+
+
+def emit_github_output(report: Report, pyproject_path: str, output_path: str) -> None:
+    """Write the outputs of the action and print the workflow commands and the summary.
+
+    Args:
+        report: The report built by ``build_report``.
+        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
+            warning annotations.
+        output_path: Path of the ``$GITHUB_OUTPUT`` file.
+    """
+    outputs = format_outputs(report)
+    file = escape_annotation_property(pyproject_path)
+    for warning in report["warnings"]:
+        print(f"::warning file={file}::{escape_annotation(warning)}")
+    print(format_summary(outputs))
+    write_github_output(output_path, outputs)
+
+
+def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
+    """Format an error message for stderr.
+
+    Args:
+        message: The message of the ``MetadataError``.
+        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
+            annotation.
+        annotate: Whether to build a ``::error file=<path>::`` workflow command
+            (so that GitHub shows an error annotation on the file) instead of
+            the plain message.
+
+    Returns:
+        The line to print on stderr.
+    """
+    if not annotate:
+        return message
+    file = escape_annotation_property(pyproject_path)
+    return f"::error file={file}::{escape_annotation(message)}"
+
+
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit code."""
     try:
@@ -871,55 +1123,19 @@ def main(argv: list[str]) -> int:
         return exc.code if isinstance(exc.code, int) else 2
 
     try:
-        fail_on_missing = parse_bool(args.fail_on_missing, "fail-on-missing")
-        fail_on_dynamic_version = parse_bool(
-            args.fail_on_dynamic_version, "fail-on-dynamic-version"
-        )
-        data = load_pyproject(args.pyproject_path)
-        extra_values = parse_string_array(args.extra_values, "extra-values")
-        dependencies = parse_string_array(args.dependencies, "dependencies")
-        python_candidates = parse_python_candidates(args.python_candidates)
-        metadata, warnings = extract_metadata(
-            data, extra_values, args.pyproject_path, fail_on_dynamic_version
-        )
-        specifiers, specifier_warnings = extract_dependency_specifiers(
-            data, dependencies, args.pyproject_path
-        )
-        python_versions, python_warnings = compatible_python_versions(
-            metadata["requires_python"], python_candidates, args.pyproject_path
-        )
-        project_dependencies, project_warnings = extract_project_dependencies(
-            data, args.pyproject_path
-        )
-        warnings.extend(python_warnings)
-        warnings.extend(project_warnings)
-        warnings.extend(specifier_warnings)
-        warnings = list(dict.fromkeys(warnings))
-        if fail_on_missing:
-            check_no_missing_dependency(
-                specifiers, args.pyproject_path, _dynamic_dependency_fields(data)
-            )
-        report = Report(
-            **metadata,
-            python_versions=python_versions,
-            project_dependencies=project_dependencies,
-            dependency_specifiers=specifiers,
-            warnings=warnings,
-        )
+        summary_path = resolve_step_summary(args.step_summary, os.environ)
+        report = build_report(args)
     except MetadataError as exc:
-        print(str(exc), file=sys.stderr)
+        annotate = args.github_output is not None
+        print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)
         return 1
 
     if args.github_output is None:
         print(json.dumps(report))
-        return 0
-
-    outputs = format_outputs(report)
-    for warning in warnings:
-        file = escape_annotation_property(args.pyproject_path)
-        print(f"::warning file={file}::{escape_annotation(warning)}")
-    print(format_summary(outputs))
-    write_github_output(args.github_output, outputs)
+    else:
+        emit_github_output(report, args.pyproject_path, args.github_output)
+    if summary_path is not None:
+        write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     return 0
 
 
