@@ -27,6 +27,7 @@ from extract_pyproject_metadata.output.github import (
     emit_github_output,
     format_outputs,
     format_summary,
+    new_delimiter,
     write_github_output,
 )
 from extract_pyproject_metadata.output.summary import format_step_summary, write_step_summary
@@ -100,21 +101,18 @@ def test_write_github_output_round_trips_any_value(tmp_path: Path, value: str) -
 
 
 
-def test_write_github_output_picks_a_delimiter_not_in_the_value(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_write_github_output_picks_a_delimiter_not_in_the_value(tmp_path: Path) -> None:
     delimiters = iter(["BAD", "GOOD"])
-    monkeypatch.setattr(output_github_module, "_new_delimiter", lambda: next(delimiters))
     output = tmp_path / "github_output"
 
-    write_github_output(str(output), {"name": "xBADx"})
+    write_github_output(str(output), {"name": "xBADx"}, lambda: next(delimiters))
 
     assert output.read_text(encoding="utf-8") == "name<<GOOD\nxBADx\nGOOD\n"
 
 
 
 def test_new_delimiter_is_random_and_not_guessable() -> None:
-    first, second = output_github_module._new_delimiter(), output_github_module._new_delimiter()
+    first, second = new_delimiter(), new_delimiter()
 
     assert first != second
     assert first.startswith("ghadelimiter_")
@@ -498,22 +496,22 @@ def test_format_summary_is_one_line_and_escapes_values() -> None:
     assert "requires-python=a\\nb\\r\\n::error::boom\\\\ " in summary
 
 
-@pytest.mark.usefixtures("fixed_delimiter")
 def test_write_github_output(tmp_path: Path) -> None:
     output = tmp_path / "github_output"
 
-    write_github_output(str(output), {"name": "coola", "version": "", "extras": "[]"})
+    write_github_output(
+        str(output), {"name": "coola", "version": "", "extras": "[]"}, lambda: "DELIM"
+    )
 
     assert output.read_text(encoding="utf-8") == (
         "name<<DELIM\ncoola\nDELIM\nversion<<DELIM\n\nDELIM\nextras<<DELIM\n[]\nDELIM\n"
     )
 
 
-@pytest.mark.usefixtures("fixed_delimiter")
 def test_write_github_output_appends(tmp_path: Path) -> None:
     output = tmp_path / "github_output"
     output.write_text("previous=step\n", encoding="utf-8")
 
-    write_github_output(str(output), {"name": "coola"})
+    write_github_output(str(output), {"name": "coola"}, lambda: "DELIM")
 
     assert output.read_text(encoding="utf-8") == "previous=step\nname<<DELIM\ncoola\nDELIM\n"
