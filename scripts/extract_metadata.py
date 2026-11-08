@@ -1322,7 +1322,9 @@ def compatible_python_versions(
         A tuple ``(versions, warnings)``. ``versions`` are the allowed
         candidates, in the order of ``candidates``: all of them when
         ``requires_python`` is empty, none of them (with a warning) when it is
-        not a valid specifier.
+        not a valid specifier. There is also a warning when ``candidates`` is
+        not empty and none of them is allowed, because a job matrix built from
+        an empty list is rejected by GitHub.
     """
     if not requires_python.strip():
         return list(candidates), []
@@ -1342,6 +1344,14 @@ def compatible_python_versions(
             for patch in _PATCH_RELEASES
         )
     ]
+    if candidates and not versions:
+        # GitHub rejects a matrix vector without values, far from the cause.
+        warning = (
+            f"{pyproject_path}: no python-candidates version satisfies [project].requires-python "
+            f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
+            "matrix built from them is rejected by GitHub"
+        )
+        return versions, [warning]
     return versions, []
 
 

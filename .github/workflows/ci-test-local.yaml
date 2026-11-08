@@ -727,7 +727,34 @@ jobs:
           print_success "dependency scopes test passed"
 
       # -----------------------------------------------------------------------
-      # Test 30: build-backend and build-requires outputs
+      # Test 30: no python-candidates version is allowed by requires-python
+      # -----------------------------------------------------------------------
+      - name: 🧪 Test python-versions when no candidate is allowed
+        id: test-no-python-version
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9"]'
+
+      - name: 🧪 Test strict when no candidate is allowed (should fail)
+        id: test-no-python-version-strict
+        uses: ./
+        with:
+          pyproject-path: test-data/requires-python/pyproject.toml
+          python-candidates: '["3.9"]'
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify the empty python-versions warning
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "python-versions" '[]' '${{ steps.test-no-python-version.outputs.python-versions }}'
+          assert_equal "python-matrix" '{"python-version":[]}' '${{ steps.test-no-python-version.outputs.python-matrix }}'
+          assert_equal "outcome" "failure" "${{ steps.test-no-python-version-strict.outcome }}"
+          print_success "empty python-versions test passed"
+
+      # -----------------------------------------------------------------------
+      # Test 31: build-backend and build-requires outputs
       # -----------------------------------------------------------------------
       - name: 🧪 Test build-backend and build-requires outputs
         id: test-build-system
