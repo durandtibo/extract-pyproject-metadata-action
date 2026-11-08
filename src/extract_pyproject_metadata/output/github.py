@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from extract_pyproject_metadata.errors import MetadataError
@@ -62,7 +63,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
     }
 
 
-def _new_delimiter() -> str:
+def new_delimiter() -> str:
     """Return a random delimiter for a multiline ``$GITHUB_OUTPUT`` value."""
     return f"ghadelimiter_{uuid.uuid4()}"
 
@@ -99,7 +100,11 @@ def format_summary(outputs: dict[str, str]) -> str:
     return f"📦 {fields}"
 
 
-def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
+def write_github_output(
+    output_path: str,
+    outputs: dict[str, str],
+    delimiter_factory: Callable[[], str] = new_delimiter,
+) -> None:
     """Append outputs to a ``$GITHUB_OUTPUT`` file.
 
     Every value is written with the ``key<<delimiter`` syntax, so a value that
@@ -110,6 +115,8 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
     Args:
         output_path: Path of the file, which is created if it does not exist.
         outputs: Output names and values.
+        delimiter_factory: Returns a new delimiter on each call. The default is random; a test
+            can give a fixed one.
 
     Raises:
         MetadataError: If the file cannot be written.
@@ -117,9 +124,9 @@ def write_github_output(output_path: str, outputs: dict[str, str]) -> None:
     try:
         with Path(output_path).open("a", encoding="utf-8", newline="") as f:
             for key, value in outputs.items():
-                delimiter = _new_delimiter()
+                delimiter = delimiter_factory()
                 while delimiter in key or delimiter in value:
-                    delimiter = _new_delimiter()
+                    delimiter = delimiter_factory()
                 f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
     except OSError as exc:
         msg = f"cannot write the outputs to {output_path}: {exc}"
