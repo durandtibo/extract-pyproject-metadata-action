@@ -94,6 +94,11 @@ outputs:
       JSON array of the python-candidates allowed by requires-python (all of
       them if requires-python is not declared)
     value: ${{ steps.metadata.outputs.python-versions }}
+  python-min:
+    description: >
+      Lowest of the python-versions, compared as numbers (empty if there is
+      none)
+    value: ${{ steps.metadata.outputs.python-min }}
   extras:
     description: JSON array of extra names
     value: ${{ steps.metadata.outputs.extras }}

@@ -12,7 +12,7 @@ Usage:
 
 Without ``--github-output``, prints a single JSON object to stdout:
     {"name": ..., "normalized_name": ..., "version": ..., "requires_python": ...,
-     "extras": [...], "groups": [...], "python_versions": [...],
+     "extras": [...], "groups": [...], "python_versions": [...], "python_min": ...,
      "project_dependencies": {...}, "dependency_specifiers": {...},
      "warnings": [...]}
 
@@ -21,7 +21,7 @@ input.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs ``name``, ``normalized-name``, ``version``, ``requires-python``,
-``extras``, ``groups``, ``python-versions``, ``project-dependencies`` and
+``extras``, ``groups``, ``python-versions``, ``python-min``, ``project-dependencies`` and
 ``dependency-specifiers`` to FILE (the format of ``$GITHUB_OUTPUT``, with a
 delimiter so that values may contain line breaks) and prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
@@ -44,7 +44,8 @@ With ``--fail-on-dynamic-version true``, a ``version`` that is listed in
 instead of a warning.
 
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
-"major.minor" strings) that ``[project].requires-python`` allows.
+"major.minor" strings) that ``[project].requires-python`` allows, and
+``python_min`` is the lowest of them (an empty string if there is none).
 
 Exits non-zero with a message on stderr (with ``--github-output FILE``, an
 ``::error file=<path>::`` workflow command, so that GitHub shows an error
@@ -105,9 +106,10 @@ class Metadata(TypedDict):
 
 
 class Report(Metadata):
-    """The metadata, Python versions, dependency specifiers and warnings built by ``main``."""
+    """The metadata, Python versions, lowest Python version, dependency specifiers and warnings built by ``main``."""
 
     python_versions: list[str]
+    python_min: str
     project_dependencies: dict[str, str]
     dependency_specifiers: dict[str, str | None]
     warnings: list[str]
@@ -708,6 +710,22 @@ def compatible_python_versions(
     return versions, []
 
 
+def lowest_python_version(versions: Sequence[str]) -> str:
+    """Return the lowest of "major.minor" versions, compared as numbers.
+
+    Args:
+        versions: Versions such as ``"3.9"`` and ``"3.10"``, as returned by
+            ``compatible_python_versions``.
+
+    Returns:
+        The lowest version (``"3.9"`` is lower than ``"3.10"``), or an empty
+        string if ``versions`` is empty.
+    """
+    if not versions:
+        return ""
+    return min(versions, key=lambda version: tuple(int(part) for part in version.split(".")))
+
+
 def parse_bool(value: str, name: str) -> bool:
     """Parse the ``"true"`` / ``"false"`` string of a boolean input.
 
@@ -794,6 +812,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "python-versions": json.dumps(
             metadata["python_versions"], separators=(",", ":"), ensure_ascii=False
         ),
+        "python-min": metadata["python_min"],
         "project-dependencies": json.dumps(
             metadata["project_dependencies"], separators=(",", ":"), ensure_ascii=False
         ),
@@ -819,6 +838,7 @@ _SUMMARY_FIELDS = (
     "version",
     "requires-python",
     "python-versions",
+    "python-min",
     "extras",
     "groups",
     "project-dependencies",
@@ -1032,6 +1052,7 @@ def build_report(args: argparse.Namespace) -> Report:
     return Report(
         **metadata,
         python_versions=python_versions,
+        python_min=lowest_python_version(python_versions),
         project_dependencies=project_dependencies,
         dependency_specifiers=specifiers,
         warnings=warnings,
