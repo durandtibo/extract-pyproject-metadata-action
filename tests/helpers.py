@@ -306,6 +306,21 @@ exit "${STUB_SCRIPT_STATUS:-0}"
 """
 
 
+STUB_UV = """#!/usr/bin/env bash
+printf '%s\\037' uv "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
+case "$1" in
+  venv)
+    [ "${STUB_VENV_STATUS:-0}" = 0 ] || exit "$STUB_VENV_STATUS"
+    venv="${@: -1}"
+    mkdir -p "$venv/bin"
+    cp "$STUB_VENV_PYTHON" "$venv/bin/python"
+    chmod +x "$venv/bin/python"
+    exit 0 ;;
+  pip) exit "${STUB_PIP_STATUS:-0}" ;;
+esac
+"""
+
+
 class RunResult:
     """Outcome of ``run.sh``: the process, the calls to the stubs and
     the directory of the venvs."""
@@ -321,16 +336,28 @@ class RunResult:
             temp.glob("extract-pyproject-metadata-venv.*")
         )  # the ones left after the run
         self.created_venvs = [
-            Path(call[-1]) for call in self.calls if call[:3] == ["python3", "-m", "venv"]
+            Path(call[-1])
+            for call in self.calls
+            if call[:3] == ["python3", "-m", "venv"] or call[:2] == ["uv", "venv"]
         ]
 
 
-def run_run_sh(tmp_path: Path, args: list[str], **env: str) -> RunResult:
-    """Run ``run.sh`` with the stubs and the status codes in ``env``."""
+def run_run_sh(tmp_path: Path, args: list[str], *, with_uv: bool = False, **env: str) -> RunResult:
+    """Run ``run.sh`` with the stubs and the status codes in ``env``.
+
+    Args:
+        tmp_path: The directory of the test.
+        args: The arguments of ``run.sh``.
+        with_uv: Whether a stub of ``uv`` is on ``PATH``.
+        env: The environment variables of the run.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "python3").write_text(STUB_SYSTEM_PYTHON)
     (bin_dir / "python3").chmod(0o755)
+    if with_uv:
+        (bin_dir / "uv").write_text(STUB_UV)
+        (bin_dir / "uv").chmod(0o755)
     venv_python = tmp_path / "venv-python"
     venv_python.write_text(STUB_VENV_PYTHON)
     temp = tmp_path / "runner-temp"

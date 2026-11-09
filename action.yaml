@@ -11,7 +11,7 @@
 # repository to already be checked out and a Python 3.11+ interpreter to be
 # available on PATH (python3, or the python-executable input). If "packaging"
 # is missing or too old (see scripts/requirements.txt), it is installed in a
-# private virtual environment.
+# private virtual environment (with pip, or with uv: see the installer input).
 #
 # Only Linux and macOS runners are supported. On a Windows runner the step
 # fails with an explicit error (the step expects python3 and a POSIX bash).
@@ -85,6 +85,14 @@ inputs:
       write them only when there are warnings (and to write the error when the
       step fails)
     default: auto
+
+  installer:
+    description: >
+      Tool that installs "packaging" in a private virtual environment when the
+      Python lacks it: "pip" (follows the pip configuration), "uv" (faster,
+      follows the configuration of uv, fails if uv is not on PATH) or "auto"
+      (uv if it is on PATH, pip otherwise)
+    default: pip
 
 outputs:
   name:
@@ -224,6 +232,7 @@ runs:
         STRICT: ${{ inputs.strict }}
         STEP_SUMMARY: ${{ inputs.step-summary }}
         PYTHON_EXECUTABLE: ${{ inputs.python-executable }}
+        INSTALLER: ${{ inputs.installer }}
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
           --github-output "$GITHUB_OUTPUT" \

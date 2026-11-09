@@ -25,6 +25,11 @@ in the job, install `packaging` in the Python of the job beforehand (for
 example `python -m pip install --upgrade packaging`, from a mirror or a cache): the
 action then uses it as it is and does not touch the network.
 
+To make the install faster when it is needed, set `installer: uv` (or `auto`): the
+virtual environment is then created and filled by [uv](https://docs.astral.sh/uv/),
+which you can set up with `astral-sh/setup-uv`. uv reads its own configuration
+(`UV_INDEX_URL`, `uv.toml`), not the one of pip, which is why `pip` stays the default.
+
 > [!NOTE]
 > The action supports **Linux and macOS** runners only. **Windows runners are
 > not supported**: the step expects `python3` and a POSIX `bash`, and fails
@@ -118,6 +123,7 @@ jobs:
 | `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input.                                                                                                                                                                                                                                                                                                                                                                      | No       | `false`                                |
 | `python-executable`       | Python interpreter that runs the action: a command found on `PATH` or a path to an executable (Python 3.11 or later, e.g. `python3.12` or `/opt/python/bin/python`), for runners where `python3` is not the interpreter to use. The private virtual environment, if one is needed, is created with it.                                                                                                                                                                                                                               | No       | `python3`                              |
 | `step-summary`            | `true` to always write the outputs and the warnings to the job summary of the workflow run (a table with one row per output), `false` to never write them, or `auto` to write them only when there are warnings (a failure is always written).                                                                                                                                                                                                                                                                                       | No       | `auto`                                 |
+| `installer`               | Tool that installs `packaging` in the private virtual environment when the Python lacks it: `pip` (follows the pip configuration), `uv` (faster; follows the configuration of uv, and fails if uv is not on `PATH` when an install is needed) or `auto` (`uv` if it is on `PATH`, `pip` otherwise). Nothing is installed, whatever the value, when `packaging` is available.                                                                                                                                                         | No       | `pip`                                  |
 
 `fail-on-dynamic-version`, `resolve-dynamic-version`, `fail-on-missing` and `strict` are boolean inputs: the
 value must be `true` or `false`, the case and the surrounding spaces are ignored,
@@ -487,6 +493,8 @@ The action's step fails (non-zero exit) when:
   error lists them; no output is written).
 - `step-summary` is not `true`, `false` or `auto`, or is `true` and the job summary
   file (`$GITHUB_STEP_SUMMARY`) is not set.
+- `installer` is not `pip`, `uv` or `auto`, or is `uv` and uv is not on `PATH` while
+  `packaging` has to be installed.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
   `dependencies` is not found (the error says when `[project].dependencies` or
   `[project].optional-dependencies` is dynamic and so cannot be read).
