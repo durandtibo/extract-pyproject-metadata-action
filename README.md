@@ -235,6 +235,31 @@ names, extra names and group names are compared per PEP 503, and a package name 
 so the entry is not ambiguous. An extra and a group can have the same name, which is why the kind is
 part of the scope.
 
+The entries of `dependencies` (each is a JSON string of the array) are:
+
+| Entry              | Looked up in                                                                       | Key in the outputs |
+| ------------------ | ---------------------------------------------------------------------------------- | ------------------ |
+| `numpy`            | `[project].dependencies`, then every extra, then every group: the first match wins | `numpy`            |
+| `numpy@project`    | `[project].dependencies` only                                                      | `numpy@project`    |
+| `numpy@extra:fast` | the extra `fast` of `[project.optional-dependencies]` only                         | `numpy@extra:fast` |
+| `numpy@group:dev`  | the group `dev` of `[dependency-groups]` only, with the groups it includes         | `numpy@group:dev`  |
+
+Anything else after the `@` (`numpy@dev`, `numpy@extra:`) fails the step. The key of
+`dependency-specifiers` and `dependency-requirements` is always the entry as written, so
+`numpy` and `numpy@project` are two keys, even when they find the same requirement.
+
+### A package declared in several places
+
+The same package is often declared in more than one place (a runtime range in
+`[project].dependencies`, a pin in a group). With the plain name, `dependency-specifiers`
+reports the **first** requirement of the search order above, and the action warns when
+the places disagree: all the requirements of the package that have the same environment
+marker (or none) are compared, whichever place they are in, and different specifiers
+give a warning (which `strict` turns into a failure). A scoped entry only looks at its own
+place, so it reads the requirement of that place without such a warning. To see every
+requirement of the package, in search order and with its marker, read
+`dependency-requirements`.
+
 ```toml
 [project]
 dependencies = ["numpy>=1.20"]
@@ -250,7 +275,8 @@ With `dependencies: '["numpy", "numpy@extra:fast", "pytest@group:dev", "pytest@p
 `dependency-specifiers` is
 `{"numpy":">=1.20","numpy@extra:fast":">=2","pytest@group:dev":"","pytest@project":null}`:
 the keys of `dependency-specifiers` and `dependency-requirements` are the entries as
-written. A package that the place does not declare, or a place that does not exist, gives `null`
+written. The plain `numpy` also warns here, because the three places have different
+specifiers (`>=1.20`, `>=2`, `>=1.26`), while the scoped entries do not. A package that the place does not declare, or a place that does not exist, gives `null`
 (and an empty array in `dependency-requirements`), and fails the step with `fail-on-missing`.
 
 ## Environment markers

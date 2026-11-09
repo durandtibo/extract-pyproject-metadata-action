@@ -2,13 +2,17 @@
 the script."""
 
 import ast
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata.dependencies.lookup import parse_dependencies
+from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
+from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Metadata, Report
 from tests.helpers import (
     ACTION_PATH,
@@ -17,6 +21,7 @@ from tests.helpers import (
     _action_section_keys,
     _readme_table_names,
     extract,
+    parse_args,
     write_pyproject,
 )
 
@@ -101,3 +106,52 @@ def _defined_names(node: ast.stmt) -> list[ast.Name]:
     if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
         return [node.target]
     return []
+
+
+def extract_report(path: Path, dependencies: str) -> Report:
+    """Build the report of ``path`` for the ``dependencies`` input."""
+    return build_report(parse_args(str(path), "[]", dependencies))
+
+
+def _dependencies_section() -> str:
+    readme = README_PATH.read_text(encoding="utf-8")
+    return readme.split("\n## Looking up a dependency in one place\n", 1)[1].split("\n## ", 1)[0]
+
+
+def test_readme_dependencies_table_lists_valid_entries_whose_key_is_the_entry() -> None:
+    rows = re.findall(
+        r"^\| `([^`]+)` +\|.*\| `([^`]+)` +\|$", _dependencies_section(), re.MULTILINE
+    )
+    entries = [entry for entry, _ in rows]
+
+    assert entries == ["numpy", "numpy@project", "numpy@extra:fast", "numpy@group:dev"]
+    assert parse_dependencies(json.dumps(entries)) == entries
+    assert all(entry == key for entry, key in rows)
+
+
+@pytest.mark.parametrize("entry", ["numpy@dev", "numpy@extra:"])
+def test_readme_dependencies_section_names_entries_that_fail(entry: str) -> None:
+    assert f"`{entry}`" in _dependencies_section()
+    with pytest.raises(MetadataError, match="scope"):
+        parse_dependencies(json.dumps([entry]))
+
+
+def test_readme_dependencies_example_warns_for_the_plain_name_only(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\nversion = "1"\ndependencies = ["numpy>=1.20"]\n'
+        '[project.optional-dependencies]\nfast = ["numpy>=2"]\n'
+        '[dependency-groups]\ndev = ["numpy>=1.26", "pytest"]\n',
+    )
+
+    scoped = extract_report(path, '["numpy@project", "numpy@extra:fast", "numpy@group:dev"]')
+    plain = extract_report(path, '["numpy"]')
+
+    assert scoped["warnings"] == []
+    assert scoped["dependency_specifiers"] == {
+        "numpy@project": ">=1.20",
+        "numpy@extra:fast": ">=2",
+        "numpy@group:dev": ">=1.26",
+    }
+    assert [w.split(" in ")[0] for w in plain["warnings"]] == ["numpy has different specifiers"]
+    assert plain["dependency_specifiers"] == {"numpy": ">=1.20"}
