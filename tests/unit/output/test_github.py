@@ -14,6 +14,7 @@ from extract_pyproject_metadata.output.github import (
     format_outputs,
     format_summary,
     new_delimiter,
+    oversized_outputs,
     write_github_output,
 )
 from extract_pyproject_metadata.report import build_report
@@ -333,3 +334,21 @@ def test_write_github_output_appends(tmp_path: Path) -> None:
     write_github_output(str(output), {"name": "coola"}, lambda: "DELIM")
 
     assert output.read_text(encoding="utf-8") == "previous=step\nname<<DELIM\ncoola\nDELIM\n"
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        ({}, []),
+        ({"a": "x" * 899_999}, []),
+        ({"a": "x" * 900_000}, ["a"]),
+        ({"a": "x", "b": "y" * 900_000, "c": "z" * 950_000}, ["b", "c"]),
+        # The size is in bytes of UTF-8: "é" takes 2.
+        ({"a": "é" * 450_000}, ["a"]),
+        ({"a": "é" * 449_999}, []),
+    ],
+)
+def test_oversized_outputs_lists_the_outputs_of_900_kb_or_more(
+    outputs: dict[str, str], expected: list[str]
+) -> None:
+    assert oversized_outputs(outputs) == expected

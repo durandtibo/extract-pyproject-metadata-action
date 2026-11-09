@@ -26,6 +26,7 @@ __all__ = [
     "format_outputs",
     "format_summary",
     "new_delimiter",
+    "oversized_outputs",
     "write_github_output",
 ]
 
@@ -79,6 +80,29 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "dependency-requirements": _compact_json(metadata["dependency_requirements"]),
         "json": _compact_json(metadata),
     }
+
+
+# GitHub rejects a step output of 1 MiB or more; warn a little before, since the ``json`` output
+# grows with the warnings.
+_OUTPUT_SIZE_WARNING_BYTES = 900_000
+
+
+def oversized_outputs(outputs: dict[str, str]) -> list[str]:
+    """Return the names of the outputs that are close to the size limit
+    of a GitHub step output.
+
+    Args:
+        outputs: The action outputs, as returned by ``format_outputs``.
+
+    Returns:
+        The names of the outputs whose UTF-8 size is ``_OUTPUT_SIZE_WARNING_BYTES``
+        or more, in the order of ``outputs``.
+    """
+    return [
+        name
+        for name, value in outputs.items()
+        if len(value.encode("utf-8")) >= _OUTPUT_SIZE_WARNING_BYTES
+    ]
 
 
 def new_delimiter() -> str:
