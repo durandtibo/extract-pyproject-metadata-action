@@ -19,7 +19,8 @@ module above it:
    checks of the values read from the file), `inputs` (JSON and boolean inputs,
    `Options`).
 2. `pyproject` (read and parse the file), `license`, `fields` (optional fields
-   of `[project]` and `[build-system]`), `metadata` (`extract_metadata`: name,
+   of `[project]` and `[build-system]`), `dynamic_version` (a dynamic version read
+   statically from the file of the build backend), `metadata` (`extract_metadata`: name,
    version and the other fields).
 3. `dependencies/` (`groups`, `requirements`, `lookup`) and `python_versions`.
 4. `output/` (`escaping`, `github`, `summary`): action outputs, workflow
@@ -43,9 +44,9 @@ module above it:
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
   `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
   `.venv/bin/pytest`, `.venv/bin/ruff check src scripts tests` (must pass),
-  `.venv/bin/mypy` (strict, must pass), `.venv/bin/ty check` and `.venv/bin/lint-imports` (must pass).
+  `.venv/bin/ty check`, `.venv/bin/pyright` (strict on `src` and `scripts`) and `.venv/bin/lint-imports` (all must pass; there is no mypy).
 - The tooling follows [coola](https://github.com/durandtibo/coola). `uv sync
-  --group dev` installs the `dev` dependency group of `pyproject.toml` (the CI
+--group dev` installs the `dev` dependency group of `pyproject.toml` (the CI
   still uses `requirements-test.txt`: keep the two lists compatible).
 - `tasks.py` and `invoke.yaml` define the [invoke-tasklib](https://github.com/durandtibo/invoke-tasklib)
   tasks: `inv --list` shows them, for example `inv check.all` (lint, format,

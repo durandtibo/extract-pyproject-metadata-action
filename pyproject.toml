@@ -34,11 +34,11 @@ dev = [
   "import-linter>=2.0,<3.0",
   "invoke-tasklib>=0.1.0a0,<1.0",
   "invoke>=3.0,<4.0",
-  "mypy>=1.18,<2.0",
   "pre-commit>=4.6,<5.0",
   "pytest-cov>=7.1,<8.0",
   "pytest-timeout>=2.4,<3.0",
   "pytest>=9.1,<10.0",
+  "pyright>=1.1.407,<2.0",
   "ruff>=0.16,<1.0",
   "ty>=0.0.99,<1.0",
   "xdoctest>=1.3,<2.0",
@@ -191,11 +191,13 @@ force-sort-within-sections = false
 combine-as-imports = true
 known-first-party = ["extract_pyproject_metadata"]
 
-[tool.mypy]
-python_version = "3.11"
-strict = true
-files = ["src/extract_pyproject_metadata", "scripts/extract_metadata.py"]
-mypy_path = "src"
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+include = ["src/extract_pyproject_metadata", "scripts/extract_metadata.py"]
+extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
 
 [tool.ty.src]
 include = ["src", "scripts", "tests"]
@@ -217,7 +219,7 @@ layers = [
   "report",
   "dependencies | python_versions",
   "metadata",
-  "fields | license | pyproject",
+  "fields | license | pyproject | dynamic_version",
   "inputs | checks",
   "types | errors",
 ]
@@ -235,6 +237,7 @@ forbidden_modules = [
   "extract_pyproject_metadata.fields",
   "extract_pyproject_metadata.license",
   "extract_pyproject_metadata.pyproject",
+  "extract_pyproject_metadata.dynamic_version",
   "extract_pyproject_metadata.inputs",
   "extract_pyproject_metadata.checks",
 ]

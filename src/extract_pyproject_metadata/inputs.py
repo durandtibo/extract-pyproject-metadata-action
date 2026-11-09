@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from extract_pyproject_metadata.errors import MetadataError
 
 if TYPE_CHECKING:
     import argparse
 
-__all__ = ["Options", "parse_bool", "parse_options", "parse_string_array"]
+    from extract_pyproject_metadata.types import StepSummary
+
+__all__ = ["Options", "parse_bool", "parse_options", "parse_step_summary", "parse_string_array"]
 
 
 class Options(NamedTuple):
@@ -19,7 +21,8 @@ class Options(NamedTuple):
     fail_on_missing: bool
     fail_on_dynamic_version: bool
     strict: bool
-    step_summary: bool
+    step_summary: StepSummary
+    resolve_dynamic_version: bool
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -40,10 +43,11 @@ def parse_string_array(raw: str, input_name: str) -> list[str]:
     except json.JSONDecodeError as exc:
         msg = f"{input_name} is not valid JSON: {raw!r}"
         raise MetadataError(msg) from exc
-    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+    items = cast("list[Any]", values) if isinstance(values, list) else None
+    if items is None or not all(isinstance(item, str) for item in items):
         msg = f"{input_name} must be a JSON array of strings, got: {raw!r}"
         raise MetadataError(msg)
-    return values
+    return cast("list[str]", items)
 
 
 def parse_bool(value: str, name: str) -> bool:
@@ -66,8 +70,32 @@ def parse_bool(value: str, name: str) -> bool:
     return lowered == "true"
 
 
+def parse_step_summary(value: str, name: str) -> StepSummary:
+    """Parse the ``"true"`` / ``"false"`` / ``"auto"`` string of the
+    ``step-summary`` input.
+
+    Args:
+        value: The string, compared case-insensitively.
+        name: The name of the input, used in the error message.
+
+    Returns:
+        ``"true"`` (always write the job summary), ``"false"`` (never) or
+        ``"auto"`` (only when there are warnings, or the run fails).
+
+    Raises:
+        MetadataError: If ``value`` is none of them.
+    """
+    modes: dict[str, StepSummary] = {"true": "true", "false": "false", "auto": "auto"}
+    mode = modes.get(value.strip().lower())
+    if mode is None:
+        msg = f"{name} must be 'true', 'false' or 'auto', got: {value!r}"
+        raise MetadataError(msg)
+    return mode
+
+
 def parse_options(args: argparse.Namespace) -> Options:
-    """Parse the four boolean inputs of the command line, in one place.
+    """Parse the five boolean inputs of the command line (``step-summary``
+    also accepts ``auto``), in one place.
 
     Args:
         args: The parsed command line, as returned by ``_build_parser``.
@@ -76,12 +104,13 @@ def parse_options(args: argparse.Namespace) -> Options:
         The parsed booleans.
 
     Raises:
-        MetadataError: If one of them is neither ``"true"`` nor ``"false"``
-            (the first invalid one, in the order of ``Options``).
+        MetadataError: If one of them is invalid (the first one, in the order of
+            ``Options``).
     """
     return Options(
         fail_on_missing=parse_bool(args.fail_on_missing, "fail-on-missing"),
         fail_on_dynamic_version=parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version"),
         strict=parse_bool(args.strict, "strict"),
-        step_summary=parse_bool(args.step_summary, "step-summary"),
+        step_summary=parse_step_summary(args.step_summary, "step-summary"),
+        resolve_dynamic_version=parse_bool(args.resolve_dynamic_version, "resolve-dynamic-version"),
     )

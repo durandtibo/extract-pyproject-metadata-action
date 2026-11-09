@@ -10,7 +10,8 @@ Python versions that ``requires-python`` allows, and lists the requirements of
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--fail-on-dynamic-version true|false] [--step-summary true|false]
+        [--fail-on-dynamic-version true|false] [--resolve-dynamic-version true|false]
+        [--step-summary true|false|auto]
         [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
@@ -47,8 +48,9 @@ values may contain line breaks). They are ``name``, ``normalized-name``,
 ``license-files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires-python``, ``extras``, ``groups``,
 ``build-backend``, ``build-requires``,
 ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
-``project-dependencies``, ``dependency-specifiers`` and
-``dependency-requirements``. It also prints to stdout one
+``project-dependencies``, ``dependency-specifiers``,
+``dependency-requirements`` and ``json`` (the JSON object that is printed without
+the option, in compact form). It also prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
 the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout
@@ -59,6 +61,10 @@ and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
 environment variable (the job summary of GitHub), whichever the other options.
 When the run fails, the error message is appended instead (unless
 ``--step-summary`` or ``GITHUB_STEP_SUMMARY`` is itself the problem).
+With ``--step-summary auto`` (the default of the action), the table is only
+appended when there are warnings, the error message is appended when the run
+fails, and nothing is written when ``GITHUB_STEP_SUMMARY`` is not set. The
+default of the script is ``false``.
 
 With ``--strict true``, any warning is an error instead: the outputs are not
 written and the message lists the warnings.
@@ -69,6 +75,14 @@ is an error instead of a ``null`` specifier.
 With ``--fail-on-dynamic-version true``, a ``version`` that is listed in
 ``[project].dynamic`` (so that the version output would be empty) is an error
 instead of a warning.
+
+With ``--resolve-dynamic-version true``, a ``version`` that is listed in
+``[project].dynamic`` is looked for in the file that the build backend reads it
+from, without running any code of the project: ``[tool.setuptools.dynamic].version``
+(``file``, or ``attr`` for a ``__version__ = "..."`` literal) and ``[tool.hatch.version]``
+(``path`` and ``pattern``). A version that is found is used as a static one (so it
+is not a warning, nor an error with ``--fail-on-dynamic-version``); otherwise the
+reason is a warning, followed by the usual handling of a dynamic version.
 
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
 "major.minor" strings) that ``[project].requires-python`` allows, and
@@ -179,6 +193,12 @@ def _build_parser(prog: str) -> _ArgumentParser:
         help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
     )
     parser.add_argument(
+        "--resolve-dynamic-version",
+        metavar="BOOL",
+        default="false",
+        help="'true' to read a dynamic version from the file of the build backend (default: false)",
+    )
+    parser.add_argument(
         "--strict",
         metavar="BOOL",
         default="false",
@@ -188,7 +208,10 @@ def _build_parser(prog: str) -> _ArgumentParser:
         "--step-summary",
         metavar="BOOL",
         default="false",
-        help="'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY (default: false)",
+        help=(
+            "'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY; "
+            "'auto' to write it only when there are warnings or an error (default: false)"
+        ),
     )
     parser.add_argument(
         "--python-candidates",
@@ -228,7 +251,7 @@ def main(argv: list[str]) -> int:
             print(json.dumps(report, ensure_ascii=False))
         else:
             emit_github_output(report, args.pyproject_path, args.github_output)
-        if summary_path is not None:
+        if summary_path is not None and (options.step_summary == "true" or report["warnings"]):
             write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     except MetadataError as exc:
         annotate = args.github_output is not None

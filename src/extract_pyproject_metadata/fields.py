@@ -3,7 +3,7 @@ system]``."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from packaging.utils import canonicalize_name
 
@@ -125,7 +125,8 @@ def read_readme_path(readme: object, pyproject_path: str) -> str:
     if not isinstance(readme, dict):
         msg = f"{pyproject_path}: [project].readme must be a string or a table, got: {readme!r}"
         raise MetadataError(msg)
-    return check_str(readme.get("file", ""), "[project].readme.file", pyproject_path)
+    table = cast("dict[str, Any]", readme)
+    return check_str(table.get("file", ""), "[project].readme.file", pyproject_path)
 
 
 def read_authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
@@ -150,11 +151,12 @@ def read_authors(authors: object, pyproject_path: str) -> list[dict[str, str]]:
         if not isinstance(author, dict):
             msg = f"{pyproject_path}: {label} must be a table, got: {author!r}"
             raise MetadataError(msg)
+        fields = cast("dict[str, Any]", author)
         entry: dict[str, str] = {}
         for key in ("name", "email"):
-            if key not in author:
+            if key not in fields:
                 continue
-            entry[key] = check_str(author[key], f"{label}.{key}", pyproject_path)
+            entry[key] = check_str(fields[key], f"{label}.{key}", pyproject_path)
         result.append(entry)
     return result
 

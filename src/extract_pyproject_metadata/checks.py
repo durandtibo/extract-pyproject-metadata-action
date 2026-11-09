@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from extract_pyproject_metadata.errors import MetadataError
 
@@ -36,7 +36,7 @@ def check_array(value: object, label: str, pyproject_path: str) -> list[Any]:
     if not isinstance(value, list):
         msg = f"{pyproject_path}: {label} must be an array, got: {value!r}"
         raise MetadataError(msg)
-    return value
+    return cast("list[Any]", value)
 
 
 def check_string_array(value: object, label: str, pyproject_path: str) -> list[str]:
@@ -76,4 +76,4 @@ def get_table(
     if not isinstance(value, dict):
         msg = f"{pyproject_path}: {label} must be a table, got: {value!r}"
         raise MetadataError(msg)
-    return value
+    return cast("dict[str, Any]", value)

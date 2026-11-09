@@ -9,7 +9,7 @@ import pytest
 
 from extract_pyproject_metadata.dependencies.groups import flatten_group
 from extract_pyproject_metadata.dependencies.requirements import (
-    _candidate_requirements,
+    candidate_requirements,
     extract_project_dependencies,
 )
 from extract_pyproject_metadata.errors import MetadataError
@@ -75,10 +75,10 @@ def test_flatten_group_include_cycles_terminate(
     assert flatten_group(groups, name)[0] == expected
 
 
-def test_candidate_requirements_expands_the_spellings_of_a_group_once() -> None:
+def testcandidate_requirements_expands_the_spellings_of_a_group_once() -> None:
     data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
 
-    assert _candidate_requirements(data)[0] == ["a", "b", "c"]
+    assert candidate_requirements(data)[0] == ["a", "b", "c"]
 
 
 def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
@@ -246,7 +246,7 @@ def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warnin
 
 def test_flatten_group_missing_include_group_is_reported_once_per_group() -> None:
     groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
-    _, warnings = _candidate_requirements({"dependency-groups": groups}, "p.toml")
+    _, warnings = candidate_requirements({"dependency-groups": groups}, "p.toml")
 
     assert warnings == [
         "p.toml: [dependency-groups].a: include-group 'nope' does not match any group"

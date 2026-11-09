@@ -47,7 +47,9 @@ def format_outputs(metadata: Report) -> dict[str, str]:
 
     Returns:
         A dict mapping each output name of ``action.yaml`` to its value, with
-        JSON values in compact form.
+        JSON values in compact form. ``json`` is the whole report, the object
+        that the script prints to stdout (with the names in ``snake_case``,
+        the ``warnings`` and the ``schema_version``).
     """
     return {
         "name": metadata["name"],
@@ -75,6 +77,7 @@ def format_outputs(metadata: Report) -> dict[str, str]:
         "project-dependencies": _compact_json(metadata["project_dependencies"]),
         "dependency-specifiers": _compact_json(metadata["dependency_specifiers"]),
         "dependency-requirements": _compact_json(metadata["dependency_requirements"]),
+        "json": _compact_json(metadata),
     }
 
 

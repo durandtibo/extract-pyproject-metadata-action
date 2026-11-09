@@ -58,6 +58,13 @@ inputs:
       instead of reporting an empty version with a warning ("true" or "false")
     default: "false"
 
+  resolve-dynamic-version:
+    description: >
+      Set to "true" to read a version listed in [project].dynamic from the file
+      of the build backend (setuptools file or attr, hatch path), without running
+      project code ("true" or "false")
+    default: "false"
+
   strict:
     description: >
       Set to "true" to fail when there is any warning, instead of only
@@ -73,9 +80,11 @@ inputs:
 
   step-summary:
     description: >
-      Set to "true" to also write the outputs and the warnings to the job
-      summary of the workflow run ("true" or "false")
-    default: "false"
+      Set to "true" to always write the outputs and the warnings to the job
+      summary of the workflow run, "false" to never write them, or "auto" to
+      write them only when there are warnings (and to write the error when the
+      step fails)
+    default: auto
 
   installer:
     description: >
@@ -200,6 +209,12 @@ outputs:
       environment marker (empty strings if it has none); an empty array if the
       package is not found
     value: ${{ steps.metadata.outputs.dependency-requirements }}
+  json:
+    description: >
+      JSON object with all the other outputs and the warnings, in one value (the
+      names use "_" instead of "-"; the arrays and objects are values, not
+      strings), to pass the whole result to another step or job
+    value: ${{ steps.metadata.outputs.json }}
 
 runs:
   using: composite
@@ -213,6 +228,7 @@ runs:
         FAIL_ON_MISSING: ${{ inputs.fail-on-missing }}
         PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
         FAIL_ON_DYNAMIC_VERSION: ${{ inputs.fail-on-dynamic-version }}
+        RESOLVE_DYNAMIC_VERSION: ${{ inputs.resolve-dynamic-version }}
         STRICT: ${{ inputs.strict }}
         STEP_SUMMARY: ${{ inputs.step-summary }}
         PYTHON_EXECUTABLE: ${{ inputs.python-executable }}
@@ -223,6 +239,7 @@ runs:
           --fail-on-missing "$FAIL_ON_MISSING" \
           --python-candidates "$PYTHON_CANDIDATES" \
           --fail-on-dynamic-version "$FAIL_ON_DYNAMIC_VERSION" \
+          --resolve-dynamic-version "$RESOLVE_DYNAMIC_VERSION" \
           --strict "$STRICT" \
           --step-summary "$STEP_SUMMARY" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"

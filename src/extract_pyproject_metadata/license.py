@@ -3,16 +3,21 @@ expression."""
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from extract_pyproject_metadata.checks import check_str
 from extract_pyproject_metadata.errors import MetadataError
 
 try:
-    from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
+    from packaging.licenses import (
+        InvalidLicenseExpression,  # pyright: ignore[reportAssignmentType]
+        canonicalize_license_expression,
+    )
 except ImportError:  # packaging before 24.2 cannot validate license expressions
     # Only the None check of ``license_warnings`` uses these names without the import.
-    canonicalize_license_expression = None  # type: ignore[assignment]
+    canonicalize_license_expression = None
 
-    class InvalidLicenseExpression(ValueError):  # type: ignore[no-redef]  # noqa: N818 (name in packaging)
+    class InvalidLicenseExpression(ValueError):  # noqa: N818 (name in packaging)
         """Stand-in that is never raised."""
 
 
@@ -42,8 +47,9 @@ def read_license_text(license_: object, pyproject_path: str) -> str:
     if not isinstance(license_, dict):
         msg = f"{pyproject_path}: [project].license must be a string or a table, got: {license_!r}"
         raise MetadataError(msg)
-    file = check_str(license_.get("text", ""), "[project].license.text", pyproject_path)
-    check_str(license_.get("file", ""), "[project].license.file", pyproject_path)
+    table = cast("dict[str, Any]", license_)
+    file = check_str(table.get("text", ""), "[project].license.text", pyproject_path)
+    check_str(table.get("file", ""), "[project].license.file", pyproject_path)
     return file
 
 

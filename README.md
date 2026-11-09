@@ -117,16 +117,18 @@ jobs:
 | `extra-values`            | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`).                                                                                                                                                                                                                                                                                                                                            | No       | `[]`                                   |
 | `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503. A name followed by `@project`, `@extra:<name>` or `@group:<name>` is looked up in `[project].dependencies`, that extra or that group only (see [Looking up a dependency in one place](#looking-up-a-dependency-in-one-place)). | No       | `[]`                                   |
 | `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version.                                                                                                                                                                                                                                                                                                                                            | No       | `false`                                |
+| `resolve-dynamic-version` | `true` to read a version listed in `[project].dynamic` from the file that the build backend reads it from, without running any code of the project (see [Dynamic version](#dynamic-version)). A version that is found is used as a static one.                                                                                                                                                                                                                                                                                       | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                                                                                                                                                                                                                                                       | No       | `["3.11","3.12","3.13","3.14","3.15"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`.                                                                                                                                                                                                                                                                                                                                                                                                   | No       | `false`                                |
 | `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input.                                                                                                                                                                                                                                                                                                                                                                      | No       | `false`                                |
 | `python-executable`       | Python interpreter that runs the action: a command found on `PATH` or a path to an executable (Python 3.11 or later, e.g. `python3.12` or `/opt/python/bin/python`), for runners where `python3` is not the interpreter to use. The private virtual environment, if one is needed, is created with it.                                                                                                                                                                                                                               | No       | `python3`                              |
-| `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output).                                                                                                                                                                                                                                                                                                                                                                                                          | No       | `false`                                |
+| `step-summary`            | `true` to always write the outputs and the warnings to the job summary of the workflow run (a table with one row per output), `false` to never write them, or `auto` to write them only when there are warnings (a failure is always written).                                                                                                                                                                                                                                                                                       | No       | `auto`                                 |
 | `installer`               | Tool that installs `packaging` in the private virtual environment when the Python lacks it: `pip` (follows the pip configuration), `uv` (faster; follows the configuration of uv, and fails if uv is not on `PATH` when an install is needed) or `auto` (`uv` if it is on `PATH`, `pip` otherwise). Nothing is installed, whatever the value, when `packaging` is available.                                                                                                                                                         | No       | `pip`                                  |
 
-`fail-on-dynamic-version`, `fail-on-missing`, `strict` and `step-summary` are
-boolean inputs: the value must be `true` or `false`, the case and the surrounding
-spaces are ignored, and any other value fails the step.
+`fail-on-dynamic-version`, `resolve-dynamic-version`, `fail-on-missing` and `strict` are boolean inputs: the
+value must be `true` or `false`, the case and the surrounding spaces are ignored,
+and any other value fails the step. `step-summary` is the same with a third value,
+`auto`.
 
 ## Outputs
 
@@ -157,6 +159,7 @@ spaces are ignored, and any other value fails the step.
 | `project-dependencies`    | JSON object mapping each package of `[project].dependencies` to its specifier, with the name as written in its first requirement and in the order of the file (e.g. `{"numpy": "<3,>=1.20", "Foo_Bar": ""}`), without having to list the names in `dependencies`. Extras and dependency groups are not read. The first requirement of a package wins, whatever its environment marker, as for `dependency-specifiers`. `{}` if there is none. A warning is emitted if a requirement string is invalid and ignored, if a package has different specifiers for the same environment marker, or if `dependencies` is listed in `[project].dynamic` without a static value.                 |
 | `dependency-specifiers`   | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found (or a failure, with `fail-on-missing`), `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, if an `include-group` names a group that does not exist, or if `dependencies` or `optional-dependencies` is listed in `[project].dynamic` without a static value (the build backend computes it, so the action cannot read it and finds nothing in it). |
 | `dependency-requirements` | JSON object mapping each package listed in `dependencies` to the array of **all** its requirements, in search order, each an object with its `specifier` and its environment `marker` (both `""` if it has none; e.g. `{"numpy":[{"specifier":">=1.20","marker":"python_version < \"3.12\""},{"specifier":">=1.26","marker":"python_version >= \"3.12\""}]}`). `[]` for a package that is not found. Unlike `dependency-specifiers`, nothing is dropped, so a workflow can pick the requirement that applies to its Python version (see [Environment markers](#environment-markers)). Not in the `📦` log line.                                                                         |
+| `json`                    | The whole result in one value: a JSON object with the keys of the script output (the names of the other outputs with `_` instead of `-`: `normalized_name`, `python_versions`, ...), the `warnings` (an array of messages) and the `schema_version` (see [Development](#development)). Unlike the other outputs, arrays and objects are values, not strings, so `fromJSON(steps.metadata.outputs.json).extras` is the array of extras. Pass it to another job with one job output, or to a script. The step summary table leaves it out, as does the `📦` log line. `python-matrix` is not in it.                                                                                       |
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
@@ -176,12 +179,42 @@ breaks in the values escaped, to help debugging a workflow. The line shows
 `normalized-name` and `normalized-version` (derived from `name` and `version`),
 `python-matrix` (derived from `python-versions`), `description` (it may be long),
 `readme`, `license`, `license-files`, `authors`, `urls`, `keywords`, `classifiers`, `scripts`,
-`build-backend`, `build-requires` and `dependency-requirements`. With
+`build-backend`, `build-requires`, `dependency-requirements` and `json`. With
 `step-summary: "true"`, the outputs and the warnings are also written to the job
 summary of the run as a Markdown table (values are escaped, so a value from
-`pyproject.toml` cannot add Markdown or HTML to the page). When the step fails,
-the error message is written to the job summary instead, so the reason is visible
-on the summary page of the run and not only in the log of the step.
+`pyproject.toml` cannot add Markdown or HTML to the page). With the default,
+`step-summary: "auto"`, the table is only written when there are warnings, so a
+warning (and the failure of `strict`, which lists them) shows on the summary page
+of the run and not only in the log; `"false"` never writes it. When the step
+fails, the error message is written to the job summary instead (with `true` and
+`auto`), so the reason is visible on the summary page of the run and not only in
+the log of the step.
+
+### The whole result in one output
+
+The `json` output holds every value, so one job output is enough to hand the
+result to another job:
+
+```yaml
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.metadata.outputs.json }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: metadata
+        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+
+  build:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "building $NAME $VERSION"
+        env:
+          NAME: ${{ fromJSON(needs.metadata.outputs.json).name }}
+          VERSION: ${{ fromJSON(needs.metadata.outputs.json).version }}
+```
 
 ### Python version matrix
 
@@ -230,6 +263,50 @@ test:
         python-version: ${{ matrix.python-version }}
 ```
 
+## Dynamic version
+
+When `version` is listed in `[project].dynamic`, the version output is empty (with a
+warning) because the build backend computes it. With `resolve-dynamic-version: "true"`,
+the action first looks for it in the file that the backend reads it from. It only
+**reads** that file: no code of the project is imported or run, and no build backend
+is started. Two declarations are understood:
+
+```toml
+[project]
+name = "pkg"
+dynamic = ["version"]
+
+# setuptools: the text of a file ...
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+
+# ... or a string literal of a module (found with `ast`, never imported)
+# version = { attr = "pkg.__version__" }
+```
+
+```toml
+# hatch: the first match of a regular expression (default: `__version__ = "1.2.3"`
+# or `VERSION = "1.2.3"`), or of the `pattern` that has a `version` group
+[tool.hatch.version]
+path = "src/pkg/__about__.py"
+```
+
+- Files are looked up relative to the directory of the `pyproject.toml` and must stay
+  inside it; a file larger than 1 MiB is not read. For `attr`, the module is searched
+  in the `[tool.setuptools.package-dir]` directory, then in `src` and in the directory
+  itself (`pkg.py` or `pkg/__init__.py`); it must assign a string literal, not a tuple
+  or a call.
+- The version must be a valid [PEP 440](https://peps.python.org/pep-0440/) version.
+  It is then used like a static one: `version` is the text of the file and
+  `normalized-version` its canonical form, there is no warning, and
+  `fail-on-dynamic-version` does not fail.
+- When it cannot be resolved (another backend, a version computed from git tags by
+  `setuptools-scm` or `hatch-vcs`, a missing file, a pattern that does not match), the
+  warning says why and the usual handling of a dynamic version applies: an empty
+  `version`, or a failure with `fail-on-dynamic-version`.
+- `pattern` is a regular expression of the file: a pathological one can make the step
+  slow, as it can in the build. Use `strict` or a job `timeout-minutes` as usual.
+
 ## Looking up a dependency in one place
 
 By default a package is searched in `[project].dependencies`, then in every extra, then
@@ -240,6 +317,31 @@ dependency group (the requirements it adds with `include-group` are included). P
 names, extra names and group names are compared per PEP 503, and a package name cannot contain `@`,
 so the entry is not ambiguous. An extra and a group can have the same name, which is why the kind is
 part of the scope.
+
+The entries of `dependencies` (each is a JSON string of the array) are:
+
+| Entry              | Looked up in                                                                       | Key in the outputs |
+| ------------------ | ---------------------------------------------------------------------------------- | ------------------ |
+| `numpy`            | `[project].dependencies`, then every extra, then every group: the first match wins | `numpy`            |
+| `numpy@project`    | `[project].dependencies` only                                                      | `numpy@project`    |
+| `numpy@extra:fast` | the extra `fast` of `[project.optional-dependencies]` only                         | `numpy@extra:fast` |
+| `numpy@group:dev`  | the group `dev` of `[dependency-groups]` only, with the groups it includes         | `numpy@group:dev`  |
+
+Anything else after the `@` (`numpy@dev`, `numpy@extra:`) fails the step. The key of
+`dependency-specifiers` and `dependency-requirements` is always the entry as written, so
+`numpy` and `numpy@project` are two keys, even when they find the same requirement.
+
+### A package declared in several places
+
+The same package is often declared in more than one place (a runtime range in
+`[project].dependencies`, a pin in a group). With the plain name, `dependency-specifiers`
+reports the **first** requirement of the search order above, and the action warns when
+the places disagree: all the requirements of the package that have the same environment
+marker (or none) are compared, whichever place they are in, and different specifiers
+give a warning (which `strict` turns into a failure). A scoped entry only looks at its own
+place, so it reads the requirement of that place without such a warning. To see every
+requirement of the package, in search order and with its marker, read
+`dependency-requirements`.
 
 ```toml
 [project]
@@ -256,7 +358,8 @@ With `dependencies: '["numpy", "numpy@extra:fast", "pytest@group:dev", "pytest@p
 `dependency-specifiers` is
 `{"numpy":">=1.20","numpy@extra:fast":">=2","pytest@group:dev":"","pytest@project":null}`:
 the keys of `dependency-specifiers` and `dependency-requirements` are the entries as
-written. A package that the place does not declare, or a place that does not exist, gives `null`
+written. The plain `numpy` also warns here, because the three places have different
+specifiers (`>=1.20`, `>=2`, `>=1.26`), while the scoped entries do not. A package that the place does not declare, or a place that does not exist, gives `null`
 (and an empty array in `dependency-requirements`), and fails the step with `fail-on-missing`.
 
 ## Environment markers
@@ -298,6 +401,30 @@ is:
 }
 ```
 
+## Warnings
+
+A warning reports suspicious input that the action can still work with. It is shown as a
+`::warning file=<pyproject-path>::` annotation of the run (and in the job summary with
+`step-summary`), is in the `warnings` array of the JSON that the script prints, and
+**fails the step with `strict: "true"`** (the error lists them all). These are all the
+warnings.
+
+| Message contains                                                | When                                                                                                                                    |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `is set and also listed in [project].dynamic`                   | A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621): the static value is used.                           |
+| `[project].version is dynamic, the version output is empty`     | `version` is in `dynamic` and not set: `version` and `normalized-version` are empty.                                                    |
+| `is not a valid SPDX license expression`                        | `[project].license` is a string that is not a valid SPDX expression (only checked with `packaging` 24.2 or later).                      |
+| `[project].requires-python is not a valid version specifier`    | `requires-python` cannot be parsed: `python-versions` is empty.                                                                         |
+| `no python-candidates version satisfies`                        | No version of `python-candidates` is allowed by `requires-python`: `python-versions` and `python-matrix` are empty.                     |
+| `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                                  |
+| `has different specifiers`                                      | A package has requirements with the same environment marker and different specifiers (see [Environment markers](#environment-markers)). |
+| `has an include-group cycle`                                    | The `include-group` entries of `[dependency-groups]` include each other in a loop (when `dependencies` is not empty).                   |
+| `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                                |
+| `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so the action finds no requirement in it.                    |
+| `[project].optional-dependencies is dynamic, it cannot be read` | The same for `optional-dependencies` (only when `dependencies` is not empty).                                                           |
+
+The same messages can come from several places; each is reported once.
+
 ## Failure modes
 
 The action's step fails (non-zero exit) when:
@@ -309,7 +436,7 @@ The action's step fails (non-zero exit) when:
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
   permission). A UTF-8 byte order mark at the start of the file is accepted and ignored
   (it used to fail with `Invalid statement (at line 1, column 1)`).
-- The outputs (`$GITHUB_OUTPUT`) or, with `step-summary`, the job summary
+- The outputs (`$GITHUB_OUTPUT`) or, with `step-summary` (`true`, or `auto` with warnings), the job summary
   (`$GITHUB_STEP_SUMMARY`) cannot be written. These used to end with a Python
   traceback, like the unreadable file.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
@@ -360,10 +487,12 @@ The action's step fails (non-zero exit) when:
 - `dependencies` is not a JSON array of strings, or an entry has a scope other than `project`,
   `extra:<name>` and `group:<name>` (for example `numpy@dev`).
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and
-  `version` is listed in `[project].dynamic`.
+  `version` is listed in `[project].dynamic` and not resolved by `resolve-dynamic-version`.
+- `resolve-dynamic-version` is not `true` or `false`.
 - `strict` is not `true` or `false`, or is `true` and there is a warning (the
   error lists them; no output is written).
-- `step-summary` is not `true` or `false`.
+- `step-summary` is not `true`, `false` or `auto`, or is `true` and the job summary
+  file (`$GITHUB_STEP_SUMMARY`) is not set.
 - `installer` is not `pip`, `uv` or `auto`, or is `uv` and uv is not on `PATH` while
   `packaging` has to be installed.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in

@@ -62,7 +62,11 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
     dependencies = parse_dependencies(args.dependencies)
     python_candidates = parse_python_candidates(args.python_candidates)
     metadata, warnings = extract_metadata(
-        data, extra_values, args.pyproject_path, options.fail_on_dynamic_version
+        data,
+        extra_values,
+        args.pyproject_path,
+        options.fail_on_dynamic_version,
+        options.resolve_dynamic_version,
     )
     # Computed in the order of their warnings in the report: the metadata, the Python versions,
     # the dependencies of the project, then the lookups of the requested dependencies.

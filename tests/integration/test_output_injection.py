@@ -203,7 +203,8 @@ def test_the_job_summary_of_a_hostile_pyproject_stays_a_table(tmp_path: Path) ->
     markdown = format_step_summary(report, outputs)
 
     rows = [line for line in markdown.splitlines() if line.startswith("| `")]
-    assert [row.split("`")[1] for row in rows] == list(outputs)
+    # The "json" output repeats the others.
+    assert [row.split("`")[1] for row in rows] == [key for key in outputs if key != "json"]
     for row in rows:
         cell = row.split(" | ", 1)[1]
         assert cell.count("|") == 1  # only the closing pipe of the row

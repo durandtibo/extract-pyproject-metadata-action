@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import Options, parse_bool, parse_options
+from extract_pyproject_metadata.inputs import (
+    Options,
+    parse_bool,
+    parse_options,
+    parse_step_summary,
+)
 from tests.helpers import (
     parse_args,
 )
@@ -19,17 +24,23 @@ def test_parse_options() -> None:
         " TRUE",
         "--step-summary",
         "true",
+        "--resolve-dynamic-version",
+        "TRUE",
         "p.toml",
         "[]",
     )
 
     assert parse_options(args) == Options(
-        fail_on_missing=True, fail_on_dynamic_version=True, strict=False, step_summary=True
+        fail_on_missing=True,
+        fail_on_dynamic_version=True,
+        strict=False,
+        step_summary="true",
+        resolve_dynamic_version=True,
     )
 
 
 def test_parse_options_defaults() -> None:
-    assert parse_options(parse_args("p.toml", "[]")) == Options(False, False, False, False)
+    assert parse_options(parse_args("p.toml", "[]")) == Options(False, False, False, "false", False)
 
 
 @pytest.mark.parametrize(
@@ -38,7 +49,7 @@ def test_parse_options_defaults() -> None:
         ("--fail-on-missing", "fail-on-missing"),
         ("--fail-on-dynamic-version", "fail-on-dynamic-version"),
         ("--strict", "strict"),
-        ("--step-summary", "step-summary"),
+        ("--resolve-dynamic-version", "resolve-dynamic-version"),
     ],
 )
 def test_parse_options_invalid_value(option: str, name: str) -> None:
@@ -65,3 +76,38 @@ def test_parse_bool(value: str, expected: bool) -> None:
 def test_parse_bool_invalid(value: str) -> None:
     with pytest.raises(MetadataError, match=rf"my-input must be 'true' or 'false', got: {value!r}"):
         parse_bool(value, "my-input")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", "true"),
+        ("false", "false"),
+        ("auto", "auto"),
+        (" AUTO ", "auto"),
+        ("True", "true"),
+    ],
+)
+def test_parse_step_summary(value: str, expected: str) -> None:
+    assert parse_step_summary(value, "step-summary") == expected
+
+
+@pytest.mark.parametrize("value", ["", "maybe", "yes", "0", "automatic"])
+def test_parse_step_summary_invalid(value: str) -> None:
+    with pytest.raises(
+        MetadataError, match=rf"my-input must be 'true', 'false' or 'auto', got: {value!r}"
+    ):
+        parse_step_summary(value, "my-input")
+
+
+def test_parse_options_step_summary_invalid_value() -> None:
+    with pytest.raises(
+        MetadataError, match=r"step-summary must be 'true', 'false' or 'auto', got: 'maybe'"
+    ):
+        parse_options(parse_args("--step-summary", "maybe", "p.toml", "[]"))
+
+
+def test_parse_options_step_summary_auto() -> None:
+    assert (
+        parse_options(parse_args("--step-summary", "auto", "p.toml", "[]")).step_summary == "auto"
+    )

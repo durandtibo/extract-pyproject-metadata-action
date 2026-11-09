@@ -167,7 +167,7 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# mypy
+# mypy (no longer used, the cache of an older checkout)
 .mypy_cache/
 .dmypy.json
 dmypy.json

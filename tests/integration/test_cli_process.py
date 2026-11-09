@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     PACKAGE_PATH,
     SCRIPT_PATH,
@@ -118,7 +119,12 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         check=True,
     )
 
-    assert parse_github_output(output.read_text(encoding="utf-8")) == {
+    outputs = parse_github_output(output.read_text(encoding="utf-8"))
+    report = json.loads(outputs.pop("json"))
+    assert list(report) == list(Report.__annotations__)
+    assert report["name"] == "coola"
+    assert report["extras"] == ["", "numpy"]
+    assert outputs == {
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
@@ -293,3 +299,56 @@ def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch)
     spec.loader.exec_module(module)
 
     assert module.__name__ == "extract_metadata_imported"
+
+
+def test_cli_resolves_a_dynamic_version_from_a_file(tmp_path: Path) -> None:
+    (tmp_path / "VERSION").write_text("1.0-RC1\n")
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\ndynamic = ["version"]\n'
+        '[tool.setuptools.dynamic]\nversion = { file = "VERSION" }\n',
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--resolve-dynamic-version",
+            "true",
+            "--fail-on-dynamic-version",
+            "true",
+            "--strict",
+            "true",
+            "--",
+            str(path),
+            "[]",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    report = json.loads(result.stdout)
+    assert (report["version"], report["normalized_version"], report["warnings"]) == (
+        "1.0-RC1",
+        "1.0rc1",
+        [],
+    )
+
+
+def test_cli_does_not_resolve_a_dynamic_version_by_default(tmp_path: Path) -> None:
+    (tmp_path / "VERSION").write_text("1.0\n")
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\ndynamic = ["version"]\n'
+        '[tool.setuptools.dynamic]\nversion = { file = "VERSION" }\n',
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--", str(path), "[]"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert json.loads(result.stdout)["version"] == ""
