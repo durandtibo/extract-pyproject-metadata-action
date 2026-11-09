@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import TYPE_CHECKING, NamedTuple
 
 from extract_pyproject_metadata.errors import MetadataError
 
@@ -83,11 +83,12 @@ def parse_step_summary(value: str, name: str) -> StepSummary:
     Raises:
         MetadataError: If ``value`` is none of them.
     """
-    lowered = value.strip().lower()
-    if lowered not in {"true", "false", "auto"}:
+    modes: dict[str, StepSummary] = {"true": "true", "false": "false", "auto": "auto"}
+    mode = modes.get(value.strip().lower())
+    if mode is None:
         msg = f"{name} must be 'true', 'false' or 'auto', got: {value!r}"
         raise MetadataError(msg)
-    return cast("StepSummary", lowered)
+    return mode
 
 
 def parse_options(args: argparse.Namespace) -> Options:
