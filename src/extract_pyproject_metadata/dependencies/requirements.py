@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import functools
-from typing import Any
+from typing import Any, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -13,6 +13,7 @@ from extract_pyproject_metadata.dependencies.groups import flatten_group
 
 __all__ = [
     "PROJECT_SCOPE",
+    "candidate_requirements",
     "conflict_warnings",
     "dynamic_dependency_fields",
     "extract_project_dependencies",
@@ -40,20 +41,21 @@ def dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
     has no static value in ``[project]``. Only ``dependencies`` and
     ``optional-dependencies`` are checked, in this order.
     """
-    project = data.get("project", {})
+    project: object = data.get("project", {})
     if not isinstance(project, dict):
         return []
-    dynamic = project.get("dynamic", [])
+    table = cast("dict[str, Any]", project)
+    dynamic: object = table.get("dynamic", [])
     if not isinstance(dynamic, list):
         return []
     return [
         field
         for field in ("dependencies", "optional-dependencies")
-        if field in dynamic and field not in project
+        if field in dynamic and field not in table
     ]
 
 
-def _candidate_requirements(
+def candidate_requirements(
     data: dict[str, Any], pyproject_path: str = "pyproject.toml"
 ) -> tuple[list[str], list[str]]:
     """All requirement strings, in search order.
@@ -81,7 +83,7 @@ def _scoped_requirements(
     search order.
 
     Returns:
-        A tuple ``(requirements, warnings)``, as for ``_candidate_requirements``.
+        A tuple ``(requirements, warnings)``, as for ``candidate_requirements``.
         Each requirement is a tuple ``(scope, requirement)``. ``scope`` is
         ``"project"`` for ``[project].dependencies``, ``"extra:<name>"`` for an extra
         and ``"group:<name>"`` for a dependency group (the requirements that its
@@ -89,7 +91,7 @@ def _scoped_requirements(
         Spellings of the same name share one scope.
 
     Raises:
-        MetadataError: Under the same conditions as ``_candidate_requirements``.
+        MetadataError: Under the same conditions as ``candidate_requirements``.
     """
     project = get_table(data, "project", "[project]", pyproject_path)
     reqs = [
@@ -274,7 +276,7 @@ def conflict_warnings(
     by_marker: dict[str | None, set[str]] = {}
     for specifier, marker in matches:
         by_marker.setdefault(marker, set()).add(specifier)
-    messages = []
+    messages: list[str] = []
     for marker, specs in by_marker.items():
         if len(specs) > 1:
             where = "" if marker is None else f" for marker {marker!r}"

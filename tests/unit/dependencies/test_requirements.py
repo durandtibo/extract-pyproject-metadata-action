@@ -7,9 +7,9 @@ from packaging.requirements import InvalidRequirement, Requirement
 
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
 from extract_pyproject_metadata.dependencies.requirements import (
-    _candidate_requirements,
     _index_requirements,
     _scoped_requirements,
+    candidate_requirements,
     conflict_warnings,
     dynamic_dependency_fields,
     extract_project_dependencies,
@@ -22,7 +22,7 @@ from tests.helpers import (
 )
 
 
-def test_candidate_requirements_search_order() -> None:
+def testcandidate_requirements_search_order() -> None:
     data = {
         "project": {
             "dependencies": ["a>=1"],
@@ -31,7 +31,7 @@ def test_candidate_requirements_search_order() -> None:
         "dependency-groups": {"dev": ["d>=4"], "test": [{"include-group": "dev"}, "e>=5"]},
     }
 
-    assert _candidate_requirements(data)[0] == [
+    assert candidate_requirements(data)[0] == [
         "a>=1",
         "b>=2",
         "c>=3",
@@ -79,8 +79,8 @@ def test_scoped_requirements_wrong_type() -> None:
         _scoped_requirements({"project": {"dependencies": "a"}}, "p.toml")
 
 
-def test_candidate_requirements_empty() -> None:
-    assert _candidate_requirements({}) == ([], [])
+def testcandidate_requirements_empty() -> None:
+    assert candidate_requirements({}) == ([], [])
 
 
 @pytest.mark.parametrize(
@@ -100,15 +100,15 @@ def test_candidate_requirements_empty() -> None:
         ),
     ],
 )
-def test_candidate_requirements_non_string_entries(data: dict, match: str) -> None:
+def testcandidate_requirements_non_string_entries(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        _candidate_requirements(data, "p.toml")
+        candidate_requirements(data, "p.toml")
 
 
-def test_candidate_requirements_does_not_modify_the_data() -> None:
+def testcandidate_requirements_does_not_modify_the_data() -> None:
     data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
-    assert _candidate_requirements(data)[0] == ["a", "b"]
+    assert candidate_requirements(data)[0] == ["a", "b"]
     assert data == {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
 
@@ -125,19 +125,19 @@ def test_candidate_requirements_does_not_modify_the_data() -> None:
         ({"dependency-groups": 1}, r"\[dependency-groups\] must be a table"),
     ],
 )
-def test_candidate_requirements_wrong_types(data: dict, match: str) -> None:
+def testcandidate_requirements_wrong_types(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        _candidate_requirements(data)
+        candidate_requirements(data)
 
 
-def test_candidate_requirements_reports_a_cycle_once() -> None:
+def testcandidate_requirements_reports_a_cycle_once() -> None:
     data = {
         "dependency-groups": {
             "a": [{"include-group": "b"}, "x"],
             "b": [{"include-group": "a"}, "y"],
         }
     }
-    _, warnings = _candidate_requirements(data, "p.toml")
+    _, warnings = candidate_requirements(data, "p.toml")
 
     assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
 
