@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -141,7 +142,7 @@ def test_run_sh_uses_a_new_venv_on_every_run(tmp_path: Path) -> None:
         {"STUB_VENV_STATUS": "1"},  # the venv cannot be created
     ],
 )
-def test_run_sh_removes_the_venv_when_it_ends(tmp_path: Path, env: dict[str, str]) -> None:
+def test_run_sh_removes_the_venv_when_it_ends(tmp_path: Path, env: dict[str, Any]) -> None:
     result = run_run_sh(tmp_path, ["a"], STUB_PROBE_STATUS="1", **env)
 
     assert len(result.created_venvs) == 1
