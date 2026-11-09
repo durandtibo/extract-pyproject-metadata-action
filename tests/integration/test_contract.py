@@ -58,7 +58,13 @@ def test_action_yaml_every_input_has_a_default() -> None:
 def test_the_readme_lists_the_boolean_inputs_of_parse_options() -> None:
     readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
     names = ", ".join(
-        f"`{name}`" for name in ("fail-on-dynamic-version", "fail-on-missing", "strict")
+        f"`{name}`"
+        for name in (
+            "fail-on-dynamic-version",
+            "resolve-dynamic-version",
+            "fail-on-missing",
+            "strict",
+        )
     )
 
     assert f"{names.replace(', `strict`', ' and `strict`')} are boolean inputs" in readme

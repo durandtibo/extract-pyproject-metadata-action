@@ -678,32 +678,96 @@ def test_static_and_dynamic_warnings_none() -> None:
 
 
 def test_required_version_static() -> None:
-    assert _required_version({"version": "1.0"}, [], "p.toml", False) == ("1.0", [])
+    assert _required_version({}, {"version": "1.0"}, [], "p.toml", (False, False)) == (
+        "1.0",
+        True,
+        [],
+    )
 
 
 def test_required_version_is_returned_whatever_its_type() -> None:
-    assert _required_version({"version": 1.0}, [], "p.toml", True) == (1.0, [])
+    assert _required_version({}, {"version": 1.0}, [], "p.toml", (True, False)) == (1.0, True, [])
 
 
 def test_required_version_dynamic_warns() -> None:
-    assert _required_version({}, ["version"], "p.toml", False) == (
+    assert _required_version({}, {}, ["version"], "p.toml", (False, False)) == (
         "",
+        False,
         ["p.toml: [project].version is dynamic, the version output is empty"],
     )
 
 
 def test_required_version_dynamic_fails_when_requested() -> None:
     with pytest.raises(
-        MetadataError, match=r"^p.toml: \[project\].version is dynamic, so it cannot be read"
+        MetadataError,
+        match=r"^p.toml: \[project\].version is dynamic, so it cannot be read \(fail-on-dynamic-version is 'true'\)$",
     ):
-        _required_version({}, ["version"], "p.toml", True)
+        _required_version({}, {}, ["version"], "p.toml", (True, False))
 
 
 def test_required_version_missing() -> None:
     with pytest.raises(
         MetadataError, match=r"^p.toml is missing required key \[project\].version$"
     ):
-        _required_version({}, ["readme"], "p.toml", False)
+        _required_version({}, {}, ["readme"], "p.toml", (False, False))
+
+
+def test_required_version_resolved_from_a_file(tmp_path: Path) -> None:
+    (tmp_path / "VERSION").write_text("1.2.3\n")
+    data = {"tool": {"setuptools": {"dynamic": {"version": {"file": "VERSION"}}}}}
+    path = str(tmp_path / "pyproject.toml")
+
+    assert _required_version(data, {}, ["version"], path, (True, True)) == ("1.2.3", True, [])
+
+
+def test_required_version_not_resolved_without_the_flag(tmp_path: Path) -> None:
+    (tmp_path / "VERSION").write_text("1.2.3\n")
+    data = {"tool": {"setuptools": {"dynamic": {"version": {"file": "VERSION"}}}}}
+    path = str(tmp_path / "pyproject.toml")
+
+    version, is_known, _ = _required_version(data, {}, ["version"], path, (False, False))
+
+    assert (version, is_known) == ("", False)
+
+
+def test_required_version_unresolved_warns_with_the_reason() -> None:
+    assert _required_version({}, {}, ["version"], "p.toml", (False, True)) == (
+        "",
+        False,
+        [
+            (
+                "p.toml: cannot resolve the dynamic version: no static source: only "
+                "[tool.setuptools.dynamic].version (file or attr) and [tool.hatch.version] (path) "
+                "are read"
+            ),
+            "p.toml: [project].version is dynamic, the version output is empty",
+        ],
+    )
+
+
+def test_required_version_unresolved_fails_with_the_reason_when_requested() -> None:
+    with pytest.raises(
+        MetadataError,
+        match=r"\(fail-on-dynamic-version is 'true'\); it cannot be resolved: no static source",
+    ):
+        _required_version({}, {}, ["version"], "p.toml", (True, True))
+
+
+def test_extract_metadata_uses_the_resolved_version(tmp_path: Path) -> None:
+    (tmp_path / "VERSION").write_text("1.0-RC1\n")
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "a"\ndynamic = ["version"]\n'
+        '[tool.setuptools.dynamic]\nversion = { file = "VERSION" }\n',
+    )
+
+    metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path), True, True)
+
+    assert (metadata["version"], metadata["normalized_version"], warnings) == (
+        "1.0-RC1",
+        "1.0rc1",
+        [],
+    )
 
 
 @pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])

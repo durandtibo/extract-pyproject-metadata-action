@@ -24,17 +24,23 @@ def test_parse_options() -> None:
         " TRUE",
         "--step-summary",
         "true",
+        "--resolve-dynamic-version",
+        "TRUE",
         "p.toml",
         "[]",
     )
 
     assert parse_options(args) == Options(
-        fail_on_missing=True, fail_on_dynamic_version=True, strict=False, step_summary="true"
+        fail_on_missing=True,
+        fail_on_dynamic_version=True,
+        strict=False,
+        step_summary="true",
+        resolve_dynamic_version=True,
     )
 
 
 def test_parse_options_defaults() -> None:
-    assert parse_options(parse_args("p.toml", "[]")) == Options(False, False, False, "false")
+    assert parse_options(parse_args("p.toml", "[]")) == Options(False, False, False, "false", False)
 
 
 @pytest.mark.parametrize(
@@ -43,6 +49,7 @@ def test_parse_options_defaults() -> None:
         ("--fail-on-missing", "fail-on-missing"),
         ("--fail-on-dynamic-version", "fail-on-dynamic-version"),
         ("--strict", "strict"),
+        ("--resolve-dynamic-version", "resolve-dynamic-version"),
     ],
 )
 def test_parse_options_invalid_value(option: str, name: str) -> None:

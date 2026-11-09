@@ -112,13 +112,14 @@ jobs:
 | `extra-values`            | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`).                                                                                                                                                                                                                                                                                                                                            | No       | `[]`                                   |
 | `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503. A name followed by `@project`, `@extra:<name>` or `@group:<name>` is looked up in `[project].dependencies`, that extra or that group only (see [Looking up a dependency in one place](#looking-up-a-dependency-in-one-place)). | No       | `[]`                                   |
 | `fail-on-dynamic-version` | `true` to fail when `version` is listed in `[project].dynamic`, instead of giving an empty `version` output with a warning. Use it in release or publish jobs that need a static version.                                                                                                                                                                                                                                                                                                                                            | No       | `false`                                |
+| `resolve-dynamic-version` | `true` to read a version listed in `[project].dynamic` from the file that the build backend reads it from, without running any code of the project (see [Dynamic version](#dynamic-version)). A version that is found is used as a static one.                                                                                                                                                                                                                                                                                       | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                                                                                                                                                                                                                                                       | No       | `["3.11","3.12","3.13","3.14","3.15"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`.                                                                                                                                                                                                                                                                                                                                                                                                   | No       | `false`                                |
 | `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input.                                                                                                                                                                                                                                                                                                                                                                      | No       | `false`                                |
 | `python-executable`       | Python interpreter that runs the action: a command found on `PATH` or a path to an executable (Python 3.11 or later, e.g. `python3.12` or `/opt/python/bin/python`), for runners where `python3` is not the interpreter to use. The private virtual environment, if one is needed, is created with it.                                                                                                                                                                                                                               | No       | `python3`                              |
 | `step-summary`            | `true` to always write the outputs and the warnings to the job summary of the workflow run (a table with one row per output), `false` to never write them, or `auto` to write them only when there are warnings (a failure is always written).                                                                                                                                                                                                                                                                                       | No       | `auto`                                 |
 
-`fail-on-dynamic-version`, `fail-on-missing` and `strict` are boolean inputs: the
+`fail-on-dynamic-version`, `resolve-dynamic-version`, `fail-on-missing` and `strict` are boolean inputs: the
 value must be `true` or `false`, the case and the surrounding spaces are ignored,
 and any other value fails the step. `step-summary` is the same with a third value,
 `auto`.
@@ -256,6 +257,50 @@ test:
         python-version: ${{ matrix.python-version }}
 ```
 
+## Dynamic version
+
+When `version` is listed in `[project].dynamic`, the version output is empty (with a
+warning) because the build backend computes it. With `resolve-dynamic-version: "true"`,
+the action first looks for it in the file that the backend reads it from. It only
+**reads** that file: no code of the project is imported or run, and no build backend
+is started. Two declarations are understood:
+
+```toml
+[project]
+name = "pkg"
+dynamic = ["version"]
+
+# setuptools: the text of a file ...
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+
+# ... or a string literal of a module (found with `ast`, never imported)
+# version = { attr = "pkg.__version__" }
+```
+
+```toml
+# hatch: the first match of a regular expression (default: `__version__ = "1.2.3"`
+# or `VERSION = "1.2.3"`), or of the `pattern` that has a `version` group
+[tool.hatch.version]
+path = "src/pkg/__about__.py"
+```
+
+- Files are looked up relative to the directory of the `pyproject.toml` and must stay
+  inside it; a file larger than 1 MiB is not read. For `attr`, the module is searched
+  in the `[tool.setuptools.package-dir]` directory, then in `src` and in the directory
+  itself (`pkg.py` or `pkg/__init__.py`); it must assign a string literal, not a tuple
+  or a call.
+- The version must be a valid [PEP 440](https://peps.python.org/pep-0440/) version.
+  It is then used like a static one: `version` is the text of the file and
+  `normalized-version` its canonical form, there is no warning, and
+  `fail-on-dynamic-version` does not fail.
+- When it cannot be resolved (another backend, a version computed from git tags by
+  `setuptools-scm` or `hatch-vcs`, a missing file, a pattern that does not match), the
+  warning says why and the usual handling of a dynamic version applies: an empty
+  `version`, or a failure with `fail-on-dynamic-version`.
+- `pattern` is a regular expression of the file: a pathological one can make the step
+  slow, as it can in the build. Use `strict` or a job `timeout-minutes` as usual.
+
 ## Looking up a dependency in one place
 
 By default a package is searched in `[project].dependencies`, then in every extra, then
@@ -386,7 +431,8 @@ The action's step fails (non-zero exit) when:
 - `dependencies` is not a JSON array of strings, or an entry has a scope other than `project`,
   `extra:<name>` and `group:<name>` (for example `numpy@dev`).
 - `fail-on-dynamic-version` is not `true` or `false`, or is `true` and
-  `version` is listed in `[project].dynamic`.
+  `version` is listed in `[project].dynamic` and not resolved by `resolve-dynamic-version`.
+- `resolve-dynamic-version` is not `true` or `false`.
 - `strict` is not `true` or `false`, or is `true` and there is a warning (the
   error lists them; no output is written).
 - `step-summary` is not `true`, `false` or `auto`, or is `true` and the job summary
