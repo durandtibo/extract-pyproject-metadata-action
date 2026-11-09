@@ -14,7 +14,7 @@ from extract_pyproject_metadata.output.escaping import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from extract_pyproject_metadata.types import Report
+    from extract_pyproject_metadata.types import Report, StepSummary
 
 __all__ = [
     "format_error_summary",
@@ -102,26 +102,29 @@ def write_step_summary(summary_path: str, markdown: str) -> None:
         raise MetadataError(msg) from exc
 
 
-def resolve_step_summary(enabled: bool, environ: Mapping[str, str]) -> str | None:
+def resolve_step_summary(mode: StepSummary, environ: Mapping[str, str]) -> str | None:
     """Return the path of the job summary file, or None if it is not
     requested.
 
     Args:
-        enabled: The parsed ``--step-summary`` option.
+        mode: The parsed ``--step-summary`` option.
         environ: The environment variables.
 
     Returns:
-        The value of ``GITHUB_STEP_SUMMARY`` when ``enabled`` is true, None
-        otherwise.
+        The value of ``GITHUB_STEP_SUMMARY`` when ``mode`` is ``"true"``; None
+        when it is ``"false"``; with ``"auto"``, that value, or None when it is
+        not set (the script runs outside a GitHub workflow).
 
     Raises:
-        MetadataError: If ``enabled`` is true and ``GITHUB_STEP_SUMMARY`` is not
-            set (the action is not running in a GitHub workflow).
+        MetadataError: If ``mode`` is ``"true"`` and ``GITHUB_STEP_SUMMARY`` is
+            not set (the action is not running in a GitHub workflow).
     """
-    if not enabled:
+    if mode == "false":
         return None
     summary_path = environ.get("GITHUB_STEP_SUMMARY", "")
     if not summary_path:
+        if mode == "auto":
+            return None
         msg = "step-summary is 'true' but the environment variable GITHUB_STEP_SUMMARY is not set"
         raise MetadataError(msg)
     return summary_path

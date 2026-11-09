@@ -73,9 +73,11 @@ inputs:
 
   step-summary:
     description: >
-      Set to "true" to also write the outputs and the warnings to the job
-      summary of the workflow run ("true" or "false")
-    default: "false"
+      Set to "true" to always write the outputs and the warnings to the job
+      summary of the workflow run, "false" to never write them, or "auto" to
+      write them only when there are warnings (and to write the error when the
+      step fails)
+    default: auto
 
 outputs:
   name:

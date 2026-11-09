@@ -12,7 +12,7 @@ import extract_pyproject_metadata.cli as extract_metadata_module
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
 import extract_pyproject_metadata.report as report_module
 from extract_pyproject_metadata.cli import main
-from extract_pyproject_metadata.inputs import Options, parse_bool
+from extract_pyproject_metadata.inputs import Options, parse_step_summary
 from extract_pyproject_metadata.output.github import (
     format_error,
 )
@@ -507,17 +507,20 @@ def test_main_invalid_strict_returns_one(
         ("false", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, None),
         ("true", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
         (" TRUE ", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
+        ("auto", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
+        ("auto", {}, None),
+        ("auto", {"GITHUB_STEP_SUMMARY": ""}, None),
     ],
 )
 def test_resolve_step_summary(value: str, environ: dict[str, str], expected: str | None) -> None:
-    assert resolve_step_summary(parse_bool(value, "step-summary"), environ) == expected
+    assert resolve_step_summary(parse_step_summary(value, "step-summary"), environ) == expected
 
 
 def test_build_report_uses_the_given_options(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
     args = parse_args("--strict", "maybe", str(path), "[]", '["missing"]')
 
-    report = build_report(args, Options(False, False, False, False))
+    report = build_report(args, Options(False, False, False, "false"))
 
     assert report["dependency_specifiers"] == {"missing": None}
 
@@ -632,7 +635,7 @@ def test_main_step_summary_without_json_output_mode(
 @pytest.mark.parametrize(
     ("step_summary", "has_variable", "message"),
     [
-        ("maybe", True, "step-summary must be 'true' or 'false'"),
+        ("maybe", True, "step-summary must be 'true', 'false' or 'auto'"),
         ("true", False, "GITHUB_STEP_SUMMARY is not set"),
     ],
 )
@@ -1607,3 +1610,63 @@ def test_main_dependency_requirements_in_json(
         ],
         "missing": [],
     }
+
+
+def test_main_step_summary_auto_writes_the_job_summary_when_there_are_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 0
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("### 📦 Project metadata\n")
+    assert "#### ⚠️ Warnings" in text
+
+
+def test_main_step_summary_auto_writes_nothing_without_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 0
+    assert not summary.exists()
+
+
+def test_main_step_summary_auto_lists_the_warnings_of_a_strict_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    exit_code = main(
+        ["extract_metadata.py", "--step-summary", "auto", "--strict", "true", str(path), "[]"]
+    )
+
+    assert exit_code == 1
+    assert summary.read_text(encoding="utf-8").startswith("### ❌ Project metadata\n")
+
+
+def test_main_step_summary_auto_reports_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
+
+    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 1
+    assert summary.read_text(encoding="utf-8").startswith("### ❌ Project metadata\n")
+
+
+def test_main_step_summary_auto_outside_a_workflow_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "a"

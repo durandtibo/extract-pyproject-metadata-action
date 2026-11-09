@@ -496,6 +496,20 @@ jobs:
           assert_equal "name" "deps-pkg" "${{ steps.test-step-summary.outputs.name }}"
           print_success "step-summary test passed"
 
+      # "auto" (added after the last release) is the default: no input needed to test it
+      - name: 🧪 Test step-summary auto
+        id: test-step-summary-auto
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          step-summary: "auto"
+
+      - name: ✓ Verify step-summary auto does not change the outputs
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "deps-pkg" "${{ steps.test-step-summary-auto.outputs.name }}"
+          print_success "step-summary auto test passed"
+
       - name: 🧪 Test invalid step-summary (should fail)
         id: test-invalid-step-summary
         uses: ./
