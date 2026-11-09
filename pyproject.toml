@@ -217,7 +217,7 @@ layers = [
   "report",
   "dependencies | python_versions",
   "metadata",
-  "fields | license | pyproject",
+  "fields | license | pyproject | dynamic_version",
   "inputs | checks",
   "types | errors",
 ]
@@ -235,6 +235,7 @@ forbidden_modules = [
   "extract_pyproject_metadata.fields",
   "extract_pyproject_metadata.license",
   "extract_pyproject_metadata.pyproject",
+  "extract_pyproject_metadata.dynamic_version",
   "extract_pyproject_metadata.inputs",
   "extract_pyproject_metadata.checks",
 ]

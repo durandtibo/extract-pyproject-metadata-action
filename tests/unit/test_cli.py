@@ -520,7 +520,7 @@ def test_build_report_uses_the_given_options(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
     args = parse_args("--strict", "maybe", str(path), "[]", '["missing"]')
 
-    report = build_report(args, Options(False, False, False, "false"))
+    report = build_report(args, Options(False, False, False, "false", False))
 
     assert report["dependency_specifiers"] == {"missing": None}
 

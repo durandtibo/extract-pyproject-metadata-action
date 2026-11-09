@@ -22,6 +22,7 @@ class Options(NamedTuple):
     fail_on_dynamic_version: bool
     strict: bool
     step_summary: StepSummary
+    resolve_dynamic_version: bool
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -92,7 +93,7 @@ def parse_step_summary(value: str, name: str) -> StepSummary:
 
 
 def parse_options(args: argparse.Namespace) -> Options:
-    """Parse the four boolean inputs of the command line (``step-summary``
+    """Parse the five boolean inputs of the command line (``step-summary``
     also accepts ``auto``), in one place.
 
     Args:
@@ -110,4 +111,5 @@ def parse_options(args: argparse.Namespace) -> Options:
         fail_on_dynamic_version=parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version"),
         strict=parse_bool(args.strict, "strict"),
         step_summary=parse_step_summary(args.step_summary, "step-summary"),
+        resolve_dynamic_version=parse_bool(args.resolve_dynamic_version, "resolve-dynamic-version"),
     )

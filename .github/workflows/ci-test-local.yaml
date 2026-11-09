@@ -832,6 +832,77 @@ jobs:
           assert_equal "outcome" "failure" "${{ steps.test-windows.outcome }}"
           print_success "Windows correctly rejected"
 
+  # resolve-dynamic-version (added after the last release) reads a dynamic version from the
+  # file of the build backend
+  test-resolve-dynamic-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Test a setuptools version file
+        id: test-file
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version-file/pyproject.toml
+          resolve-dynamic-version: "true"
+          fail-on-dynamic-version: "true"
+          strict: "true"
+
+      - name: ✓ Verify the version of the file
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "version" "1.4.0-RC1" "${{ steps.test-file.outputs.version }}"
+          assert_equal "normalized-version" "1.4.0rc1" "${{ steps.test-file.outputs.normalized-version }}"
+          print_success "setuptools version file test passed"
+
+      - name: 🧪 Test a hatch version path
+        id: test-hatch
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version-hatch/pyproject.toml
+          resolve-dynamic-version: "true"
+
+      - name: ✓ Verify the version of the hatch file
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "version" "2.1.0" "${{ steps.test-hatch.outputs.version }}"
+          print_success "hatch version path test passed"
+
+      - name: 🧪 Test a version that cannot be resolved (should fail)
+        id: test-unresolved
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          resolve-dynamic-version: "true"
+          fail-on-dynamic-version: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify an unresolved version still fails with fail-on-dynamic-version
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-unresolved.outcome }}"
+          print_success "unresolved dynamic version correctly failed"
+
+      - name: 🧪 Test without resolve-dynamic-version
+        id: test-not-resolved
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version-file/pyproject.toml
+
+      - name: ✓ Verify the version is empty without resolve-dynamic-version
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "version" "" "${{ steps.test-not-resolved.outputs.version }}"
+          print_success "default dynamic version test passed"
+
   # The action installs "packaging" in a private venv when the Python on PATH lacks
   # it. setup-python's Python has no "packaging" module, but the job removes it
   # anyway so that the test does not depend on the runner image.

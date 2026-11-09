@@ -10,7 +10,8 @@ Python versions that ``requires-python`` allows, and lists the requirements of
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--fail-on-dynamic-version true|false] [--step-summary true|false|auto]
+        [--fail-on-dynamic-version true|false] [--resolve-dynamic-version true|false]
+        [--step-summary true|false|auto]
         [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
@@ -74,6 +75,14 @@ is an error instead of a ``null`` specifier.
 With ``--fail-on-dynamic-version true``, a ``version`` that is listed in
 ``[project].dynamic`` (so that the version output would be empty) is an error
 instead of a warning.
+
+With ``--resolve-dynamic-version true``, a ``version`` that is listed in
+``[project].dynamic`` is looked for in the file that the build backend reads it
+from, without running any code of the project: ``[tool.setuptools.dynamic].version``
+(``file``, or ``attr`` for a ``__version__ = "..."`` literal) and ``[tool.hatch.version]``
+(``path`` and ``pattern``). A version that is found is used as a static one (so it
+is not a warning, nor an error with ``--fail-on-dynamic-version``); otherwise the
+reason is a warning, followed by the usual handling of a dynamic version.
 
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
 "major.minor" strings) that ``[project].requires-python`` allows, and
@@ -182,6 +191,12 @@ def _build_parser(prog: str) -> _ArgumentParser:
         metavar="BOOL",
         default="false",
         help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
+    )
+    parser.add_argument(
+        "--resolve-dynamic-version",
+        metavar="BOOL",
+        default="false",
+        help="'true' to read a dynamic version from the file of the build backend (default: false)",
     )
     parser.add_argument(
         "--strict",

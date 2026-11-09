@@ -1,0 +1,6 @@
+[project]
+name = "dynamic-hatch-pkg"
+dynamic = ["version"]
+
+[tool.hatch.version]
+path = "src/pkg/__about__.py"
