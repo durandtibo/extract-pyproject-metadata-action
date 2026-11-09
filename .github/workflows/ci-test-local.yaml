@@ -786,7 +786,13 @@ jobs:
           assert_equal "build-requires" '[]' '${{ steps.test-no-project-fields.outputs.build-requires }}'
           print_success "build-system test passed"
 
-  # Windows runners are supported: the action runs in the bash of Git for Windows
+  # The only job on a Windows runner (the matrix of the first job is Linux and macOS).
+  # Windows differs from the other runners in three places of scripts/run.sh, which
+  # this job covers: the action runs in the bash of Git for Windows, the Python of
+  # setup-python is "python" (there may be no usable "python3"), and the private
+  # virtual environment that installs "packaging" has Scripts/python.exe instead of
+  # bin/python (and lives under a Windows RUNNER_TEMP). It is not in
+  # nightly-test-stable.yaml, because the last release does not support Windows.
   test-windows:
     runs-on: windows-latest
     timeout-minutes: 5
@@ -800,7 +806,45 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 🧪 Test the action on Windows
+      # setup-python's Python has no "packaging" module, but the job removes it anyway
+      # so that the test does not depend on the runner image.
+      - name: Remove packaging from the Python on PATH
+        shell: bash
+        run: |
+          source scripts/test-helper.sh
+          python -m pip uninstall --yes packaging || true
+          if python -c "import packaging" 2> /dev/null; then
+            print_error "packaging should not be importable"
+            exit 1
+          fi
+          assert_equal "venvs" "0" "$(count_venvs)"
+
+      # packaging is missing: it is installed in a private venv (Scripts/python.exe),
+      # which is removed at the end of the step
+      - name: 🧪 Test the action on Windows without packaging
+        id: test-windows-bootstrap
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify packaging is installed in a private venv on Windows
+        shell: bash
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-windows-bootstrap.outputs.name }}"
+          if python -c "import packaging" 2> /dev/null; then
+            print_error "the Python on PATH must not be modified"
+            exit 1
+          fi
+          assert_equal "venvs left" "0" "$(count_venvs)"
+          print_success "Windows bootstrap test passed"
+
+      # packaging is available: the Python on PATH is used
+      - name: Install packaging in the Python on PATH
+        shell: bash
+        run: python -m pip install --quiet packaging
+
+      - name: 🧪 Test the action on Windows with packaging
         id: test-windows
         uses: ./
         with:
@@ -811,6 +855,7 @@ jobs:
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "minimal-pkg" "${{ steps.test-windows.outputs.name }}"
+          assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "Windows test passed"
 
   # The action installs "packaging" in a private venv when the Python on PATH lacks
