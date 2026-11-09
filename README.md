@@ -104,6 +104,34 @@ jobs:
           EXTRA: ${{ matrix.extra }}
 ```
 
+### Pinning a version
+
+Releases are tagged `vMAJOR.MINOR.PATCH` (the first ones are `v0.1` and `v0.2`).
+You choose how much of a release you follow:
+
+| `uses:` ends with | You get                                                          |
+| ----------------- | ---------------------------------------------------------------- |
+| `@v1`             | every new minor and patch release of 1.x (no `@v0`, see below)   |
+| `@v1.2`           | every new patch release of 1.2                                   |
+| `@v1.2.3`         | exactly that release, as long as its tag is not moved or deleted |
+| `@<commit SHA>`   | exactly that commit: the only reference that cannot be moved     |
+
+`v1` and `v1.2` are floating tags that the [release workflow](.github/workflows/release.yaml)
+moves to each new release. Releases before 1.0 can change inputs and outputs, so there
+is no floating `v0`: use `@v0.2` (patch releases of 0.2) or an exact version.
+
+For the strictest supply chain, pin the SHA of a release and keep the version in a comment;
+Dependabot (the `github-actions` ecosystem) then proposes the updates:
+
+```yaml
+- uses: durandtibo/extract-pyproject-metadata-action@<40-character commit SHA of the release> # v1.2.3
+```
+
+The notes of each release are on the [releases page](https://github.com/durandtibo/extract-pyproject-metadata-action/releases);
+they are generated from the merged pull requests and serve as the changelog. Breaking
+changes (a renamed or removed input or output, a changed default) are labelled
+`breaking-change` and listed first.
+
 ## Inputs
 
 | Name                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Required | Default                                |
@@ -391,6 +419,20 @@ reads the object can check it.
 Formatting and linting of the non-Python files (YAML, Markdown, shell, TOML,
 Makefiles) go through the `Makefile`; run `make help` to list the targets, for
 example `make format` and `make lint`.
+
+To make a release, update `main` and push a tag on it:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The [release workflow](.github/workflows/release.yaml) checks that the tag is on `main`,
+creates the GitHub release with generated notes (grouped by the labels of
+`.github/release.yml`: `breaking-change`, `enhancement`, `bug`, `documentation`; label the
+pull requests before the release) and moves the floating tags `v1.2` and `v1`
+(`scripts/floating-tags.sh` says which). Then update the `uses:` line of
+`nightly-test-stable.yaml` to the new release.
 
 The integration workflows (`.github/workflows/ci-test-local.yaml` and
 `nightly-test-stable.yaml`) can only run on GitHub.

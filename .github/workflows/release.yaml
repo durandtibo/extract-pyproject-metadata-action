@@ -1,0 +1,67 @@
+# Release workflow.
+# Pushing a tag vMAJOR.MINOR.PATCH (or vMAJOR.MINOR, the form of the first releases)
+# creates a GitHub release with generated notes (the changelog of the project,
+# grouped by the labels of .github/release.yml) and moves the floating tags
+# (v1.2 and v1; see scripts/floating-tags.sh) to it, so that workflows that use
+# the action as @v1 or @v1.2 get the new release.
+#
+# To release: update main, then
+#   git tag v1.2.3 && git push origin v1.2.3
+#
+# The tag must be on a commit of main. Floating tags are moved with a force push,
+# which is their purpose; the release tag itself is never moved.
+
+name: Release
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write # to create the release and to move the floating tags
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: 0 # all the history, to check that the tag is on main
+
+      - name: Check that the tag is on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! git merge-base --is-ancestor "$TAG^{commit}" origin/main; then
+            echo "::error::The tag $TAG is not on a commit of main"
+            exit 1
+          fi
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A floating tag that is pushed by hand is not a new release.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "The release $TAG already exists"
+          else
+            gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+          fi
+
+      - name: Move the floating tags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          for floating in $(bash scripts/floating-tags.sh "$TAG"); do
+            echo "Moving $floating to $TAG"
+            git tag --force "$floating" "$TAG^{commit}"
+            git push --force origin "refs/tags/$floating"
+          done
