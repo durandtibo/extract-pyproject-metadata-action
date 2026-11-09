@@ -892,6 +892,78 @@ jobs:
           assert_equal "name" "minimal-pkg" "${{ steps.test-packaging.outputs.name }}"
           print_success "packaging available test passed"
 
+  # The installer input chooses the tool that installs "packaging" in the private venv.
+  test-installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Remove packaging from the Python on PATH
+        run: |
+          source scripts/test-helper.sh
+          python -m pip uninstall --yes packaging || true
+          if python -c "import packaging" 2> /dev/null; then
+            print_error "packaging should not be importable"
+            exit 1
+          fi
+
+      - name: 🧪 Test an invalid installer (should fail)
+        id: test-invalid-installer
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          installer: conda
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid installer fails
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "${{ steps.test-invalid-installer.outcome }}"
+          print_success "invalid installer correctly failed"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # ratchet:astral-sh/setup-uv@v10.3.3
+
+      - name: 🧪 Test the uv installer
+        id: test-uv
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          installer: uv
+
+      - name: ✓ Verify packaging is installed with uv
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-uv.outputs.name }}"
+          if python -c "import packaging" 2> /dev/null; then
+            print_error "the Python on PATH must not be modified"
+            exit 1
+          fi
+          assert_equal "venvs left" "0" "$(count_venvs)"
+          print_success "uv installer test passed"
+
+      - name: 🧪 Test the auto installer
+        id: test-auto
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          installer: auto
+
+      - name: ✓ Verify packaging is installed with the auto installer
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "${{ steps.test-auto.outputs.name }}"
+          assert_equal "venvs left" "0" "$(count_venvs)"
+          print_success "auto installer test passed"
+
   # Only Python 3.11 or later is supported: the action must fail with an explicit error
   test-old-python:
     runs-on: ubuntu-latest
