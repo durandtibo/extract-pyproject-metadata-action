@@ -395,6 +395,30 @@ is:
 }
 ```
 
+## Warnings
+
+A warning reports suspicious input that the action can still work with. It is shown as a
+`::warning file=<pyproject-path>::` annotation of the run (and in the job summary with
+`step-summary`), is in the `warnings` array of the JSON that the script prints, and
+**fails the step with `strict: "true"`** (the error lists them all). These are all the
+warnings.
+
+| Message contains                                                | When                                                                                                                                    |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `is set and also listed in [project].dynamic`                   | A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621): the static value is used.                           |
+| `[project].version is dynamic, the version output is empty`     | `version` is in `dynamic` and not set: `version` and `normalized-version` are empty.                                                    |
+| `is not a valid SPDX license expression`                        | `[project].license` is a string that is not a valid SPDX expression (only checked with `packaging` 24.2 or later).                      |
+| `[project].requires-python is not a valid version specifier`    | `requires-python` cannot be parsed: `python-versions` is empty.                                                                         |
+| `no python-candidates version satisfies`                        | No version of `python-candidates` is allowed by `requires-python`: `python-versions` and `python-matrix` are empty.                     |
+| `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                                  |
+| `has different specifiers`                                      | A package has requirements with the same environment marker and different specifiers (see [Environment markers](#environment-markers)). |
+| `has an include-group cycle`                                    | The `include-group` entries of `[dependency-groups]` include each other in a loop (when `dependencies` is not empty).                   |
+| `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                                |
+| `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so the action finds no requirement in it.                    |
+| `[project].optional-dependencies is dynamic, it cannot be read` | The same for `optional-dependencies` (only when `dependencies` is not empty).                                                           |
+
+The same messages can come from several places; each is reported once.
+
 ## Failure modes
 
 The action's step fails (non-zero exit) when:
