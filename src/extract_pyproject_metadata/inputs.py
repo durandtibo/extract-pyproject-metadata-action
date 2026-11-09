@@ -94,8 +94,8 @@ def parse_step_summary(value: str, name: str) -> StepSummary:
 
 
 def parse_options(args: argparse.Namespace) -> Options:
-    """Parse the five boolean inputs of the command line (``step-summary``
-    also accepts ``auto``), in one place.
+    """Parse the five boolean inputs of the command line (``step-
+    summary`` also accepts ``auto``), in one place.
 
     Args:
         args: The parsed command line, as returned by ``_build_parser``.

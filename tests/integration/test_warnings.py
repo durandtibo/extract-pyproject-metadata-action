@@ -16,7 +16,8 @@ PROJECT = '[project]\nname = "a"\n'
 
 
 class Case(NamedTuple):
-    """A pyproject.toml that gives a warning that contains ``message``."""
+    """A pyproject.toml that gives a warning that contains
+    ``message``."""
 
     message: str
     toml: str
@@ -88,8 +89,8 @@ PARAMS = [
 
 
 def _readme_warnings() -> list[str]:
-    """Return the messages of the table of the "Warnings" section of
-    the README."""
+    """Return the messages of the table of the "Warnings" section of the
+    README."""
     readme = README_PATH.read_text(encoding="utf-8")
     section = readme.split("\n## Warnings\n", 1)[1].split("\n## ", 1)[0]
     return re.findall(r"^\| `(.+?)` +\|", section, flags=re.MULTILINE)

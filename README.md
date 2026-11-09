@@ -422,7 +422,7 @@ warnings.
 | `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                                |
 | `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so the action finds no requirement in it.                    |
 | `[project].optional-dependencies is dynamic, it cannot be read` | The same for `optional-dependencies` (only when `dependencies` is not empty).                                                           |
-| `are close to the size limit of a GitHub step output`           | An output (for example `keywords`, or `json`, which repeats the others) is 900 KB or more; GitHub rejects 1 MiB.                         |
+| `are close to the size limit of a GitHub step output`           | An output (for example `keywords`, or `json`, which repeats the others) is 900 KB or more; GitHub rejects 1 MiB.                        |
 
 The same messages can come from several places; each is reported once.
 
