@@ -385,3 +385,115 @@ def test_run_sh_stops_python_from_writing_bytecode(tmp_path: Path) -> None:
 
     assert result.process.returncode == 0
     assert (tmp_path / "calls.log.bytecode").read_text() == "1\n"
+
+
+UV_VENV_CALL = ["uv", "venv", "--quiet", "--system-site-packages", "--python"]
+
+
+@pytest.mark.parametrize("installer", ["uv", "auto"])
+def test_run_sh_installs_the_requirements_with_uv(tmp_path: Path, installer: str) -> None:
+    result = run_run_sh(tmp_path, ["a"], with_uv=True, INSTALLER=installer, STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 0
+    venv = result.created_venvs[0]
+    assert result.calls == [
+        ["python3", "version"],
+        ["python3", "probe"],
+        [*UV_VENV_CALL, "python3", str(venv)],
+        [
+            "uv",
+            "pip",
+            "install",
+            "--quiet",
+            "--python",
+            f"{venv}/bin/python",
+            "-r",
+            str(REQUIREMENTS_PATH),
+        ],
+        ["venv-python", str(SCRIPT_PATH), "a"],
+    ]
+
+
+@pytest.mark.parametrize("installer", ["pip", ""])
+def test_run_sh_installs_the_requirements_with_pip_even_if_uv_is_available(
+    tmp_path: Path, installer: str
+) -> None:
+    result = run_run_sh(tmp_path, ["a"], with_uv=True, INSTALLER=installer, STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 0
+    assert [call[0] for call in result.calls] == [
+        "python3",
+        "python3",
+        "python3",
+        "venv-python",
+        "venv-python",
+    ]
+
+
+def test_run_sh_installs_the_requirements_with_pip_by_default(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], with_uv=True, STUB_PROBE_STATUS="1")
+
+    assert "uv" not in [call[0] for call in result.calls]
+
+
+def test_run_sh_uses_pip_with_the_auto_installer_when_uv_is_missing(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], INSTALLER="auto", STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 0
+    assert result.calls[2][:3] == ["python3", "-m", "venv"]
+
+
+def test_run_sh_fails_when_the_uv_installer_is_requested_and_uv_is_missing(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], INSTALLER="uv", STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 1
+    assert result.process.stderr == (
+        "::error::The installer is 'uv' but uv was not found on PATH. Install uv "
+        "(e.g. with astral-sh/setup-uv) or use the installer 'pip' or 'auto'.\n"
+    )
+    assert all(str(SCRIPT_PATH) not in call for call in result.calls)
+
+
+def test_run_sh_does_not_need_uv_when_the_requirements_are_available(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], INSTALLER="uv")
+
+    assert result.process.returncode == 0
+    assert result.calls[-1] == ["python3", str(SCRIPT_PATH), "a"]
+
+
+@pytest.mark.parametrize("installer", ["conda", "UV", "true"])
+def test_run_sh_fails_when_the_installer_is_not_valid(tmp_path: Path, installer: str) -> None:
+    result = run_run_sh(tmp_path, ["a"], INSTALLER=installer)
+
+    assert result.process.returncode == 1
+    assert result.process.stderr == (
+        f"::error::The installer must be 'pip', 'uv' or 'auto', got: '{installer}'\n"
+    )
+    assert result.calls == []
+
+
+@pytest.mark.parametrize(
+    ("status_name", "status"), [("STUB_VENV_STATUS", "1"), ("STUB_PIP_STATUS", "1")]
+)
+def test_run_sh_fails_with_a_clear_message_when_uv_cannot_install(
+    tmp_path: Path, status_name: str, status: str
+) -> None:
+    result = run_run_sh(
+        tmp_path,
+        ["a"],
+        with_uv=True,
+        INSTALLER="uv",
+        STUB_PROBE_STATUS="1",
+        **{status_name: status},
+    )
+
+    assert result.process.returncode == 1
+    assert "::error::Could not install the 'packaging' Python package" in result.process.stderr
+    assert "Check the network and the uv configuration" in result.process.stderr
+    assert all(str(SCRIPT_PATH) not in call for call in result.calls)
+
+
+def test_run_sh_removes_the_venv_made_by_uv(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], with_uv=True, INSTALLER="uv", STUB_PROBE_STATUS="1")
+
+    assert result.venvs == []

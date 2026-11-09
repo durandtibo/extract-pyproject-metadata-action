@@ -29,6 +29,15 @@
 # usually read-only or cached, and a stray __pycache__ can end up in an artifact
 # or a cache of the job).
 #
+# The install only happens when "packaging" is missing or too old: the usual
+# setup-python Python and most runner images have it, and then nothing is
+# downloaded. The tool that installs it is chosen by the INSTALLER environment
+# variable (the installer input of the action): "pip" (the default: python -m venv
+# and pip, which follow the pip configuration, PIP_INDEX_URL and pip.conf),
+# "uv" (uv venv and uv pip, faster, which follow the configuration of uv: UV_INDEX_URL
+# and uv.toml; it fails when uv is not on PATH and an install is needed) or "auto"
+# (uv when it is on PATH, pip otherwise).
+#
 # On a Windows runner (RUNNER_OS is "Windows") the script runs in the bash of Git
 # for Windows, with the Python of the job. Its virtual environment has Scripts/python.exe
 # instead of bin/python, and, when the default python3 is not there (setup-python only
@@ -43,6 +52,16 @@ export PYTHONDONTWRITEBYTECODE=1
 
 # The interpreter to use: a command found on PATH, or a path.
 python_exe="${PYTHON_EXECUTABLE:-python3}"
+
+# How to install "packaging" when it is needed: pip, uv or auto.
+installer="${INSTALLER:-pip}"
+case "$installer" in
+pip | uv | auto) ;;
+*)
+	echo "::error::The installer must be 'pip', 'uv' or 'auto', got: '$installer'" >&2
+	exit 1
+	;;
+esac
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -87,6 +106,25 @@ installed = Version(packaging.__version__)
 sys.exit(any(s.operator == ">=" and installed < Version(s.version) for s in requirement.specifier))
 '
 
+# Create a virtual environment that sees the packages of the interpreter, in the existing
+# directory $3, with the tool $1 (pip or uv) and the interpreter $2.
+create_venv() {
+	if [ "$1" = "uv" ]; then
+		uv venv --quiet --system-site-packages --python "$2" "$3"
+	else
+		"$2" -m venv --system-site-packages "$3"
+	fi
+}
+
+# Install the requirements file $3 in the virtual environment of the Python $2, with the tool $1.
+install_requirements() {
+	if [ "$1" = "uv" ]; then
+		uv pip install --quiet --python "$2" -r "$3"
+	else
+		"$2" -m pip install --quiet --disable-pip-version-check -r "$3"
+	fi
+}
+
 python="$python_exe"
 if ! "$python_exe" -c "$check_packaging" "$script_dir/requirements.txt" 2>/dev/null; then
 	# The requirements of the file, without the comments and the blank lines, on one line.
@@ -97,16 +135,31 @@ if ! "$python_exe" -c "$check_packaging" "$script_dir/requirements.txt" 2>/dev/n
 	if [ "${RUNNER_OS:-}" = "Windows" ] && command -v cygpath >/dev/null 2>&1; then
 		temp_dir="$(cygpath -u "$temp_dir")"
 	fi
+	# The tool that creates the venv and installs the requirements.
+	tool="pip"
+	case "$installer" in
+	uv)
+		if ! command -v uv >/dev/null 2>&1; then
+			echo "::error::The installer is 'uv' but uv was not found on PATH. Install uv (e.g. with astral-sh/setup-uv) or use the installer 'pip' or 'auto'." >&2
+			exit 1
+		fi
+		tool="uv"
+		;;
+	auto)
+		if command -v uv >/dev/null 2>&1; then
+			tool="uv"
+		fi
+		;;
+	esac
 	if venv="$(mktemp -d "$temp_dir/extract-pyproject-metadata-venv.XXXXXX")" &&
-		"$python_exe" -m venv --system-site-packages "$venv"; then
+		create_venv "$tool" "$python_exe" "$venv"; then
 		python="$venv/$venv_python_path"
-		"$python" -m pip install --quiet --disable-pip-version-check \
-			-r "$script_dir/requirements.txt" || python=""
+		install_requirements "$tool" "$python" "$script_dir/requirements.txt" || python=""
 	else
 		python=""
 	fi
 	if [ -z "$python" ]; then
-		echo "::error::Could not install the 'packaging' Python package (the install needs access to a package index). Check the network and the pip configuration, or install it in the Python on PATH (e.g. 'pip install --upgrade packaging') before using this action." >&2
+		echo "::error::Could not install the 'packaging' Python package (the install needs access to a package index). Check the network and the $tool configuration, or install it in the Python on PATH (e.g. 'pip install --upgrade packaging') before using this action." >&2
 		exit 1
 	fi
 fi
