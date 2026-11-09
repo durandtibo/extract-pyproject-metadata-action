@@ -26,9 +26,12 @@ example `python -m pip install --upgrade packaging`, from a mirror or a cache): 
 action then uses it as it is and does not touch the network.
 
 > [!NOTE]
-> The action supports **Linux and macOS** runners only. **Windows runners are
-> not supported**: the step expects `python3` and a POSIX `bash`, and fails
-> with an explicit error on them.
+> The action runs on **Linux, macOS and Windows** runners. On Windows it runs in
+> the `bash` of Git for Windows, which the runners have, with the `python` that
+> `actions/setup-python` puts on `PATH` (`python3` is tried first, and `python`
+> is used when `python3` does not run); the private virtual environment, if one
+> is needed, is the one of that Python (`Scripts\python.exe`). Set
+> `python-executable` to use another interpreter.
 
 ## Usage
 
@@ -296,8 +299,7 @@ is:
 
 The action's step fails (non-zero exit) when:
 
-- It runs on a Windows runner (`RUNNER_OS` is `Windows`), which is not supported.
-- The Python interpreter (`python3`, or `python-executable`) is older than 3.11, missing or cannot be run, or `packaging` is missing
+- The Python interpreter (`python3`, or `python-executable`; on Windows `python` when `python3` does not run) is older than 3.11, missing or cannot be run, or `packaging` is missing
   or older than `23.0` and cannot be installed (for example, no access to a package index).
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of

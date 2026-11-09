@@ -13,8 +13,8 @@
 # is missing or too old (see scripts/requirements.txt), it is installed in a
 # private virtual environment.
 #
-# Only Linux and macOS runners are supported. On a Windows runner the step
-# fails with an explicit error (the step expects python3 and a POSIX bash).
+# Linux, macOS and Windows runners are supported. On Windows the step runs in the
+# bash of Git for Windows, with the python that setup-python puts on PATH.
 
 name: Extract pyproject metadata
 description: Read the project name, version, optional-dependency extra names, and dependency version specifiers from pyproject.toml

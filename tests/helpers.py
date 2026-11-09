@@ -268,9 +268,12 @@ dev = ["numpy>=1.26", {include-group = "lint"}, "pytest"]
 
 
 STUB_SYSTEM_PYTHON = """#!/usr/bin/env bash
+# STUB_BROKEN_python3: python3 does nothing and fails, like the stub of the Microsoft Store.
+if [ -n "${STUB_BROKEN_python3:-}" ]; then exit 1; fi
 case "$1" in
   -c)
     case "$2" in
+      "import sys") name=alive; status=0 ;;
       *version_info*) name=version; status="${STUB_VERSION_STATUS:-0}" ;;
       *)
         name=probe
@@ -288,9 +291,12 @@ case "$1" in
     printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
     [ "${STUB_VENV_STATUS:-0}" = 0 ] || exit "$STUB_VENV_STATUS"
     venv="${@: -1}"
-    mkdir -p "$venv/bin"
-    cp "$STUB_VENV_PYTHON" "$venv/bin/python"
-    chmod +x "$venv/bin/python"
+    # A virtual environment has Scripts/python.exe on Windows and bin/python elsewhere.
+    if [ "${RUNNER_OS:-}" = Windows ]; then python_path=Scripts/python.exe; else python_path=bin/python; fi
+    echo "$python_path" > "$STUB_LOG.python-path"
+    mkdir -p "$venv/${python_path%/*}"
+    cp "$STUB_VENV_PYTHON" "$venv/$python_path"
+    chmod +x "$venv/$python_path"
     exit 0 ;;
   *) printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
      echo "${PYTHONDONTWRITEBYTECODE-unset}" > "$STUB_LOG.bytecode"
@@ -329,8 +335,10 @@ def run_run_sh(tmp_path: Path, args: list[str], **env: str) -> RunResult:
     """Run ``run.sh`` with the stubs and the status codes in ``env``."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    (bin_dir / "python3").write_text(STUB_SYSTEM_PYTHON)
-    (bin_dir / "python3").chmod(0o755)
+    # "python" is the only one that setup-python puts on PATH on a Windows runner.
+    for name in ("python3", "python"):
+        (bin_dir / name).write_text(STUB_SYSTEM_PYTHON.replace("python3", name))
+        (bin_dir / name).chmod(0o755)
     venv_python = tmp_path / "venv-python"
     venv_python.write_text(STUB_VENV_PYTHON)
     temp = tmp_path / "runner-temp"

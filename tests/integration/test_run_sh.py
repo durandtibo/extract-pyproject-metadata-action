@@ -287,15 +287,89 @@ def test_run_sh_end_to_end_with_the_real_python(tmp_path: Path) -> None:
     )  # the Python had packaging
 
 
-def test_run_sh_fails_with_a_clear_message_on_a_windows_runner(tmp_path: Path) -> None:
+def test_run_sh_runs_the_script_on_a_windows_runner(tmp_path: Path) -> None:
     result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Windows")
 
+    assert result.process.returncode == 0
+    assert result.process.stderr == ""
+    assert result.calls == [
+        ["python3", "alive"],
+        ["python3", "version"],
+        ["python3", "probe"],
+        ["python3", str(SCRIPT_PATH), "a"],
+    ]
+
+
+def test_run_sh_uses_the_scripts_directory_of_the_venv_on_a_windows_runner(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Windows", STUB_PROBE_STATUS="1")
+
+    assert result.process.returncode == 0
+    assert (tmp_path / "calls.log.python-path").read_text() == "Scripts/python.exe\n"
+    assert result.calls[-1] == ["venv-python", str(SCRIPT_PATH), "a"]
+
+
+def test_run_sh_uses_the_bin_directory_of_the_venv_on_the_other_runners(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Linux", STUB_PROBE_STATUS="1")
+
+    assert (tmp_path / "calls.log.python-path").read_text() == "bin/python\n"
+    assert result.calls[-1] == ["venv-python", str(SCRIPT_PATH), "a"]
+
+
+def test_run_sh_uses_python_when_python3_does_not_run_on_a_windows_runner(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Windows", STUB_BROKEN_python3="1")
+
+    assert result.process.returncode == 0
+    assert result.calls == [
+        ["python", "version"],
+        ["python", "probe"],
+        ["python", str(SCRIPT_PATH), "a"],
+    ]
+
+
+def test_run_sh_does_not_look_for_python_when_python3_does_not_run_on_another_runner(
+    tmp_path: Path,
+) -> None:
+    result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Linux", STUB_BROKEN_python3="1")
+
     assert result.process.returncode == 1
-    assert (
-        result.process.stderr
-        == "::error::This action does not support Windows runners. Use a Linux or macOS runner.\n"
-    )
+    assert result.process.stderr.startswith("::error::This action requires Python 3.11 or later")
     assert result.calls == []
+
+
+def test_run_sh_keeps_the_python_executable_when_python3_does_not_run_on_a_windows_runner(
+    tmp_path: Path,
+) -> None:
+    result = run_run_sh(
+        tmp_path,
+        ["a"],
+        RUNNER_OS="Windows",
+        STUB_BROKEN_python3="1",
+        PYTHON_EXECUTABLE="python3.12",
+    )
+
+    assert result.process.returncode == 1
+    assert "'python3.12' is older, missing or cannot be run" in result.process.stderr
+    assert result.calls == []
+
+
+def test_run_sh_converts_the_temporary_directory_to_a_posix_path_on_a_windows_runner(
+    tmp_path: Path,
+) -> None:
+    posix_temp = tmp_path / "posix-temp"
+    posix_temp.mkdir()
+    cygpath = tmp_path / "bin" / "cygpath"
+    cygpath.parent.mkdir()
+    cygpath.write_text(
+        f'#!/usr/bin/env bash\n[ "$1" = -u ] && [ "$2" = "C:\\\\Temp" ] && echo {posix_temp}\n'
+    )
+    cygpath.chmod(0o755)
+
+    result = run_run_sh(
+        tmp_path, ["a"], RUNNER_OS="Windows", RUNNER_TEMP="C:\\Temp", STUB_PROBE_STATUS="1"
+    )
+
+    assert result.process.returncode == 0
+    assert [venv.parent for venv in result.created_venvs] == [posix_temp]
 
 
 @pytest.mark.parametrize("runner_os", ["Linux", "macOS", ""])

@@ -786,7 +786,7 @@ jobs:
           assert_equal "build-requires" '[]' '${{ steps.test-no-project-fields.outputs.build-requires }}'
           print_success "build-system test passed"
 
-  # Windows runners are not supported: the action must fail with an explicit error
+  # Windows runners are supported: the action runs in the bash of Git for Windows
   test-windows:
     runs-on: windows-latest
     timeout-minutes: 5
@@ -795,19 +795,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
-      - name: 🧪 Test the action on Windows (should fail)
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Test the action on Windows
         id: test-windows
         uses: ./
         with:
           pyproject-path: test-data/minimal/pyproject.toml
-        continue-on-error: true
 
-      - name: ✓ Verify the action fails on Windows
+      - name: ✓ Verify the outputs on Windows
         shell: bash
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-windows.outcome }}"
-          print_success "Windows correctly rejected"
+          assert_equal "name" "minimal-pkg" "${{ steps.test-windows.outputs.name }}"
+          print_success "Windows test passed"
 
   # The action installs "packaging" in a private venv when the Python on PATH lacks
   # it. setup-python's Python has no "packaging" module, but the job removes it
