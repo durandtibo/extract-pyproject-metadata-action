@@ -47,8 +47,8 @@ def format_step_summary(report: Report, outputs: dict[str, str]) -> str:
         outputs: The action outputs, as returned by ``format_outputs``.
 
     Returns:
-        A heading, a table with one row per output and, if there are warnings,
-        a list of them. Values are escaped by ``_html_cell``.
+        A heading, a table with one row per output (except ``json``, which
+        repeats the others) and, if there are warnings, a list of them. Values are escaped by ``_html_cell``.
     """
     lines = [
         "### 📦 Project metadata",
@@ -56,7 +56,10 @@ def format_step_summary(report: Report, outputs: dict[str, str]) -> str:
         "| Output | Value |",
         "| --- | --- |",
     ]
-    lines.extend(f"| `{key}` | {_html_cell(value)} |" for key, value in outputs.items())
+    # The "json" output repeats all the others (and the warnings, listed below).
+    lines.extend(
+        f"| `{key}` | {_html_cell(value)} |" for key, value in outputs.items() if key != "json"
+    )
     if report["warnings"]:
         lines.extend(["", "#### ⚠️ Warnings", ""])
         lines.extend(f"- {_html_cell(warning)}" for warning in report["warnings"])

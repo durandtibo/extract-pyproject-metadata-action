@@ -417,7 +417,12 @@ def test_main_github_output_writes_outputs_and_annotations(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8")) == {
+    outputs = parse_github_output(output.read_text(encoding="utf-8"))
+    report = json.loads(outputs.pop("json"))
+    assert list(report) == list(Report.__annotations__)
+    assert report["name"] == "p"
+    assert report["extras"] == ["", "a"]
+    assert outputs == {
         "name": "p",
         "normalized-name": "p",
         "version": "1",

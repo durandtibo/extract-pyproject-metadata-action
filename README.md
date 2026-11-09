@@ -151,6 +151,7 @@ spaces are ignored, and any other value fails the step.
 | `project-dependencies`    | JSON object mapping each package of `[project].dependencies` to its specifier, with the name as written in its first requirement and in the order of the file (e.g. `{"numpy": "<3,>=1.20", "Foo_Bar": ""}`), without having to list the names in `dependencies`. Extras and dependency groups are not read. The first requirement of a package wins, whatever its environment marker, as for `dependency-specifiers`. `{}` if there is none. A warning is emitted if a requirement string is invalid and ignored, if a package has different specifiers for the same environment marker, or if `dependencies` is listed in `[project].dynamic` without a static value.                 |
 | `dependency-specifiers`   | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found (or a failure, with `fail-on-missing`), `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, if an `include-group` names a group that does not exist, or if `dependencies` or `optional-dependencies` is listed in `[project].dynamic` without a static value (the build backend computes it, so the action cannot read it and finds nothing in it). |
 | `dependency-requirements` | JSON object mapping each package listed in `dependencies` to the array of **all** its requirements, in search order, each an object with its `specifier` and its environment `marker` (both `""` if it has none; e.g. `{"numpy":[{"specifier":">=1.20","marker":"python_version < \"3.12\""},{"specifier":">=1.26","marker":"python_version >= \"3.12\""}]}`). `[]` for a package that is not found. Unlike `dependency-specifiers`, nothing is dropped, so a workflow can pick the requirement that applies to its Python version (see [Environment markers](#environment-markers)). Not in the `📦` log line.                                                                         |
+| `json`                    | The whole result in one value: a JSON object with the keys of the script output (the names of the other outputs with `_` instead of `-`: `normalized_name`, `python_versions`, ...), the `warnings` (an array of messages) and the `schema_version` (see [Development](#development)). Unlike the other outputs, arrays and objects are values, not strings, so `fromJSON(steps.metadata.outputs.json).extras` is the array of extras. Pass it to another job with one job output, or to a script. The step summary table leaves it out, as does the `📦` log line. `python-matrix` is not in it.                                                                                       |
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
@@ -170,12 +171,38 @@ breaks in the values escaped, to help debugging a workflow. The line shows
 `normalized-name` and `normalized-version` (derived from `name` and `version`),
 `python-matrix` (derived from `python-versions`), `description` (it may be long),
 `readme`, `license`, `license-files`, `authors`, `urls`, `keywords`, `classifiers`, `scripts`,
-`build-backend`, `build-requires` and `dependency-requirements`. With
+`build-backend`, `build-requires`, `dependency-requirements` and `json`. With
 `step-summary: "true"`, the outputs and the warnings are also written to the job
 summary of the run as a Markdown table (values are escaped, so a value from
 `pyproject.toml` cannot add Markdown or HTML to the page). When the step fails,
 the error message is written to the job summary instead, so the reason is visible
 on the summary page of the run and not only in the log of the step.
+
+### The whole result in one output
+
+The `json` output holds every value, so one job output is enough to hand the
+result to another job:
+
+```yaml
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.metadata.outputs.json }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: metadata
+        uses: durandtibo/extract-pyproject-metadata-action@v0.1
+
+  build:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "building $NAME $VERSION"
+        env:
+          NAME: ${{ fromJSON(needs.metadata.outputs.json).name }}
+          VERSION: ${{ fromJSON(needs.metadata.outputs.json).version }}
+```
 
 ### Python version matrix
 

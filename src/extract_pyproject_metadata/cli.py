@@ -47,8 +47,9 @@ values may contain line breaks). They are ``name``, ``normalized-name``,
 ``license-files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires-python``, ``extras``, ``groups``,
 ``build-backend``, ``build-requires``,
 ``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
-``project-dependencies``, ``dependency-specifiers`` and
-``dependency-requirements``. It also prints to stdout one
+``project-dependencies``, ``dependency-specifiers``,
+``dependency-requirements`` and ``json`` (the JSON object that is printed without
+the option, in compact form). It also prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
 the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout

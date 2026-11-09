@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     PACKAGE_PATH,
     SCRIPT_PATH,
@@ -118,7 +119,12 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
         check=True,
     )
 
-    assert parse_github_output(output.read_text(encoding="utf-8")) == {
+    outputs = parse_github_output(output.read_text(encoding="utf-8"))
+    report = json.loads(outputs.pop("json"))
+    assert list(report) == list(Report.__annotations__)
+    assert report["name"] == "coola"
+    assert report["extras"] == ["", "numpy"]
+    assert outputs == {
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
