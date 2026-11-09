@@ -19,6 +19,7 @@ from extract_pyproject_metadata.dependencies.requirements import (
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import Options, parse_options, parse_string_array
 from extract_pyproject_metadata.metadata import extract_metadata
+from extract_pyproject_metadata.output.github import format_outputs, oversized_outputs
 from extract_pyproject_metadata.pyproject import load_pyproject
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
@@ -87,12 +88,7 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         check_no_missing_dependency(
             specifiers, args.pyproject_path, dynamic_dependency_fields(data)
         )
-    warnings = list(dict.fromkeys(warnings))
-    if options.strict and warnings:
-        listed = "".join(f"\n- {warning}" for warning in warnings)
-        msg = f"strict is 'true' and there are {len(warnings)} warning(s):{listed}"
-        raise MetadataError(msg)
-    return Report(
+    report = Report(
         **metadata,
         python_versions=python_versions,
         python_min=lowest_python_version(python_versions),
@@ -103,3 +99,16 @@ def build_report(args: argparse.Namespace, options: Options | None = None) -> Re
         warnings=warnings,
         schema_version=SCHEMA_VERSION,
     )
+    large = oversized_outputs(format_outputs(report))
+    if large:
+        names = ", ".join(large)
+        warnings.append(
+            f"The output(s) {names} are close to the size limit of a GitHub step output "
+            "(1 MiB): the step may fail to set them"
+        )
+    report["warnings"] = list(dict.fromkeys(warnings))
+    if options.strict and report["warnings"]:
+        listed = "".join(f"\n- {warning}" for warning in report["warnings"])
+        msg = f"strict is 'true' and there are {len(report['warnings'])} warning(s):{listed}"
+        raise MetadataError(msg)
+    return report

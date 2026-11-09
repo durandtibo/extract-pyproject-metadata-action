@@ -73,6 +73,10 @@ CASES = [
         PROJECT + 'version = "1"\ndynamic = ["optional-dependencies"]\n',
         '["numpy"]',
     ),
+    Case(
+        "are close to the size limit of a GitHub step output",
+        PROJECT + 'version = "1"\nkeywords = ["' + "x" * 900_000 + '"]\n',
+    ),
 ]
 
 
