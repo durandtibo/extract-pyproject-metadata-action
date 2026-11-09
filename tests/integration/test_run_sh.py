@@ -287,6 +287,31 @@ def test_run_sh_end_to_end_with_the_real_python(tmp_path: Path) -> None:
     )  # the Python had packaging
 
 
+def test_run_sh_ignores_a_module_of_the_workspace_that_shadows_packaging(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" "$@"\n')
+    (bin_dir / "python3").chmod(0o755)
+    workspace = tmp_path / "workspace"
+    (workspace / "packaging").mkdir(parents=True)
+    (workspace / "packaging" / "__init__.py").write_text('raise RuntimeError("shadowed")\n')
+    path = write_pyproject(workspace, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    output = tmp_path / "github_output"
+
+    process = subprocess.run(
+        ["/bin/bash", str(RUN_PATH), "--github-output", str(output), "--", str(path), "[]"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=workspace,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path)},
+    )
+
+    assert process.returncode == 0, process.stderr
+    assert "installing" not in process.stdout  # the real packaging was found, no install
+    assert parse_github_output(output.read_text(encoding="utf-8"))["name"] == "coola"
+
+
 def test_run_sh_fails_with_a_clear_message_on_a_windows_runner(tmp_path: Path) -> None:
     result = run_run_sh(tmp_path, ["a"], RUNNER_OS="Windows")
 

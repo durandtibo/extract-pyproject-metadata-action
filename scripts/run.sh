@@ -24,6 +24,9 @@
 #
 # On failure, the pip output (for example a network error) is shown before the error.
 #
+# Python does not put the current directory on its module search path (PYTHONSAFEPATH), so a
+# module of the workspace cannot shadow "packaging" or "pip".
+#
 # Python does not write bytecode (__pycache__) while the script runs, so the
 # action leaves nothing in the workspace of the caller (the action directory is
 # usually read-only or cached, and a stray __pycache__ can end up in an artifact
@@ -45,6 +48,10 @@
 set -euo pipefail
 
 export PYTHONDONTWRITEBYTECODE=1
+# Do not put the current directory (the workspace of the caller) first on sys.path of
+# "python -c" and "python -m" (Python 3.11 or later): a "packaging" or "pip" there would
+# shadow the real one, so the check would report "packaging" as missing and trigger an install.
+export PYTHONSAFEPATH=1
 
 # The interpreter to use: a command found on PATH, or a path.
 python_exe="${PYTHON_EXECUTABLE:-python3}"
