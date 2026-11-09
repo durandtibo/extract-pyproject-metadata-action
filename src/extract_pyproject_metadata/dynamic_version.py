@@ -19,7 +19,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from packaging.version import InvalidVersion, Version
 
@@ -36,7 +36,7 @@ def _table(parent: dict[str, Any], key: str) -> dict[str, Any]:
     """Return ``parent[key]`` if it is a table, an empty dict
     otherwise."""
     value = parent.get(key)
-    return value if isinstance(value, dict) else {}
+    return cast("dict[str, Any]", value) if isinstance(value, dict) else {}
 
 
 def _read_text(base: Path, relative: str) -> str:
@@ -170,11 +170,12 @@ def _setuptools_file(base: Path, files: object) -> str:
     Raises:
         ValueError: With the reason why the version cannot be read.
     """
-    names = [files] if isinstance(files, str) else files
-    if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
+    names: object = [files] if isinstance(files, str) else files
+    items = cast("list[Any]", names) if isinstance(names, list) else []
+    if not items or not all(isinstance(item, str) for item in items):
         msg = f"[tool.setuptools.dynamic].version file must be a string or an array of strings, got: {files!r}"
         raise ValueError(msg)
-    return "\n".join(_read_text(base, name) for name in names).strip()
+    return "\n".join(_read_text(base, cast("str", name)) for name in items).strip()
 
 
 def _hatch_regex(base: Path, hatch: dict[str, Any]) -> str:
@@ -227,16 +228,17 @@ def read_dynamic_version(data: dict[str, Any], pyproject_path: str) -> tuple[str
     base = Path(pyproject_path).parent
     tool = _table(data, "tool")
     setuptools = _table(tool, "setuptools")
-    spec = _table(setuptools, "dynamic").get("version")
-    hatch = _table(tool, "hatch").get("version")
+    spec: object = _table(setuptools, "dynamic").get("version")
+    hatch: object = _table(tool, "hatch").get("version")
     raw = ""
     try:
-        if isinstance(spec, dict) and "file" in spec:
-            raw = _setuptools_file(base, spec["file"])
-        elif isinstance(spec, dict) and "attr" in spec:
-            raw = _setuptools_attr(base, spec["attr"], _table(setuptools, "package-dir"))
+        spec_table = cast("dict[str, Any]", spec) if isinstance(spec, dict) else {}
+        if "file" in spec_table:
+            raw = _setuptools_file(base, spec_table["file"])
+        elif "attr" in spec_table:
+            raw = _setuptools_attr(base, spec_table["attr"], _table(setuptools, "package-dir"))
         elif isinstance(hatch, dict):
-            raw = _hatch_regex(base, hatch)
+            raw = _hatch_regex(base, cast("dict[str, Any]", hatch))
         else:
             return "", (
                 "no static source: only [tool.setuptools.dynamic].version (file or attr) and "
