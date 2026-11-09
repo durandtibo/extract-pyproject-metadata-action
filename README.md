@@ -116,11 +116,12 @@ jobs:
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`.                                                                                                                                                                                                                                                                                                                                                                                                   | No       | `false`                                |
 | `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input.                                                                                                                                                                                                                                                                                                                                                                      | No       | `false`                                |
 | `python-executable`       | Python interpreter that runs the action: a command found on `PATH` or a path to an executable (Python 3.11 or later, e.g. `python3.12` or `/opt/python/bin/python`), for runners where `python3` is not the interpreter to use. The private virtual environment, if one is needed, is created with it.                                                                                                                                                                                                                               | No       | `python3`                              |
-| `step-summary`            | `true` to also write the outputs and the warnings to the job summary of the workflow run (a table with one row per output).                                                                                                                                                                                                                                                                                                                                                                                                          | No       | `false`                                |
+| `step-summary`            | `true` to always write the outputs and the warnings to the job summary of the workflow run (a table with one row per output), `false` to never write them, or `auto` to write them only when there are warnings (a failure is always written).                                                                                                                                                                                                                                                                                       | No       | `auto`                                 |
 
-`fail-on-dynamic-version`, `fail-on-missing`, `strict` and `step-summary` are
-boolean inputs: the value must be `true` or `false`, the case and the surrounding
-spaces are ignored, and any other value fails the step.
+`fail-on-dynamic-version`, `fail-on-missing` and `strict` are boolean inputs: the
+value must be `true` or `false`, the case and the surrounding spaces are ignored,
+and any other value fails the step. `step-summary` is the same with a third value,
+`auto`.
 
 ## Outputs
 
@@ -174,9 +175,13 @@ breaks in the values escaped, to help debugging a workflow. The line shows
 `build-backend`, `build-requires`, `dependency-requirements` and `json`. With
 `step-summary: "true"`, the outputs and the warnings are also written to the job
 summary of the run as a Markdown table (values are escaped, so a value from
-`pyproject.toml` cannot add Markdown or HTML to the page). When the step fails,
-the error message is written to the job summary instead, so the reason is visible
-on the summary page of the run and not only in the log of the step.
+`pyproject.toml` cannot add Markdown or HTML to the page). With the default,
+`step-summary: "auto"`, the table is only written when there are warnings, so a
+warning (and the failure of `strict`, which lists them) shows on the summary page
+of the run and not only in the log; `"false"` never writes it. When the step
+fails, the error message is written to the job summary instead (with `true` and
+`auto`), so the reason is visible on the summary page of the run and not only in
+the log of the step.
 
 ### The whole result in one output
 
@@ -330,7 +335,7 @@ The action's step fails (non-zero exit) when:
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
   permission). A UTF-8 byte order mark at the start of the file is accepted and ignored
   (it used to fail with `Invalid statement (at line 1, column 1)`).
-- The outputs (`$GITHUB_OUTPUT`) or, with `step-summary`, the job summary
+- The outputs (`$GITHUB_OUTPUT`) or, with `step-summary` (`true`, or `auto` with warnings), the job summary
   (`$GITHUB_STEP_SUMMARY`) cannot be written. These used to end with a Python
   traceback, like the unreadable file.
 - `[project]` is missing the required `name` key, or the `version` key when `version` is not listed in `[project].dynamic`.
@@ -384,7 +389,8 @@ The action's step fails (non-zero exit) when:
   `version` is listed in `[project].dynamic`.
 - `strict` is not `true` or `false`, or is `true` and there is a warning (the
   error lists them; no output is written).
-- `step-summary` is not `true` or `false`.
+- `step-summary` is not `true`, `false` or `auto`, or is `true` and the job summary
+  file (`$GITHUB_STEP_SUMMARY`) is not set.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
   `dependencies` is not found (the error says when `[project].dependencies` or
   `[project].optional-dependencies` is dynamic and so cannot be read).

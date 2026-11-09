@@ -10,7 +10,7 @@ Python versions that ``requires-python`` allows, and lists the requirements of
 
 Usage:
     extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--fail-on-dynamic-version true|false] [--step-summary true|false]
+        [--fail-on-dynamic-version true|false] [--step-summary true|false|auto]
         [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
@@ -60,6 +60,10 @@ and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
 environment variable (the job summary of GitHub), whichever the other options.
 When the run fails, the error message is appended instead (unless
 ``--step-summary`` or ``GITHUB_STEP_SUMMARY`` is itself the problem).
+With ``--step-summary auto`` (the default of the action), the table is only
+appended when there are warnings, the error message is appended when the run
+fails, and nothing is written when ``GITHUB_STEP_SUMMARY`` is not set. The
+default of the script is ``false``.
 
 With ``--strict true``, any warning is an error instead: the outputs are not
 written and the message lists the warnings.
@@ -189,7 +193,10 @@ def _build_parser(prog: str) -> _ArgumentParser:
         "--step-summary",
         metavar="BOOL",
         default="false",
-        help="'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY (default: false)",
+        help=(
+            "'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY; "
+            "'auto' to write it only when there are warnings or an error (default: false)"
+        ),
     )
     parser.add_argument(
         "--python-candidates",
@@ -229,7 +236,7 @@ def main(argv: list[str]) -> int:
             print(json.dumps(report, ensure_ascii=False))
         else:
             emit_github_output(report, args.pyproject_path, args.github_output)
-        if summary_path is not None:
+        if summary_path is not None and (options.step_summary == "true" or report["warnings"]):
             write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     except MetadataError as exc:
         annotate = args.github_output is not None

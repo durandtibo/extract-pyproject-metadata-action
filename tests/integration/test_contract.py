@@ -61,7 +61,8 @@ def test_the_readme_lists_the_boolean_inputs_of_parse_options() -> None:
         f"`{name}`" for name in ("fail-on-dynamic-version", "fail-on-missing", "strict")
     )
 
-    assert f"{names} and `step-summary` are boolean inputs" in readme
+    assert f"{names.replace(', `strict`', ' and `strict`')} are boolean inputs" in readme
+    assert "`step-summary` is the same with a third value, `auto`" in readme
 
 
 @pytest.mark.parametrize(("section", "heading"), [("inputs", "Inputs"), ("outputs", "Outputs")])

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Literal, TypedDict
 
-__all__ = ["Metadata", "Report"]
+__all__ = ["Metadata", "Report", "StepSummary"]
+
+# The values of the ``step-summary`` input: always, never, or only when there are warnings
+# (or when the run fails).
+StepSummary = Literal["true", "false", "auto"]
 
 
 class Metadata(TypedDict):

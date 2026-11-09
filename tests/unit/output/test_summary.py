@@ -182,4 +182,4 @@ def test_format_error_summary_skips_blank_lines() -> None:
 @pytest.mark.parametrize("environ", [{}, {"GITHUB_STEP_SUMMARY": ""}])
 def test_resolve_step_summary_without_the_environment_variable(environ: dict[str, str]) -> None:
     with pytest.raises(MetadataError, match=r"step-summary is 'true' but .*GITHUB_STEP_SUMMARY"):
-        resolve_step_summary(True, environ)
+        resolve_step_summary("true", environ)
