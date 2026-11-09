@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -53,7 +54,9 @@ def test_write_github_output_unwritable_file(tmp_path: Path) -> None:
 
 
 def test_format_outputs() -> None:
-    assert format_outputs(METADATA) == {
+    outputs = format_outputs(METADATA)
+    outputs.pop("json")  # tested below
+    assert outputs == {
         "name": "coola",
         "normalized-name": "coola",
         "version": "1.2.3",
@@ -80,6 +83,20 @@ def test_format_outputs() -> None:
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
         "dependency-requirements": '{"numpy":[{"specifier":">=1","marker":""}],"missing":[]}',
     }
+
+
+def test_format_outputs_json_is_the_whole_report_in_compact_form() -> None:
+    result = format_outputs(METADATA)["json"]
+
+    assert result.startswith('{"name":"coola","normalized_name":"coola","version":"1.2.3",')
+    assert result.endswith('"warnings":[],"schema_version":1}')
+    assert json.loads(result) == METADATA
+
+
+def test_format_outputs_json_keeps_non_ascii_characters() -> None:
+    metadata: Report = {**METADATA, "description": "é"}
+
+    assert '"description":"é"' in format_outputs(metadata)["json"]
 
 
 def test_format_outputs_keeps_non_ascii_characters() -> None:
@@ -273,6 +290,7 @@ def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
         "build-requires",
         "python-matrix",
         "dependency-requirements",
+        "json",
     }
 
 

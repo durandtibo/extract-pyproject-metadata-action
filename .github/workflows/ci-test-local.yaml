@@ -48,6 +48,15 @@ jobs:
           assert_equal "extras" "[]" '${{ steps.test-minimal.outputs.extras }}'
           print_success "minimal pyproject.toml test passed"
 
+      # The json output (added after the last release) holds the whole result
+      - name: ✓ Verify the json output of the minimal pyproject.toml
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "json name" "minimal-pkg" "${{ fromJSON(steps.test-minimal.outputs.json).name }}"
+          assert_equal "json version" "0.1.0" "${{ fromJSON(steps.test-minimal.outputs.json).version }}"
+          assert_equal "json schema_version" "1" "${{ fromJSON(steps.test-minimal.outputs.json).schema_version }}"
+          print_success "json output test passed"
+
       # -----------------------------------------------------------------------
       # Test 2: pyproject.toml with optional-dependencies
       # -----------------------------------------------------------------------

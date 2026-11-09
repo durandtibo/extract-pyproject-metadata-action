@@ -192,6 +192,12 @@ outputs:
       environment marker (empty strings if it has none); an empty array if the
       package is not found
     value: ${{ steps.metadata.outputs.dependency-requirements }}
+  json:
+    description: >
+      JSON object with all the other outputs and the warnings, in one value (the
+      names use "_" instead of "-"; the arrays and objects are values, not
+      strings), to pass the whole result to another step or job
+    value: ${{ steps.metadata.outputs.json }}
 
 runs:
   using: composite
