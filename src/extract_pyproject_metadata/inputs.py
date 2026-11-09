@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from extract_pyproject_metadata.errors import MetadataError
 
@@ -40,10 +40,11 @@ def parse_string_array(raw: str, input_name: str) -> list[str]:
     except json.JSONDecodeError as exc:
         msg = f"{input_name} is not valid JSON: {raw!r}"
         raise MetadataError(msg) from exc
-    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+    items = cast("list[Any]", values) if isinstance(values, list) else None
+    if items is None or not all(isinstance(item, str) for item in items):
         msg = f"{input_name} must be a JSON array of strings, got: {raw!r}"
         raise MetadataError(msg)
-    return values
+    return cast("list[str]", items)
 
 
 def parse_bool(value: str, name: str) -> bool:

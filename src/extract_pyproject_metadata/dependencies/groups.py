@@ -3,7 +3,7 @@ groups]``."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from packaging.utils import canonicalize_name
 
@@ -95,8 +95,10 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
         for entry in check_array(entries, label, pyproject_path):
             if isinstance(entry, str):
                 out.append(entry)
-            elif isinstance(entry, dict) and set(entry) == {"include-group"}:
-                included = entry["include-group"]
+            elif isinstance(entry, dict) and set(cast("dict[str, Any]", entry)) == {
+                "include-group"
+            }:
+                included: object = cast("dict[str, Any]", entry)["include-group"]
                 if not isinstance(included, str):
                     msg = (
                         f"{pyproject_path}: {label}: include-group must be a string, "

@@ -43,7 +43,7 @@ module above it:
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
   `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
   `.venv/bin/pytest`, `.venv/bin/ruff check src scripts tests` (must pass),
-  `.venv/bin/mypy` (strict, must pass), `.venv/bin/ty check` and `.venv/bin/lint-imports` (must pass).
+  `.venv/bin/ty check`, `.venv/bin/pyright` (strict on `src` and `scripts`) and `.venv/bin/lint-imports` (all must pass; there is no mypy).
 - The tooling follows [coola](https://github.com/durandtibo/coola). `uv sync
   --group dev` installs the `dev` dependency group of `pyproject.toml` (the CI
   still uses `requirements-test.txt`: keep the two lists compatible).
