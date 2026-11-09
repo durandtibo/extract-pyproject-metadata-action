@@ -304,3 +304,10 @@ def test_run_sh_runs_on_the_other_runners(tmp_path: Path, runner_os: str) -> Non
 
     assert result.process.returncode == 0
     assert result.calls[-1] == ["python3", str(SCRIPT_PATH), "a"]
+
+
+def test_run_sh_stops_python_from_writing_bytecode(tmp_path: Path) -> None:
+    result = run_run_sh(tmp_path, ["a"])
+
+    assert result.process.returncode == 0
+    assert (tmp_path / "calls.log.bytecode").read_text() == "1\n"

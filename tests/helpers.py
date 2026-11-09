@@ -292,7 +292,9 @@ case "$1" in
     cp "$STUB_VENV_PYTHON" "$venv/bin/python"
     chmod +x "$venv/bin/python"
     exit 0 ;;
-  *) printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"; exit "${STUB_SCRIPT_STATUS:-0}" ;;
+  *) printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
+     echo "${PYTHONDONTWRITEBYTECODE-unset}" > "$STUB_LOG.bytecode"
+     exit "${STUB_SCRIPT_STATUS:-0}" ;;
 esac
 """
 

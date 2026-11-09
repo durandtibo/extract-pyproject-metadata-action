@@ -24,11 +24,18 @@
 #
 # On failure, the pip output (for example a network error) is shown before the error.
 #
+# Python does not write bytecode (__pycache__) while the script runs, so the
+# action leaves nothing in the workspace of the caller (the action directory is
+# usually read-only or cached, and a stray __pycache__ can end up in an artifact
+# or a cache of the job).
+#
 # The exit code is the one of extract_metadata.py, or 1 on a Windows runner, if
 # the interpreter is older than 3.11 or cannot be run or if the requirements cannot be
 # installed.
 
 set -euo pipefail
+
+export PYTHONDONTWRITEBYTECODE=1
 
 # The interpreter to use: a command found on PATH, or a path.
 python_exe="${PYTHON_EXECUTABLE:-python3}"
