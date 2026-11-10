@@ -1,8 +1,7 @@
 """Test that the modules of ``extract_pyproject_metadata`` import one way.
 
 A module may only import from a module of a lower rank (see the
-architecture in ``CLAUDE.md``), or from its own sub-package. ``output``
-is further restricted to ``types`` and ``errors``.
+architecture in ``CLAUDE.md``), or from its own sub-package.
 """
 
 from __future__ import annotations

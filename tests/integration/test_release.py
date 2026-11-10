@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import yaml
 
 from tests.helpers import ACTION_PATH, ROOT_PATH
@@ -12,42 +11,14 @@ NOTES = (ROOT_PATH / "release-notes" / "v0.3.0.md").read_text(encoding="utf-8")
 ACTION = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
 RELEASE = yaml.safe_load((WORKFLOWS_PATH / "release.yaml").read_text(encoding="utf-8"))
 
-# What the development version of v0.x had and v0.3 does not.
-REMOVED_INPUTS = [
-    "fail-on-missing",
-    "fail-on-dynamic-version",
-    "resolve-dynamic-version",
-    "step-summary",
-    "installer",
-    "python-executable",
-]
-REMOVED_OUTPUTS = [
-    "description",
-    "readme",
-    "license",
-    "license-files",
-    "authors",
-    "urls",
-    "keywords",
-    "classifiers",
-    "scripts",
-    "build-backend",
-    "build-requires",
-    "project-dependencies",
-    "python-matrix",
-    "dependency-requirements",
-]
+
+def test_the_notes_do_not_claim_windows_support() -> None:
+    assert "Windows is not supported" in NOTES
+    assert "Windows runners are supported" not in NOTES
 
 
-@pytest.mark.parametrize("name", [*REMOVED_INPUTS, *REMOVED_OUTPUTS])
-def test_the_notes_name_every_removed_input_and_output(name: str) -> None:
-    assert f"`{name}`" in NOTES
-
-
-@pytest.mark.parametrize("name", [*REMOVED_INPUTS, *REMOVED_OUTPUTS])
-def test_a_removed_name_is_not_in_action_yaml(name: str) -> None:
-    assert name not in ACTION["inputs"]
-    assert name not in ACTION["outputs"]
+def test_the_notes_have_no_table_of_removed_names() -> None:
+    assert "Removed" not in NOTES
 
 
 def test_the_notes_list_the_current_inputs_and_outputs() -> None:

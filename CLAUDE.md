@@ -17,7 +17,8 @@ The package `src/extract_pyproject_metadata/` is split by concern. Imports go on
 way, from the bottom of this list to the top, and a module never imports from a
 module above it:
 
-1. `errors` (`MetadataError`), `types` (`Inputs`, `Project`, `Report`), `checks`
+1. `errors` (`MetadataError`), `types` (`Inputs`, `Project`, `Report`), `warning_codes`
+   (the codes of the warnings), `checks`
    (type checks of the values read from the file), `inputs` (`parse_inputs`: the
    single place that validates the input strings and builds `Inputs`).
 2. `pyproject` (read and parse the file; `read_project`: name, version,
