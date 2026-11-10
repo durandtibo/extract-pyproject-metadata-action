@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from extract_pyproject_metadata.cli import main
 
 if __name__ == "__main__":
-    # The log line has non-ASCII characters; the Windows default code page cannot encode them.
+    # The log line has non-ASCII characters; a non-UTF-8 locale cannot encode them.
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     raise SystemExit(main(os.environ, sys.argv[1:]))

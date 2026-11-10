@@ -8,7 +8,7 @@ build, test and publish jobs in sync with what `pip install` installs.
 The action only **reads** the file: it never runs project code or a build backend, and
 values from the file cannot become shell code, workflow commands or Markdown. It needs a
 Python 3.11 or later on `PATH` (for example from `actions/setup-python`) and nothing
-else: no installation, no network. It runs on Linux, macOS and Windows.
+else: no installation, no network. It runs on Linux and macOS. Windows is not supported, on purpose.
 
 ## Usage
 
