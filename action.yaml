@@ -33,12 +33,13 @@ inputs:
       [project].dependencies, [project.optional-dependencies] and
       [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@"
       and "project", "extra:<name>" or "group:<name>" is looked up there only
-      (e.g. '["pytest@group:dev"]').
+      (e.g. '["pytest@group:dev"]'). A name that is not a valid package name
+      is an error.
     default: "[]"
 
   python-candidates:
     description: >
-      JSON array of "major.minor" Python versions to choose from for the
+      JSON array of "major.minor" Python versions, without leading zeros, to choose from for the
       python-versions output (e.g. '["3.11","3.12"]'); empty for the supported
       CPython versions, listed in the README
     default: ""

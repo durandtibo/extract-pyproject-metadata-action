@@ -2,11 +2,32 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, cast
 
 from extract_pyproject_metadata.errors import MetadataError
 
-__all__ = ["check_array", "check_str", "check_string_array", "get_table"]
+__all__ = ["check_array", "check_str", "check_string_array", "get_table", "is_package_name"]
+
+# A package name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
+# letter or a digit. Always used with ``fullmatch``.
+_PACKAGE_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
+
+
+def is_package_name(name: str) -> bool:
+    """Tell whether ``name`` is a valid package name (PEP 508).
+
+    The rule of ``[project].name`` and of the names of the ``dependencies`` input, so that the
+    file and the input cannot disagree.
+
+    Args:
+        name: The name to check.
+
+    Returns:
+        ``True`` if ``name`` has only letters, digits, ``-``, ``_`` and ``.``, and starts and
+        ends with a letter or a digit.
+    """
+    return _PACKAGE_NAME.fullmatch(name) is not None
 
 
 def check_str(value: object, label: str) -> str:

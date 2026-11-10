@@ -114,13 +114,13 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 
 <!-- inputs:start -->
 
-| Name                | Description                                                                                                                                                                                                                                                                                                    | Default               |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| `pyproject-path`    | Path to pyproject.toml                                                                                                                                                                                                                                                                                         | `pyproject.toml`      |
-| `extra-values`      | JSON array of additional values to prepend to the extras read from pyproject.toml, for callers that need a non-package value in the list too (e.g. '[""]' for a "no extra" baseline, or '["all"]').                                                                                                            | `[]`                  |
-| `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", "extra:<name>" or "group:<name>" is looked up there only (e.g. '["pytest@group:dev"]'). | `[]`                  |
-| `python-candidates` | JSON array of "major.minor" Python versions to choose from for the python-versions output (e.g. '["3.11","3.12"]'); empty for the supported CPython versions, listed in the README                                                                                                                             | (see the description) |
-| `strict`            | Set to "true" to fail when there is any warning (a dynamic version, a dependency that is not found, ...), instead of only reporting it ("true" or "false")                                                                                                                                                     | `false`               |
+| Name                | Description                                                                                                                                                                                                                                                                                                                                                         | Default               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `pyproject-path`    | Path to pyproject.toml                                                                                                                                                                                                                                                                                                                                              | `pyproject.toml`      |
+| `extra-values`      | JSON array of additional values to prepend to the extras read from pyproject.toml, for callers that need a non-package value in the list too (e.g. '[""]' for a "no extra" baseline, or '["all"]').                                                                                                                                                                 | `[]`                  |
+| `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", "extra:<name>" or "group:<name>" is looked up there only (e.g. '["pytest@group:dev"]'). A name that is not a valid package name is an error. | `[]`                  |
+| `python-candidates` | JSON array of "major.minor" Python versions, without leading zeros, to choose from for the python-versions output (e.g. '["3.11","3.12"]'); empty for the supported CPython versions, listed in the README                                                                                                                                                          | (see the description) |
+| `strict`            | Set to "true" to fail when there is any warning (a dynamic version, a dependency that is not found, ...), instead of only reporting it ("true" or "false")                                                                                                                                                                                                          | `false`               |
 
 <!-- inputs:end -->
 
@@ -246,7 +246,8 @@ Python traceback. It happens when:
   10,000 groups;
 - an input is invalid: `extra-values`, `dependencies` or `python-candidates` is not a JSON
   array of strings, a `dependencies` scope is not `project`, `extra:<name>` or
-  `group:<name>`, a candidate is not `major.minor`, or `strict` is not a boolean;
+  `group:<name>`, a `dependencies` name is not a valid package name, a candidate is not a
+  canonical `major.minor` (`3.12`, not `03.12`), or `strict` is not a boolean;
 - `strict` is `true` and there is a warning (no output is written);
 - the outputs (`$GITHUB_OUTPUT`) cannot be written.
 

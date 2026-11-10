@@ -55,11 +55,15 @@ def run_script(
         (["{path}", "[]", "coola"], "dependencies: not valid JSON"),
         (["{path}", "[]", '{"a": 1}'], "dependencies: must be a JSON array of strings"),
         (["{path}", "[]", "[1]"], "dependencies: must be a JSON array of strings"),
+        (["{path}", "[]", '["not a name!"]'], "dependencies: entry 'not a name!' is not a valid"),
+        (["{path}", "[]", '[""]'], "dependencies: entry '' is not a valid package name"),
+        (["{path}", "[]", '["@project"]'], "dependencies: entry '@project' is not a valid"),
         # python-candidates
         (["--python-candidates", "3.12", "{path}", "[]"], "python-candidates"),
         (["--python-candidates", "[3.12]", "{path}", "[]"], "python-candidates"),
         (["--python-candidates", '["3"]', "{path}", "[]"], "python-candidates"),
         (["--python-candidates", '["x.y"]', "{path}", "[]"], "python-candidates"),
+        (["--python-candidates", '["03.012"]', "{path}", "[]"], "python-candidates: must contain"),
         # booleans
         (["--strict", "0", "{path}", "[]"], "strict"),
         # the file
