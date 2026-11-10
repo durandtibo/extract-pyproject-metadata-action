@@ -28,7 +28,6 @@ from tests.helpers import (
     GROUPS_TOML,
     INVALID_TOML,
     MARKERS_TOML,
-    _parse_error,
     chain_of_groups,
     diamond_of_groups,
     dynamic_fields,
@@ -36,6 +35,7 @@ from tests.helpers import (
     extract_dependency_requirements,
     extract_dependency_specifiers,
     messages,
+    parse_error,
     specifiers,
     write_pyproject,
 )
@@ -567,7 +567,7 @@ def test_collect_requirements_of_the_file() -> None:
     ]
     assert messages(warnings) == [
         "[dependency-groups].dev: include-group 'missing' does not match any group",
-        "Ignoring invalid requirement 'not valid!': " + str(_parse_error("not valid!")),
+        "Ignoring invalid requirement 'not valid!': " + str(parse_error("not valid!")),
     ]
 
 

@@ -298,7 +298,7 @@ ACTION_PATH = Path(__file__).resolve().parents[1] / "action.yaml"
 README_PATH = Path(__file__).resolve().parents[1] / "README.md"
 
 
-def _action_section_keys(section: str) -> list[str]:
+def action_section_keys(section: str) -> list[str]:
     """Return the names under the top-level ``inputs:`` or ``outputs:``
     key of action.yaml."""
     keys: list[str] = []
@@ -311,7 +311,7 @@ def _action_section_keys(section: str) -> list[str]:
     return keys
 
 
-def _readme_table_names(heading: str) -> list[str]:
+def readme_table_names(heading: str) -> list[str]:
     """Return the names (first column) of the table under the ``##
     <heading>`` of the README."""
     readme = README_PATH.read_text(encoding="utf-8")
@@ -319,7 +319,7 @@ def _readme_table_names(heading: str) -> list[str]:
     return re.findall(r"^\| `([a-z-]+)`", section, flags=re.MULTILINE)
 
 
-def _specifier_error(raw: str) -> InvalidSpecifier:
+def specifier_error(raw: str) -> InvalidSpecifier:
     """Return the error that ``packaging`` raises for the invalid
     specifier ``raw``."""
     with pytest.raises(InvalidSpecifier) as exc_info:
@@ -327,7 +327,7 @@ def _specifier_error(raw: str) -> InvalidSpecifier:
     return exc_info.value
 
 
-def _parse_error(raw: str) -> InvalidRequirement:
+def parse_error(raw: str) -> InvalidRequirement:
     """Return the error that ``packaging`` raises for the invalid
     requirement ``raw``."""
     with pytest.raises(InvalidRequirement) as exc_info:

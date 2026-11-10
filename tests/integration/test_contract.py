@@ -18,10 +18,10 @@ from tests.helpers import (
     ACTION_PATH,
     PACKAGE_PATH,
     README_PATH,
-    _action_section_keys,
-    _readme_table_names,
+    action_section_keys,
     extract,
     parse_inputs_args,
+    readme_table_names,
     write_pyproject,
 )
 
@@ -44,7 +44,7 @@ def test_action_yaml_separates_the_inputs_with_a_blank_line() -> None:
     inputs = lines[lines.index("inputs:") : lines.index("outputs:")]
     starts = [index for index, line in enumerate(inputs) if re.match(r"^  [a-z][a-z-]*:\s*$", line)]
 
-    assert len(starts) == len(_action_section_keys("inputs"))
+    assert len(starts) == len(action_section_keys("inputs"))
     assert [inputs[index - 1] for index in starts[1:]] == [""] * (len(starts) - 1)
 
 
@@ -58,7 +58,7 @@ def test_action_yaml_every_input_has_a_default() -> None:
     lines = ACTION_PATH.read_text(encoding="utf-8").splitlines()
     inputs = "\n".join(lines[lines.index("inputs:") : lines.index("outputs:")])
 
-    assert inputs.count("    default:") == len(_action_section_keys("inputs"))
+    assert inputs.count("    default:") == len(action_section_keys("inputs"))
 
 
 def test_the_readme_lists_the_boolean_inputs_of_parse_inputs() -> None:
@@ -69,14 +69,14 @@ def test_the_readme_lists_the_boolean_inputs_of_parse_inputs() -> None:
 
 @pytest.mark.parametrize(("section", "heading"), [("inputs", "Inputs"), ("outputs", "Outputs")])
 def test_readme_documents_the_inputs_and_outputs_of_action_yaml(section: str, heading: str) -> None:
-    assert sorted(_readme_table_names(heading)) == sorted(_action_section_keys(section))
+    assert sorted(readme_table_names(heading)) == sorted(action_section_keys(section))
 
 
 def test_module_docstring_lists_the_outputs_of_action_yaml() -> None:
     docstring = " ".join((extract_metadata_module.__doc__ or "").split())
     section = docstring.split("appends the action outputs", 1)[1].split("It also prints", 1)[0]
 
-    assert sorted(re.findall(r"``([a-z-]+)``", section)) == sorted(_action_section_keys("outputs"))
+    assert sorted(re.findall(r"``([a-z-]+)``", section)) == sorted(action_section_keys("outputs"))
 
 
 def test_module_docstring_lists_the_keys_of_the_json() -> None:

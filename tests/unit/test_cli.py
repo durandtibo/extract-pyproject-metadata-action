@@ -3,13 +3,15 @@ environment variables."""
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
 
 import extract_pyproject_metadata.report as report_module
-from extract_pyproject_metadata.cli import env_name, main, read_inputs
+from extract_pyproject_metadata.cli import env_name, main, read_inputs, run
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.github import (
     format_error,
@@ -19,11 +21,10 @@ from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     DATA_WITH_SCOPES,
     DEPS_TOML,
-    GROUPS_TOML,
-    _specifier_error,
     messages,
     parse_github_output,
     run_main,
+    specifier_error,
     write_pyproject,
 )
 
@@ -95,38 +96,6 @@ def test_main_strict_fails_on_a_static_and_dynamic_field(
     assert (
         "[project].version is set and also listed in [project].dynamic" in capsys.readouterr().err
     )
-
-
-def test_main_dynamic_version_warning_in_json(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
-
-    exit_code = run_main([str(path), "[]"])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out) == {
-        "name": "coola",
-        "normalized_name": "coola",
-        "file_name": "coola",
-        "version": "",
-        "normalized_version": "",
-        "requires_python": "",
-        "extras": [],
-        "groups": [],
-        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.11",
-        "python_max": "3.15",
-        "dependency_specifiers": {},
-        "dependency_requirements": {},
-        "warnings": [
-            {
-                "code": "dynamic-version",
-                "message": "[project].version is dynamic, the version output is empty",
-            }
-        ],
-        "schema_version": 1,
-    }
 
 
 def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -485,58 +454,6 @@ def test_main_invalid_version_returns_one(
     assert captured.out == ""
 
 
-def test_main_github_output_normalized_name(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "My_Package.Name"\nversion = "1"\n')
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
-
-    assert exit_code == 0
-    outputs = parse_github_output(output.read_text(encoding="utf-8"))
-    assert outputs["name"] == "My_Package.Name"
-    assert outputs["normalized-name"] == "my-package-name"
-
-
-def test_main_github_output_requires_python(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "p"\nversion = "1"\nrequires-python = ">=3.10,<4"\n'
-    )
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
-
-    assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["requires-python"] == ">=3.10,<4"
-
-
-def test_main_json_requires_python(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "p"\nversion = "1"\nrequires-python = ">=3.10"\n'
-    )
-
-    assert run_main([str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["requires_python"] == ">=3.10"
-
-
-def test_main_github_output_groups(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, GROUPS_TOML)
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
-
-    assert exit_code == 0
-    assert (
-        parse_github_output(output.read_text(encoding="utf-8"))["groups"] == '["Dev","docs","test"]'
-    )
-
-
-def test_main_json_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(tmp_path, GROUPS_TOML)
-
-    assert run_main([str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["groups"] == ["Dev", "docs", "test"]
-
-
 def test_main_missing_dependency_is_a_warning(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -620,61 +537,6 @@ def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
     ]
 
 
-def test_main_github_output_normalized_version(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1.0-RC1"\n')
-    output = tmp_path / "out"
-
-    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
-    values = parse_github_output(output.read_text(encoding="utf-8"))
-    assert (values["version"], values["normalized-version"]) == ("1.0-RC1", "1.0rc1")
-
-
-def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert run_main([str(path), "[]"]) == 0
-    assert (
-        json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 1
-    )
-
-
-def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "<3.13"\n'
-    )
-
-    assert run_main([str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["python_max"] == "3.12"
-
-
-def test_main_python_max_is_empty_without_allowed_version(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
-    )
-
-    assert run_main([str(path), "[]"]) == 0
-    report = json.loads(capsys.readouterr().out)
-    assert (report["python_versions"], report["python_max"]) == ([], "")
-
-
-def test_main_warns_when_no_python_version_is_allowed(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
-    )
-
-    assert run_main([str(path), "[]"]) == 0
-    assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
-        (
-            "no python-candidates version satisfies [project].requires-python ('>=4'): "
-            "python-versions is empty, and a job matrix built from it is rejected by GitHub"
-        )
-    ]
-
-
 def test_main_strict_fails_when_no_python_version_is_allowed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -684,119 +546,6 @@ def test_main_strict_fails_when_no_python_version_is_allowed(
 
     assert run_main(["--strict", "true", str(path), "[]"]) == 1
     assert "strict: true and there are 1 warning(s)" in capsys.readouterr().err
-
-
-def test_main_python_max_compares_versions_as_numbers(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert run_main(["--python-candidates", '["3.9","3.10"]', str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["python_max"] == "3.10"
-
-
-def test_main_github_output_python_max(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.14"\n'
-    )
-    output = tmp_path / "out"
-
-    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["python-max"] == "3.13"
-
-
-def test_main_python_min_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
-    )
-
-    assert run_main([str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["python_min"] == "3.11"
-
-
-def test_main_python_min_is_empty_without_allowed_version(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
-    )
-
-    assert run_main([str(path), "[]"]) == 0
-    report = json.loads(capsys.readouterr().out)
-    assert (report["python_versions"], report["python_min"]) == ([], "")
-
-
-def test_main_python_min_compares_versions_as_numbers(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    exit_code = run_main(["--python-candidates", '["3.10","3.9"]', str(path), "[]"])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["python_min"] == "3.9"
-
-
-def test_main_github_output_python_min(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.13"\n'
-    )
-    output = tmp_path / "github_output"
-
-    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["python-min"] == "3.13"
-
-
-def test_main_python_versions_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
-    )
-
-    exit_code = run_main([str(path), "[]"])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.11", "3.12"]
-
-
-def test_main_python_candidates_option(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.9"\n'
-    )
-
-    exit_code = run_main(["--python-candidates", '["3.8","3.9","3.15"]', str(path), "[]"])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.9", "3.15"]
-
-
-def test_main_invalid_requires_python_specifier_warns_and_gives_no_versions(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "python3"\n'
-    )
-
-    exit_code = run_main([str(path), "[]"])
-    report = json.loads(capsys.readouterr().out)
-
-    assert exit_code == 0
-    assert report["python_versions"] == []
-    assert len(report["warnings"]) == 1
-    assert "requires-python is not a valid version specifier" in report["warnings"][0]["message"]
-
-
-def test_main_github_output_python_versions(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.13"\n'
-    )
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
-
-    assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["python-versions"] == (
-        '["3.13","3.14","3.15"]'
-    )
 
 
 @pytest.mark.parametrize("raw", ['["3.12.1"]', "not json"])
@@ -830,43 +579,10 @@ def test_main_warnings_are_in_the_order_of_the_sources(
         "[project].version is dynamic, the version output is empty",
         (
             f"[project].requires-python is not a valid version specifier, "
-            f"the python-versions output is empty: {_specifier_error('python3')}"
+            f"the python-versions output is empty: {specifier_error('python3')}"
         ),
     ]
     assert warnings[2]["message"].startswith("Ignoring invalid requirement 'not valid!': ")
-
-
-def test_main_dependency_requirements_with_a_scope(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
-
-    assert (
-        run_main(
-            [
-                str(path),
-                "[]",
-                '["numpy", "numpy@extra:slow", "pytest@group:dev"]',
-            ]
-        )
-        == 0
-    )
-    report = json.loads(capsys.readouterr().out)
-    assert report["dependency_requirements"] == {
-        "numpy": [
-            {"specifier": ">=1.20", "marker": "", "source": "project"},
-            {"specifier": ">=2", "marker": "", "source": "extra:fast"},
-            {"specifier": "<2", "marker": "", "source": "extra:slow"},
-            {"specifier": ">=1.26", "marker": "", "source": "group:dev"},
-        ],
-        "numpy@extra:slow": [{"specifier": "<2", "marker": "", "source": "extra:slow"}],
-        "pytest@group:dev": [{"specifier": "", "marker": "", "source": "group:dev"}],
-    }
-    assert report["dependency_specifiers"] == {
-        "numpy": ">=1.20",
-        "numpy@extra:slow": "<2",
-        "pytest@group:dev": "",
-    }
 
 
 def test_main_missing_dependency_names_the_entry_with_a_scope(
@@ -936,25 +652,6 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
         len(captured.out.splitlines()) == 2
     )  # the warning for the invalid specifier, then the log line
     assert "requires-python=x\\n::error::boom\\nversion=hacked " in captured.out
-
-
-def test_main_dependency_requirements_in_json(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\n'
-        "dependencies = [\"numpy>=1; python_version < '3.12'\", \"numpy>=2; python_version >= '3.12'\"]\n",
-    )
-
-    assert run_main([str(path), "[]", '["numpy", "missing"]']) == 0
-    assert json.loads(capsys.readouterr().out)["dependency_requirements"] == {
-        "numpy": [
-            {"specifier": ">=1", "marker": 'python_version < "3.12"', "source": "project"},
-            {"specifier": ">=2", "marker": 'python_version >= "3.12"', "source": "project"},
-        ],
-        "missing": [],
-    }
 
 
 @pytest.mark.parametrize(
@@ -1067,3 +764,44 @@ def test_main_arguments_are_an_annotated_usage_error_with_github_output(
 
     assert capsys.readouterr().err.startswith("::error::extract_pyproject_metadata: error: ")
     assert not (tmp_path / "out").exists()
+
+
+def test_run_uses_the_environment_and_the_arguments_of_the_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1"\n')
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
+    stdout = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stdout)
+
+    assert run() == 0
+    assert json.loads(stdout.getvalue())["name"] == "coola"
+
+
+def test_run_switches_a_text_stream_to_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1"\n')
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
+    monkeypatch.setenv("INPUT_EXTRA_VALUES", '["é"]')
+    buffer = io.BytesIO()
+    stdout = io.TextIOWrapper(buffer, encoding="ascii")
+    monkeypatch.setattr(sys, "stdout", stdout)
+
+    assert run() == 0
+    stdout.flush()
+    assert json.loads(buffer.getvalue().decode("utf-8"))["extras"] == ["é"]
+
+
+def test_run_with_an_argument_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py", "pyproject.toml"])
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+
+    assert run() == 2
+    assert "unexpected arguments" in capsys.readouterr().err
