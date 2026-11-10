@@ -5,16 +5,11 @@
 # matrices, publish steps, ...) from drifting out of sync with what
 # `pip install` actually installs.
 #
-# The logic lives in the package src/extract_pyproject_metadata, started by scripts/run.sh
-# (which installs its requirements if needed); this file only wires the inputs
-# to the scripts and their output to the action outputs. Requires the
-# repository to already be checked out and a Python 3.11+ interpreter to be
-# available on PATH (python3, or the python-executable input). If "packaging"
-# is missing or too old (see scripts/requirements.txt), it is installed in a
-# private virtual environment (with pip, or with uv: see the installer input).
-#
-# Only Linux and macOS runners are supported. On a Windows runner the step
-# fails with an explicit error (the step expects python3 and a POSIX bash).
+# The logic lives in the package src/extract_pyproject_metadata, started by scripts/run.sh;
+# this file only wires the inputs to the scripts and their output to the action outputs.
+# Requires the repository to already be checked out and a Python 3.11+ interpreter
+# (python3 or python) to be available on PATH. Nothing is installed: the only dependency,
+# "packaging", is vendored. Linux, macOS and Windows runners are supported.
 
 name: Extract pyproject metadata
 description: Read the project name, version, optional-dependency extra names, and dependency version specifiers from pyproject.toml
@@ -71,13 +66,6 @@ inputs:
       reporting it ("true" or "false")
     default: "false"
 
-  python-executable:
-    description: >
-      Python interpreter that runs the action, a command found on PATH or a
-      path (it must be Python 3.11 or later), for runners where python3 is not
-      the interpreter to use
-    default: python3
-
   step-summary:
     description: >
       Set to "true" to always write the outputs and the warnings to the job
@@ -85,14 +73,6 @@ inputs:
       write them only when there are warnings (and to write the error when the
       step fails)
     default: auto
-
-  installer:
-    description: >
-      Tool that installs "packaging" in a private virtual environment when the
-      Python lacks it: "pip" (follows the pip configuration), "uv" (faster,
-      follows the configuration of uv, fails if uv is not on PATH) or "auto"
-      (uv if it is on PATH, pip otherwise)
-    default: pip
 
 outputs:
   name:
@@ -231,8 +211,6 @@ runs:
         RESOLVE_DYNAMIC_VERSION: ${{ inputs.resolve-dynamic-version }}
         STRICT: ${{ inputs.strict }}
         STEP_SUMMARY: ${{ inputs.step-summary }}
-        PYTHON_EXECUTABLE: ${{ inputs.python-executable }}
-        INSTALLER: ${{ inputs.installer }}
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
           --github-output "$GITHUB_OUTPUT" \

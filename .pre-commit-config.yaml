@@ -3,7 +3,7 @@ default_language_version:
 
 default_stages: [pre-commit]
 
-exclude: ^\.make/
+exclude: ^(\.make/|src/extract_pyproject_metadata/_vendor/)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

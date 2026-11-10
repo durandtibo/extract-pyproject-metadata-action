@@ -5,21 +5,12 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from extract_pyproject_metadata._vendor.packaging.licenses import (
+    InvalidLicenseExpression,
+    canonicalize_license_expression,
+)
 from extract_pyproject_metadata.checks import check_str
 from extract_pyproject_metadata.errors import MetadataError
-
-try:
-    from packaging.licenses import (
-        InvalidLicenseExpression,  # pyright: ignore[reportAssignmentType]
-        canonicalize_license_expression,
-    )
-except ImportError:  # packaging before 24.2 cannot validate license expressions
-    # Only the None check of ``license_warnings`` uses these names without the import.
-    canonicalize_license_expression = None
-
-    class InvalidLicenseExpression(ValueError):  # noqa: N818 (name in packaging)
-        """Stand-in that is never raised."""
-
 
 __all__ = ["license_warnings", "read_license_text"]
 
@@ -58,8 +49,7 @@ def license_warnings(license_: object, pyproject_path: str) -> list[str]:
     expression.
 
     Only an expression (a string, PEP 639) is checked: not the table of PEP 621, and not an
-    empty string. The check needs ``packaging`` 24.2 or later; with an older one, nothing is
-    checked.
+    empty string.
 
     Args:
         license_: The value of ``[project].license``.
@@ -68,7 +58,7 @@ def license_warnings(license_: object, pyproject_path: str) -> list[str]:
     Returns:
         One warning if ``license_`` is a string that is not a valid expression, none otherwise.
     """
-    if canonicalize_license_expression is None or not isinstance(license_, str) or not license_:
+    if not isinstance(license_, str) or not license_:
         return []
     try:
         canonicalize_license_expression(license_)

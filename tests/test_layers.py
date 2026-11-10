@@ -21,6 +21,7 @@ PACKAGE = "extract_pyproject_metadata"
 
 # The rank of each top-level module or sub-package: a higher rank may import a lower one.
 RANKS = {
+    "_vendor": 0,
     "types": 0,
     "errors": 0,
     "inputs": 1,
@@ -40,8 +41,11 @@ RANKS = {
 # The only modules that a sub-package may import from outside itself.
 ALLOWED_IMPORTS = {"output": {"types", "errors"}}
 
+# The vendored code is not ours, and has its own imports.
 MODULES = sorted(
-    path for path in PACKAGE_PATH.rglob("*.py") if path.stem not in {"__init__", "__main__"}
+    path
+    for path in PACKAGE_PATH.rglob("*.py")
+    if path.stem not in {"__init__", "__main__"} and "_vendor" not in path.parts
 )
 
 
@@ -71,7 +75,7 @@ def _imported_modules(path: Path) -> set[str]:
 def test_every_module_has_a_rank() -> None:
     tops = {_top_level(path.relative_to(PACKAGE_PATH).parts) for path in MODULES}
 
-    assert tops == set(RANKS)
+    assert tops == set(RANKS) - {"_vendor"}
 
 
 @pytest.mark.parametrize("path", MODULES, ids=lambda path: str(path.relative_to(PACKAGE_PATH)))

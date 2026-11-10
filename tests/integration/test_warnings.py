@@ -10,7 +10,7 @@ import pytest
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Report
-from tests.helpers import README_PATH, parse_inputs_args, requires_licenses, write_pyproject
+from tests.helpers import README_PATH, parse_inputs_args, write_pyproject
 
 PROJECT = '[project]\nname = "a"\n'
 
@@ -81,11 +81,7 @@ CASES = [
 ]
 
 
-# The license is only checked with a ``packaging`` that has ``packaging.licenses``.
-PARAMS = [
-    pytest.param(case, id=case.message, marks=requires_licenses if "SPDX" in case.message else ())
-    for case in CASES
-]
+PARAMS = [pytest.param(case, id=case.message) for case in CASES]
 
 
 def _readme_warnings() -> list[str]:

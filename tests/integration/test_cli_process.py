@@ -14,7 +14,6 @@ import pytest
 
 from extract_pyproject_metadata.types import Report
 from tests.helpers import (
-    PACKAGE_PATH,
     SCRIPT_PATH,
     parse_github_output,
     write_pyproject,
@@ -22,23 +21,6 @@ from tests.helpers import (
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def test_the_script_runs_without_packaging_licenses(monkeypatch: pytest.MonkeyPatch) -> None:
-    # packaging before 24.2 has no ``packaging.licenses``: importing it raises ImportError.
-    monkeypatch.setitem(sys.modules, "packaging.licenses", None)
-
-    spec = importlib.util.spec_from_file_location(
-        "license_without_licenses", PACKAGE_PATH / "license.py"
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-
-    spec.loader.exec_module(module)
-
-    assert module.canonicalize_license_expression is None
-    assert module.license_warnings("MIT License", "p.toml") == []
 
 
 def test_cli_end_to_end(tmp_path: Path) -> None:

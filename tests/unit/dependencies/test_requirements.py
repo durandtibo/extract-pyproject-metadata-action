@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from packaging.requirements import InvalidRequirement, Requirement
 
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
+from extract_pyproject_metadata._vendor.packaging.requirements import (
+    InvalidRequirement,
+    Requirement,
+)
 from extract_pyproject_metadata.dependencies.requirements import (
     _index_requirements,
     _scoped_requirements,

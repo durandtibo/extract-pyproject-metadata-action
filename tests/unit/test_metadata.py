@@ -19,7 +19,7 @@ from extract_pyproject_metadata.metadata import (
     extract_metadata,
 )
 from extract_pyproject_metadata.pyproject import load_pyproject
-from tests.helpers import extract, requires_licenses, write_pyproject
+from tests.helpers import extract, write_pyproject
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -185,7 +185,6 @@ def test_extract_metadata_without_build_system(tmp_path: Path) -> None:
     assert (metadata["build_backend"], metadata["build_requires"]) == ("", [])
 
 
-@requires_licenses
 def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n'

@@ -5,8 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from packaging.utils import canonicalize_name
-
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.dependencies.requirements import (
     conflict_warnings,
     index_dependencies,

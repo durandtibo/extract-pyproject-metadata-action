@@ -6,10 +6,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-import extract_pyproject_metadata.license as license_module
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.license import license_warnings
-from tests.helpers import extract, requires_licenses, write_pyproject
+from tests.helpers import extract, write_pyproject
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,7 +70,6 @@ def test_license_warnings_valid_expression(license_: str) -> None:
     assert license_warnings(license_, "p.toml") == []
 
 
-@requires_licenses
 @pytest.mark.parametrize("license_", ["MIT License", "MIT AND", "GPL v3", "(MIT"])
 def test_license_warnings_invalid_expression(license_: str) -> None:
     warnings = license_warnings(license_, "p.toml")
@@ -88,14 +86,6 @@ def test_license_warnings_invalid_expression(license_: str) -> None:
 )
 def test_license_warnings_ignores_what_is_not_an_expression(license_: object) -> None:
     assert license_warnings(license_, "p.toml") == []
-
-
-def test_license_warnings_cannot_check_with_an_old_packaging(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(license_module, "canonicalize_license_expression", None)
-
-    assert license_warnings("MIT License", "p.toml") == []
 
 
 @pytest.mark.parametrize(

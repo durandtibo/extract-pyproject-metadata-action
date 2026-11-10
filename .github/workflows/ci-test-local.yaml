@@ -161,16 +161,20 @@ jobs:
           ACTUAL: ${{ steps.action.outputs.json }}
         run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
 
-  # What the golden files cannot see: failures, strict, and what the action leaves behind.
+  # What the golden files cannot see: failures, strict, and what the action leaves behind. It
+  # also runs on Windows (os_matrix_all).
   wiring:
     # local-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash # the default shell of Windows is PowerShell
     strategy:
       max-parallel: 8
       fail-fast: false
       matrix:
-        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
+        os: ${{ fromJson(inputs.test-matrix).os_matrix_all }}
         python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
 
     steps:
@@ -293,197 +297,7 @@ jobs:
         run: |
           source scripts/test-helper.sh
           assert_equal "__pycache__ directories" "0" "$(count_pycache)"
-          assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "nothing left behind"
-
-  # Windows runners are not supported: the action must fail with an explicit error
-  test-windows:
-    # local-only
-    runs-on: windows-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: 🧪 Test the action on Windows (should fail)
-        id: test-windows
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-        continue-on-error: true
-
-      - name: ✓ Verify the action fails on Windows
-        shell: bash
-        env:
-          OUTCOME: ${{ steps.test-windows.outcome }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
-          print_success "Windows correctly rejected"
-
-  # The action installs "packaging" in a private venv when the Python on PATH lacks
-  # it. setup-python's Python has no "packaging" module, but the job removes it
-  # anyway so that the test does not depend on the runner image.
-  test-bootstrap:
-    # local-only
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Remove packaging from the Python on PATH
-        run: |
-          source scripts/test-helper.sh
-          python -m pip uninstall --yes packaging || true
-          if python -c "import packaging" 2> /dev/null; then
-            print_error "packaging should not be importable"
-            exit 1
-          fi
-          assert_equal "venvs" "0" "$(count_venvs)"
-
-      # packaging is missing and cannot be installed: the step fails
-      - name: 🧪 Test without packaging and without index (should fail)
-        id: test-no-index
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-        env:
-          PIP_NO_INDEX: "1"
-        continue-on-error: true
-
-      - name: ✓ Verify the step fails when packaging cannot be installed
-        env:
-          OUTCOME: ${{ steps.test-no-index.outcome }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
-          assert_equal "venvs left" "0" "$(count_venvs)"
-          print_success "missing packaging correctly failed"
-
-      # packaging is missing: it is installed in a private venv, removed afterwards
-      - name: 🧪 Test without packaging
-        id: test-no-packaging
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify packaging is installed in a private venv
-        env:
-          NAME: ${{ steps.test-no-packaging.outputs.name }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "$NAME"
-          if python -c "import packaging" 2> /dev/null; then
-            print_error "the Python on PATH must not be modified"
-            exit 1
-          fi
-          assert_equal "venvs left" "0" "$(count_venvs)"
-          print_success "bootstrap test passed"
-
-      # packaging is available: the Python on PATH is used
-      - name: Install packaging in the Python on PATH
-        run: python -m pip install --quiet packaging
-
-      - name: 🧪 Test with packaging
-        id: test-packaging
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify the action works when packaging is available
-        env:
-          NAME: ${{ steps.test-packaging.outputs.name }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "$NAME"
-          print_success "packaging available test passed"
-
-  # The installer input chooses the tool that installs "packaging" in the private venv.
-  test-installer:
-    # local-only
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Remove packaging from the Python on PATH
-        run: |
-          source scripts/test-helper.sh
-          python -m pip uninstall --yes packaging || true
-          if python -c "import packaging" 2> /dev/null; then
-            print_error "packaging should not be importable"
-            exit 1
-          fi
-
-      - name: 🧪 Test an invalid installer (should fail)
-        id: test-invalid-installer
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          installer: conda
-        continue-on-error: true
-
-      - name: ✓ Verify an invalid installer fails
-        env:
-          OUTCOME: ${{ steps.test-invalid-installer.outcome }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
-          print_success "an invalid installer fails"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # ratchet:astral-sh/setup-uv@v10.3.3
-
-      - name: 🧪 Test the uv installer
-        id: test-uv
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          installer: uv
-
-      - name: ✓ Verify packaging is installed with uv
-        env:
-          NAME: ${{ steps.test-uv.outputs.name }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "$NAME"
-          if python -c "import packaging" 2> /dev/null; then
-            print_error "the Python on PATH must not be modified"
-            exit 1
-          fi
-          assert_equal "venvs left" "0" "$(count_venvs)"
-          print_success "uv installer test passed"
-
-      - name: 🧪 Test the auto installer
-        id: test-auto
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          installer: auto
-
-      - name: ✓ Verify packaging is installed with the auto installer
-        env:
-          NAME: ${{ steps.test-auto.outputs.name }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "$NAME"
-          assert_equal "venvs left" "0" "$(count_venvs)"
-          print_success "auto installer test passed"
 
   # Only Python 3.11 or later is supported: the action must fail with an explicit error
   test-old-python:

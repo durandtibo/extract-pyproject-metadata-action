@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from packaging.specifiers import SpecifierSet
 
+from extract_pyproject_metadata._vendor.packaging.specifiers import SpecifierSet
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,

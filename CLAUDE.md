@@ -44,7 +44,7 @@ module above it:
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
-  `.venv/bin/pip install -r scripts/requirements.txt --group dev`, or `make install`
+  `.venv/bin/pip install --group dev`, or `make install`
   which runs `uv sync --group dev`) and run `.venv/bin/python`, `.venv/bin/pytest`,
   `.venv/bin/ruff check src scripts tests` (must pass) and `.venv/bin/pyright`
   (strict on `src` and `scripts`; must pass). There is no mypy and no `ty`.
@@ -54,16 +54,19 @@ module above it:
   environment (`uv run`). `.make/` is shared with other repositories and synced
   by a bot: do not edit it here.
 - `pyproject.toml` holds the tool configuration and the `dev` group; the repository
-  is not a Python distribution (`[tool.uv] package = false`). The runtime
-  requirement is declared in `scripts/requirements.txt` (read by `run.sh`) and
-  repeated in `[project].dependencies` for `uv sync`; a test checks they agree.
+  is not a Python distribution (`[tool.uv] package = false`) and the action has no
+  runtime dependency: `packaging` is vendored in
+  `src/extract_pyproject_metadata/_vendor/` (excluded from ruff, pyright, coverage and
+  codespell). Import it as `extract_pyproject_metadata._vendor.packaging`, never as
+  `packaging` (a test checks it). Do not edit the vendored files: update them with
+  `make vendor-packaging VERSION=x.y`.
 - `pre-commit` (`.pre-commit-config.yaml`) runs ruff, shfmt, shellcheck,
   codespell and pyright. The layering of the architecture above is enforced by
   `tests/test_layers.py` (a rank per module): update it with the architecture.
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
-- Only Python >= 3.11 is supported (the script uses `tomllib`). The script must
-  only depend on `packaging`.
+- Only Python >= 3.11 is supported (the script uses `tomllib`). The script may only use the
+  standard library and the vendored `packaging`. `run.sh` installs nothing.
 - Workflows cannot be run locally. Say so in the PR instead of claiming they
   pass.
 
@@ -92,7 +95,7 @@ module above it:
 - Pin every third-party action to a commit SHA or the major tag already used in
   the repository's workflows; do not use a branch.
 - Keep the logic in `src/extract_pyproject_metadata/` and `scripts/run.sh` (which
-  installs the requirements if needed and starts the script), not inline in
+  finds Python 3.11 or later and starts the script), not inline in
   `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
 
 ## Python script

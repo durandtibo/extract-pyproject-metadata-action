@@ -5,9 +5,11 @@ from __future__ import annotations
 import functools
 from typing import Any, cast
 
-from packaging.requirements import InvalidRequirement, Requirement
-from packaging.utils import canonicalize_name
-
+from extract_pyproject_metadata._vendor.packaging.requirements import (
+    InvalidRequirement,
+    Requirement,
+)
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_string_array, get_table
 from extract_pyproject_metadata.dependencies.groups import flatten_group
 from extract_pyproject_metadata.inputs import PROJECT_SCOPE
