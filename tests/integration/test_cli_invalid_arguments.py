@@ -122,7 +122,8 @@ def test_a_malformed_pyproject_fails_cleanly(tmp_path: Path, content: str) -> No
     assert "Traceback" not in result.stderr
 
 
-@pytest.mark.parametrize("count", [1, 1000, 20000])
+# 5000 items stay below the 128 KiB limit of one argument on Linux (MAX_ARG_STRLEN).
+@pytest.mark.parametrize("count", [1, 1000, 5000])
 def test_a_long_valid_array_is_accepted(tmp_path: Path, count: int) -> None:
     extras = json.dumps([f"extra{i}" for i in range(count)])
 
