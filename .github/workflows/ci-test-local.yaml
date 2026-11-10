@@ -84,34 +84,20 @@ jobs:
           assert_equal "outcome" "failure" "$OUTCOME"
           print_success "a missing version fails the step"
 
-  # The list of the cases is the list of the directories of test-data/ with an expected.json.
-  cases:
-    runs-on: ubuntu-slim
-    timeout-minutes: 2
-    outputs:
-      cases: ${{ steps.list.outputs.cases }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: List the cases
-        id: list
-        run: |
-          cases="$(for file in test-data/*/expected.json; do basename "$(dirname "$file")"; done | jq -R . | jq -sc .)"
-          echo "cases=$cases" >> "$GITHUB_OUTPUT"
-
   # Each case runs the action with the inputs of its inputs.json (the other inputs have their
   # default, repeated here: tests/integration/test_workflows.py checks them against action.yaml)
   # and compares the json output with its expected.json. tests/integration/test_golden.py
-  # checks the same files without GitHub.
+  # checks every case of test-data/ without GitHub; this job only checks the wiring, with three
+  # cases: `minimal` (the defaults), `readme-example` (every output filled) and
+  # `python-candidates-none` (a warning). The list is explicit: a test checks that the cases
+  # exist and that, together, they set every input and fill every output of action.yaml.
   golden:
-    needs: cases
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        case: ${{ fromJSON(needs.cases.outputs.cases) }}
+        case: [minimal, readme-example, python-candidates-none]
 
     steps:
       - name: Checkout

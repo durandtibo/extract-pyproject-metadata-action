@@ -189,10 +189,13 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   `inputs.json` (the action inputs of the case, by input name) and the
   `expected.json` (the `json` output). `tests/integration/test_golden.py` checks
   every case without GitHub; `UPDATE_GOLDEN=1 pytest tests/integration/test_golden.py`
-  rewrites the files (review the diff). Adding a case is adding a directory.
+  rewrites the files (review the diff). Adding a case is adding a directory (it is checked by `test_golden.py`; add it to the
+  `golden` matrix only if it covers a new input or output).
 - The integration workflow `.github/workflows/ci-test-local.yaml` (`uses: ./`)
-  checks only the wiring: the `golden` job runs the real action on every case and
-  compares the `json` output with `expected.json` (`scripts/compare_json.py`);
+  checks only the wiring: the `golden` job runs the real action on three
+  cases (`minimal`, `readme-example`, `python-candidates-none`: a three-item matrix) and
+  compares the `json` output with `expected.json` (`scripts/compare_json.py`); a test checks that
+  together they set every input and fill every output;
   the other jobs check what the golden files cannot see (failures, `strict`,
   what the action leaves behind). Pass values through `env:`, never interpolate
   them in `run:` (a test checks it). Add a case or a job for every new input or
