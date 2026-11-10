@@ -3,7 +3,8 @@ revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15'",
-    "python_full_version < '3.15'",
+    "python_full_version == '3.14.*'",
+    "python_full_version < '3.14'",
 ]
 
 [[package]]
@@ -349,7 +350,7 @@ dev = [
     { name = "codespell" },
     { name = "coverage" },
     { name = "docformatter" },
-    { name = "hypothesis" },
+    { name = "hypothesis", marker = "python_full_version >= '3.14'" },
     { name = "import-linter" },
     { name = "invoke" },
     { name = "invoke-tasklib" },
@@ -371,7 +372,7 @@ dev = [
     { name = "codespell", specifier = ">=2.4,<3.0" },
     { name = "coverage", extras = ["toml"], specifier = ">=7.17.0,<8.0" },
     { name = "docformatter", specifier = ">=1.7.8,<2.0" },
-    { name = "hypothesis", specifier = ">=6.100,<6.156" },
+    { name = "hypothesis", marker = "python_full_version >= '3.14'", specifier = ">=6.100,<7.0" },
     { name = "import-linter", specifier = ">=2.0,<3.0" },
     { name = "invoke", specifier = ">=3.0,<4.0" },
     { name = "invoke-tasklib", specifier = ">=0.1.0a0,<1.0" },

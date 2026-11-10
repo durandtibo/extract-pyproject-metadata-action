@@ -10,20 +10,27 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
+from pathlib import Path
 
 import pytest
-from hypothesis import given, settings, strategies as st
 
 from extract_pyproject_metadata.dependencies.lookup import parse_dependencies
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_bool, parse_string_array
 from extract_pyproject_metadata.output.escaping import escape_annotation, escape_annotation_property
+from extract_pyproject_metadata.output.github import write_github_output
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
     highest_python_version,
     lowest_python_version,
     parse_python_candidates,
 )
+from tests.helpers import parse_github_output
+
+# Hypothesis is installed only on Python >= 3.14 (see the dev dependency group).
+hypothesis = pytest.importorskip("hypothesis")
+given, settings, st = hypothesis.given, hypothesis.settings, hypothesis.strategies
 
 settings.register_profile("derandomized", max_examples=200, deadline=None, derandomize=True)
 settings.load_profile("derandomized")
@@ -158,3 +165,13 @@ def test_parse_bool_accepts_only_true_and_false(value: str) -> None:
     else:
         with pytest.raises(MetadataError, match=r"^flag must be 'true' or 'false'"):
             parse_bool(value, "flag")
+
+
+@given(st.text(alphabet=st.characters(blacklist_categories=("Cs",))))
+def test_write_github_output_round_trips_any_value(value: str) -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "output"
+
+        write_github_output(str(path), {"key": value})
+
+        assert parse_github_output(path.read_bytes().decode("utf-8")) == {"key": value}

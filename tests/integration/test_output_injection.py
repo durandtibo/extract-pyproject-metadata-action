@@ -11,12 +11,9 @@ result back.
 from __future__ import annotations
 
 import json
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from hypothesis import given, settings, strategies as st
 
 from extract_pyproject_metadata.cli import _build_parser, main
 from extract_pyproject_metadata.output.github import (
@@ -29,6 +26,7 @@ from extract_pyproject_metadata.report import build_report
 
 if TYPE_CHECKING:
     import argparse
+    from pathlib import Path
 
 HOSTILE_VALUES = [
     "plain",
@@ -75,17 +73,6 @@ def test_write_github_output_round_trips_a_hostile_value(tmp_path: Path, value: 
 
     content = path.read_bytes().decode("utf-8")
     assert parse_github_output(content) == {"before": "1", "hostile": value, "after": "2"}
-
-
-@settings(max_examples=200, deadline=None, derandomize=True)
-@given(st.text(alphabet=st.characters(blacklist_categories=("Cs",))))
-def test_write_github_output_round_trips_any_value(value: str) -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "output"
-
-        write_github_output(str(path), {"key": value})
-
-        assert parse_github_output(path.read_bytes().decode("utf-8")) == {"key": value}
 
 
 def test_write_github_output_picks_another_delimiter_when_the_value_contains_it(
