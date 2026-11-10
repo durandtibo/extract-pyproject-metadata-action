@@ -42,28 +42,28 @@ def test_load_pyproject_bom_only_at_the_start(tmp_path: Path) -> None:
     path = tmp_path / "pyproject.toml"
     path.write_bytes(b'[project]\n\xef\xbb\xbfname = "coola"\n')
 
-    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid TOML"):
+    with pytest.raises(MetadataError, match=r"pyproject-path: not valid TOML"):
         load_pyproject(str(path))
 
 
 def test_load_pyproject_nested_too_deeply(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, "[project]\nx = " + "[" * 5000 + "]" * 5000 + "\n")
 
-    with pytest.raises(MetadataError, match=r"pyproject.toml is nested too deeply to be parsed"):
+    with pytest.raises(MetadataError, match=r"pyproject-path: nested too deeply to be parsed"):
         load_pyproject(str(path))
 
 
 def test_load_pyproject_missing_file(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
-    with pytest.raises(MetadataError, match=r"pyproject.toml not found at: .*does-not-exist.toml"):
+    with pytest.raises(MetadataError, match=r"pyproject-path: not a file"):
         load_pyproject(str(missing))
 
 
 def test_load_pyproject_invalid_toml(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, "this is not [valid toml")
 
-    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid TOML"):
+    with pytest.raises(MetadataError, match=r"pyproject-path: not valid TOML"):
         load_pyproject(str(path))
 
 
@@ -71,7 +71,7 @@ def test_load_pyproject_invalid_utf8(tmp_path: Path) -> None:
     path = tmp_path / "pyproject.toml"
     path.write_bytes(b'[project]\nname = "caf\xe9"\n')
 
-    with pytest.raises(MetadataError, match=r"pyproject.toml is not valid UTF-8"):
+    with pytest.raises(MetadataError, match=r"pyproject-path: not valid UTF-8"):
         load_pyproject(str(path))
 
 
@@ -83,36 +83,34 @@ def test_load_pyproject_unreadable_file(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr(Path, "open", deny)
 
-    with pytest.raises(MetadataError, match=r"pyproject.toml cannot be read: .*Permission denied"):
+    with pytest.raises(MetadataError, match=r"pyproject-path: cannot be read: .*Permission denied"):
         load_pyproject(str(path))
 
 
 def test_extra_names_without_optional_dependencies() -> None:
-    assert read_extra_names({}, ["all"], "p.toml") == ["all"]
+    assert read_extra_names({}, ["all"]) == ["all"]
 
 
 def test_extra_names_optional_dependencies_must_be_a_table() -> None:
-    with pytest.raises(
-        MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"
-    ):
-        read_extra_names({"optional-dependencies": []}, [], "p.toml")
+    with pytest.raises(MetadataError, match=r"^\[project\].optional-dependencies: must be a table"):
+        read_extra_names({"optional-dependencies": []}, [])
 
 
 def test_extra_names() -> None:
     project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
 
-    assert read_extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
+    assert read_extra_names(project, ["", "b"]) == ["", "b", "A_x"]
 
 
 def test_group_names_are_sorted_and_deduplicated() -> None:
     data = {"dependency-groups": {"Dev": [], "test": [], "dev": [], "docs": []}}
 
-    assert read_group_names(data, "p.toml") == ["Dev", "docs", "test"]
+    assert read_group_names(data) == ["Dev", "docs", "test"]
 
 
-def test_read_project_error_names_the_file() -> None:
-    with pytest.raises(MetadataError, match=r"custom/pyproject.toml is missing required key"):
-        read_project({"project": {"version": "1"}}, [], "custom/pyproject.toml")
+def test_read_project_missing_name_message() -> None:
+    with pytest.raises(MetadataError, match=r"^\[project\]\.name: missing$"):
+        read_project({"project": {"version": "1"}}, [])
 
 
 def test_read_project_name_and_version(tmp_path: Path) -> None:
@@ -214,7 +212,7 @@ def test_read_project_missing_name(tmp_path: Path) -> None:
         """,
     )
 
-    with pytest.raises(MetadataError, match=r"missing required key \[project\]\.name"):
+    with pytest.raises(MetadataError, match=r"\[project\]\.name: missing"):
         extract(path)
 
 
@@ -223,7 +221,7 @@ def test_read_project_dynamic_name_is_an_error(tmp_path: Path, dynamic: str) -> 
     path = write_pyproject(tmp_path, f'[project]\nversion = "1.2.3"\ndynamic = {dynamic}\n')
 
     with pytest.raises(
-        MetadataError, match=r"\[project\]\.name is listed in \[project\]\.dynamic.*static name"
+        MetadataError, match=r"\[project\]\.name: listed in \[project\]\.dynamic.*static name"
     ):
         extract(path)
 
@@ -239,12 +237,12 @@ def test_read_project_static_name_wins_over_dynamic(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("project", "match"),
     [
-        ('name = 1\nversion = "1.2.3"', r"\[project\]\.name must be a non-empty string, got: 1"),
-        ('name = ""\nversion = "1.2.3"', r"\[project\]\.name must be a non-empty string, got: ''"),
-        ('name = ["a"]\nversion = "1.2.3"', r"\[project\]\.name must be a non-empty string"),
-        ('name = "coola"\nversion = 1.0', r"\[project\]\.version must be a string, got: 1\.0"),
-        ('name = "coola"\nversion = 1', r"\[project\]\.version must be a string, got: 1"),
-        ('name = "coola"\nversion = true', r"\[project\]\.version must be a string, got: True"),
+        ('name = 1\nversion = "1.2.3"', r"\[project\]\.name: must be a non-empty string, got: 1"),
+        ('name = ""\nversion = "1.2.3"', r"\[project\]\.name: must be a non-empty string, got: ''"),
+        ('name = ["a"]\nversion = "1.2.3"', r"\[project\]\.name: must be a non-empty string"),
+        ('name = "coola"\nversion = 1.0', r"\[project\]\.version: must be a string, got: 1\.0"),
+        ('name = "coola"\nversion = 1', r"\[project\]\.version: must be a string, got: 1"),
+        ('name = "coola"\nversion = true', r"\[project\]\.version: must be a string, got: True"),
     ],
 )
 def test_read_project_name_and_version_must_be_strings(
@@ -260,7 +258,7 @@ def test_read_project_name_and_version_must_be_strings(
 def test_read_project_project_must_be_a_table(tmp_path: Path, content: str) -> None:
     path = write_pyproject(tmp_path, content)
 
-    with pytest.raises(MetadataError, match=r"\[project\] must be a table"):
+    with pytest.raises(MetadataError, match=r"\[project\]: must be a table"):
         extract(path)
 
 
@@ -285,7 +283,7 @@ def test_read_project_dynamic_version_is_empty_and_warns(tmp_path: Path) -> None
         "extras": [],
         "groups": [],
     }
-    assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
+    assert warnings == ["[project].version is dynamic, the version output is empty"]
 
 
 def test_read_project_static_version_wins_over_dynamic(tmp_path: Path) -> None:
@@ -298,7 +296,7 @@ def test_read_project_static_version_wins_over_dynamic(tmp_path: Path) -> None:
     assert metadata["version"] == "1.2.3"
     assert warnings == [
         (
-            f"{path}: [project].version is set and also listed in [project].dynamic, "
+            "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         )
     ]
@@ -320,11 +318,11 @@ def test_read_project_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -
 
     assert warnings == [
         (
-            f"{path}: [project].dependencies is set and also listed in [project].dynamic, "
+            "[project].dependencies is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         ),
         (
-            f"{path}: [project].version is set and also listed in [project].dynamic, "
+            "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         ),
     ]
@@ -343,7 +341,7 @@ def test_read_project_dynamic_fields_that_are_not_set_do_not_warn(tmp_path: Path
 def test_read_project_missing_version_with_other_dynamic_fields(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["readme"]\n')
 
-    with pytest.raises(MetadataError, match=r"missing required key \[project\]\.version"):
+    with pytest.raises(MetadataError, match=r"\[project\]\.version: missing"):
         extract(path)
 
 
@@ -353,7 +351,7 @@ def test_read_project_dynamic_must_contain_only_strings(tmp_path: Path, value: s
         tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndynamic = {value}\n'
     )
 
-    with pytest.raises(MetadataError, match=r"\[project\]\.dynamic must contain only strings"):
+    with pytest.raises(MetadataError, match=r"\[project\]\.dynamic: must contain only strings"):
         extract(path)
 
 
@@ -363,7 +361,7 @@ def test_read_project_dynamic_must_be_an_array(tmp_path: Path, value: str) -> No
         tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndynamic = {value}\n'
     )
 
-    with pytest.raises(MetadataError, match=r"\[project\]\.dynamic must be an array"):
+    with pytest.raises(MetadataError, match=r"\[project\]\.dynamic: must be an array"):
         extract(path)
 
 
@@ -376,7 +374,7 @@ def test_read_project_missing_version(tmp_path: Path) -> None:
         """,
     )
 
-    with pytest.raises(MetadataError, match=r"missing required key \[project\]\.version"):
+    with pytest.raises(MetadataError, match=r"\[project\]\.version: missing"):
         extract(path)
 
 
@@ -412,7 +410,7 @@ def test_read_project_extra_values_not_a_list(tmp_path: Path) -> None:
 def test_read_project_extra_values_must_be_strings(tmp_path: Path, value: str) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    with pytest.raises(MetadataError, match="extra-values must be a JSON array of strings"):
+    with pytest.raises(MetadataError, match="extra-values: must be a JSON array of strings"):
         extract(path, value)
 
 
@@ -442,14 +440,14 @@ def test_parse_string_array(value: str, expected: list[str]) -> None:
 
 @pytest.mark.parametrize("value", ["not json", ""])
 def test_parse_string_array_invalid_json(value: str) -> None:
-    with pytest.raises(MetadataError, match=r"^extra-values is not valid JSON: "):
+    with pytest.raises(MetadataError, match=r"^extra-values: not valid JSON: "):
         parse_string_array(value, "extra-values")
 
 
 @pytest.mark.parametrize("value", ['{"a": 1}', '"a"', "1", "null", "[1]", '["a", null]', '[["a"]]'])
 def test_parse_string_array_not_an_array_of_strings(value: str) -> None:
     with pytest.raises(
-        MetadataError, match=r"^extra-values must be a JSON array of strings, got: "
+        MetadataError, match=r"^extra-values: must be a JSON array of strings, got: "
     ):
         parse_string_array(value, "extra-values")
 
@@ -537,7 +535,7 @@ def test_read_project_valid_pep_440_versions(tmp_path: Path, version: str) -> No
 def test_read_project_invalid_pep_440_version(tmp_path: Path, version: str) -> None:
     path = write_pyproject(tmp_path, f'[project]\nname = "p"\nversion = "{version}"\n')
 
-    message = f"{path.name}: [project].version is not a valid PEP 440 version: {version!r}"
+    message = f"[project].version: not a valid PEP 440 version: {version!r}"
     with pytest.raises(MetadataError, match=re.escape(message)):
         extract(path)
 
@@ -570,44 +568,40 @@ def test_read_project_normalized_name(tmp_path: Path, name: str, expected: str) 
 
 
 def test_required_name() -> None:
-    assert _required_name({"name": 1}, [], "p.toml") == 1
+    assert _required_name({"name": 1}, []) == 1
 
 
 def test_required_name_missing() -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml is missing required key \[project\].name$"):
-        _required_name({}, ["version"], "p.toml")
+    with pytest.raises(MetadataError, match=r"^\[project\].name: missing$"):
+        _required_name({}, ["version"])
 
 
 def test_required_name_dynamic() -> None:
-    with pytest.raises(
-        MetadataError, match=r"^p.toml: \[project\].name is listed in .*static name$"
-    ):
-        _required_name({}, ["name"], "p.toml")
+    with pytest.raises(MetadataError, match=r"^\[project\].name: listed in .*static name$"):
+        _required_name({}, ["name"])
 
 
 def test_static_and_dynamic_warnings() -> None:
     project = {"name": "a", "version": "1", "description": "d"}
 
-    assert _static_and_dynamic_warnings(
-        project, ["version", "readme", "version", "name"], "p.toml"
-    ) == [
+    assert _static_and_dynamic_warnings(project, ["version", "readme", "version", "name"]) == [
         (
-            "p.toml: [project].version is set and also listed in [project].dynamic, "
+            "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         ),
         (
-            "p.toml: [project].name is set and also listed in [project].dynamic, "
+            "[project].name is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         ),
     ]
 
 
 def test_static_and_dynamic_warnings_none() -> None:
-    assert _static_and_dynamic_warnings({"name": "a"}, ["version"], "p.toml") == []
+    assert _static_and_dynamic_warnings({"name": "a"}, ["version"]) == []
 
 
 def test_required_version_static() -> None:
-    assert _required_version({"version": "1.0"}, [], "p.toml") == (
+    assert _required_version({"version": "1.0"}, []) == (
         "1.0",
         True,
         [],
@@ -615,67 +609,61 @@ def test_required_version_static() -> None:
 
 
 def test_required_version_is_returned_whatever_its_type() -> None:
-    assert _required_version({"version": 1.0}, [], "p.toml") == (1.0, True, [])
+    assert _required_version({"version": 1.0}, []) == (1.0, True, [])
 
 
 def test_required_version_dynamic_warns() -> None:
-    assert _required_version({}, ["version"], "p.toml") == (
+    assert _required_version({}, ["version"]) == (
         "",
         False,
-        ["p.toml: [project].version is dynamic, the version output is empty"],
+        ["[project].version is dynamic, the version output is empty"],
     )
 
 
 def test_required_version_missing() -> None:
-    with pytest.raises(
-        MetadataError, match=r"^p.toml is missing required key \[project\].version$"
-    ):
-        _required_version({}, ["readme"], "p.toml")
+    with pytest.raises(MetadataError, match=r"^\[project\].version: missing$"):
+        _required_version({}, ["readme"])
 
 
 @pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
 def test_valid_name(name: str) -> None:
-    assert _valid_name(name, "p.toml") == name
+    assert _valid_name(name) == name
 
 
 @pytest.mark.parametrize("name", [1, "", None, ["a"]])
 def test_valid_name_not_a_non_empty_string(name: object) -> None:
     with pytest.raises(
-        MetadataError, match=r"^p.toml: \[project\].name must be a non-empty string, got: "
+        MetadataError, match=r"^\[project\].name: must be a non-empty string, got: "
     ):
-        _valid_name(name, "p.toml")
+        _valid_name(name)
 
 
 @pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
 def test_valid_name_not_a_project_name(name: str) -> None:
-    with pytest.raises(
-        MetadataError, match=r"^p.toml: \[project\].name is not a valid project name"
-    ):
-        _valid_name(name, "p.toml")
+    with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
+        _valid_name(name)
 
 
 @pytest.mark.parametrize("version", ["1.0-RC1", "1.2.3", "v1.0"])
 def test_valid_version_static(version: str) -> None:
-    assert _valid_version(version, True, "p.toml") == version
+    assert _valid_version(version, True) == version
 
 
 def test_valid_version_dynamic() -> None:
-    assert _valid_version("", False, "p.toml") is None
+    assert _valid_version("", False) is None
 
 
 def test_valid_version_not_a_string() -> None:
-    with pytest.raises(
-        MetadataError, match=r"^p.toml: \[project\].version must be a string, got: 1.0$"
-    ):
-        _valid_version(1.0, True, "p.toml")
+    with pytest.raises(MetadataError, match=r"^\[project\].version: must be a string, got: 1.0$"):
+        _valid_version(1.0, True)
 
 
 def test_valid_version_invalid() -> None:
     with pytest.raises(
         MetadataError,
-        match=r"^p.toml: \[project\].version is not a valid PEP 440 version: 'latest'$",
+        match=r"^\[project\].version: not a valid PEP 440 version: 'latest'$",
     ):
-        _valid_version("latest", True, "p.toml")
+        _valid_version("latest", True)
 
 
 @pytest.mark.parametrize(
@@ -723,7 +711,7 @@ def test_read_project_valid_names(tmp_path: Path, name: str) -> None:
 def test_read_project_invalid_names(tmp_path: Path, name: str) -> None:
     path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
 
-    with pytest.raises(MetadataError, match=r"\[project\]\.name is not a valid project name"):
+    with pytest.raises(MetadataError, match=r"\[project\]\.name: not a valid project name"):
         extract(path)
 
 
@@ -761,12 +749,12 @@ def test_read_project_normalized_version_is_empty_when_the_version_is_dynamic(
 def test_read_project_static_version_listed_as_dynamic_warns() -> None:
     data = {"project": {"name": "a", "version": "1.0", "dynamic": ["version"]}}
 
-    project, warnings = read_project(data, [], "p.toml")
+    project, warnings = read_project(data, [])
 
     assert project.version == "1.0"
     assert warnings == [
         (
-            "p.toml: [project].version is set and also listed in [project].dynamic, "
+            "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         )
     ]
@@ -775,10 +763,10 @@ def test_read_project_static_version_listed_as_dynamic_warns() -> None:
 def test_read_project_dynamic_version_warns() -> None:
     data = {"project": {"name": "a", "dynamic": ["version"]}}
 
-    project, warnings = read_project(data, [], "p.toml")
+    project, warnings = read_project(data, [])
 
     assert project.version is None
-    assert warnings == ["p.toml: [project].version is dynamic, the version output is empty"]
+    assert warnings == ["[project].version is dynamic, the version output is empty"]
 
 
 @pytest.mark.parametrize(
@@ -816,7 +804,7 @@ def test_read_project_fields(tmp_path: Path) -> None:
         """,
     )
 
-    project, warnings = read_project(load_pyproject(str(path)), [""], str(path))
+    project, warnings = read_project(load_pyproject(str(path)), [""])
 
     assert project == Project(
         name="My_Package",
@@ -832,6 +820,6 @@ def test_read_project_fields(tmp_path: Path) -> None:
 def test_read_project_dynamic_version_is_none(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    project, _ = read_project(load_pyproject(str(path)), [], str(path))
+    project, _ = read_project(load_pyproject(str(path)), [])
 
     assert project.version is None

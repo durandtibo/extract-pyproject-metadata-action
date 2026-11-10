@@ -114,7 +114,7 @@ def test_the_warning_fails_the_step_with_strict(tmp_path: Path, case: Case) -> N
     count = len(_report(tmp_path, case, strict=False)["warnings"])
 
     with pytest.raises(
-        MetadataError, match=rf"strict is 'true' and there are {count} warning\(s\):\n- "
+        MetadataError, match=rf"strict: true and there are {count} warning\(s\):\n- "
     ):
         _report(tmp_path, case, strict=True)
 

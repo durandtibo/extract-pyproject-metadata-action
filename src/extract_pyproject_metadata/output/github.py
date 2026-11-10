@@ -134,7 +134,7 @@ def write_github_output(
                     delimiter = delimiter_factory()
                 f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
     except OSError as exc:
-        msg = f"cannot write the outputs to {output_path}: {exc}"
+        msg = f"GITHUB_OUTPUT: cannot write {output_path}: {exc}"
         raise MetadataError(msg) from exc
 
 
@@ -164,16 +164,16 @@ def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
 
     Args:
         message: The message of the ``MetadataError``.
-        pyproject_path: Path of the pyproject.toml, used as the ``file`` of the
-            annotation.
+        pyproject_path: Path of the pyproject.toml: the ``file`` of the annotation, or the
+            prefix of the plain message. The message itself never contains it.
         annotate: Whether to build a ``::error file=<path>::`` workflow command
             (so that GitHub shows an error annotation on the file) instead of
-            the plain message.
+            ``<path>: <message>``.
 
     Returns:
         The line to print on stderr.
     """
     if not annotate:
-        return message
+        return f"{pyproject_path}: {message}"
     file = escape_annotation_property(pyproject_path)
     return f"::error file={file}::{escape_annotation(message)}"

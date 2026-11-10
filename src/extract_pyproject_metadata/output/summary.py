@@ -85,7 +85,7 @@ def write_step_summary(summary_path: str, markdown: str) -> None:
         with Path(summary_path).open("a", encoding="utf-8", newline="") as f:
             f.write(f"{markdown}\n")
     except OSError as exc:
-        msg = f"cannot write the job summary to {summary_path}: {exc}"
+        msg = f"GITHUB_STEP_SUMMARY: cannot write {summary_path}: {exc}"
         raise MetadataError(msg) from exc
 
 

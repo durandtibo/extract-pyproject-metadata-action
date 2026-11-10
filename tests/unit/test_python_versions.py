@@ -52,7 +52,7 @@ def test_extract_metadata_requires_python_must_be_a_string(tmp_path: Path, value
     )
 
     with pytest.raises(
-        MetadataError, match=r"\[project\]\.requires-python must be a string, got: "
+        MetadataError, match=r"\[project\]\.requires-python: must be a string, got: "
     ):
         extract(path)
 
@@ -95,11 +95,11 @@ def test_compatible_python_versions(requires_python: str, expected: list[str]) -
     [">=3.14", ">3.12.5,<3.12.6", "<3.9.0", "==3.12.150", ">=3.12.5,<3.12.7,!=3.12.5,!=3.12.6"],
 )
 def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> None:
-    assert compatible_python_versions(requires_python, CANDIDATES, "p.toml") == (
+    assert compatible_python_versions(requires_python, CANDIDATES) == (
         [],
         [
             (
-                "p.toml: no python-candidates version satisfies [project].requires-python "
+                "no python-candidates version satisfies [project].requires-python "
                 f"({requires_python!r}): python-versions is empty, and a job "
                 "matrix built from it is rejected by GitHub"
             )
@@ -107,10 +107,10 @@ def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> 
     )
 
 
-def test_compatible_python_versions_none_allowed_warning_names_the_file() -> None:
-    _, warnings = compatible_python_versions(">=4", CANDIDATES, "custom/pyproject.toml")
+def test_compatible_python_versions_none_allowed_warning_message() -> None:
+    _, warnings = compatible_python_versions(">=4", CANDIDATES)
 
-    assert warnings[0].startswith("custom/pyproject.toml: no python-candidates version")
+    assert warnings[0].startswith("no python-candidates version")
 
 
 def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
@@ -123,12 +123,12 @@ def test_compatible_python_versions_no_candidates_does_not_warn() -> None:
 
 @pytest.mark.parametrize("requires_python", ["python3", ">=", "3.10 or later"])
 def test_compatible_python_versions_invalid_specifier_warns(requires_python: str) -> None:
-    versions, warnings = compatible_python_versions(requires_python, CANDIDATES, "p.toml")
+    versions, warnings = compatible_python_versions(requires_python, CANDIDATES)
 
     assert versions == []
     assert len(warnings) == 1
     assert warnings[0].startswith(
-        "p.toml: [project].requires-python is not a valid version specifier, "
+        "[project].requires-python is not a valid version specifier, "
         "the python-versions output is empty: "
     )
 

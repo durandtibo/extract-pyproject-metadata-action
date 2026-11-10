@@ -21,7 +21,7 @@
   "dependency_specifiers": {},
   "dependency_requirements": {},
   "warnings": [
-    "test-data/dynamic-version/pyproject.toml: [project].version is dynamic, the version output is empty"
+    "[project].version is dynamic, the version output is empty"
   ],
   "schema_version": 2
 }

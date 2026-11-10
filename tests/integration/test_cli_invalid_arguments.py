@@ -47,21 +47,21 @@ def run_script(
     ("args", "message"),
     [
         # extra-values
-        (["{path}", ""], "extra-values is not valid JSON"),
-        (["{path}", " "], "extra-values is not valid JSON"),
-        (["{path}", "[1, 2"], "extra-values is not valid JSON"),
-        (["{path}", "['a']"], "extra-values is not valid JSON"),
-        (["{path}", "null"], "extra-values must be a JSON array of strings"),
-        (["{path}", "{}"], "extra-values must be a JSON array of strings"),
-        (["{path}", '"a"'], "extra-values must be a JSON array of strings"),
-        (["{path}", "[null]"], "extra-values must be a JSON array of strings"),
-        (["{path}", '["a", ["b"]]'], "extra-values must be a JSON array of strings"),
-        (["{path}", "NaN"], "extra-values must be a JSON array of strings"),
+        (["{path}", ""], "extra-values: not valid JSON"),
+        (["{path}", " "], "extra-values: not valid JSON"),
+        (["{path}", "[1, 2"], "extra-values: not valid JSON"),
+        (["{path}", "['a']"], "extra-values: not valid JSON"),
+        (["{path}", "null"], "extra-values: must be a JSON array of strings"),
+        (["{path}", "{}"], "extra-values: must be a JSON array of strings"),
+        (["{path}", '"a"'], "extra-values: must be a JSON array of strings"),
+        (["{path}", "[null]"], "extra-values: must be a JSON array of strings"),
+        (["{path}", '["a", ["b"]]'], "extra-values: must be a JSON array of strings"),
+        (["{path}", "NaN"], "extra-values: must be a JSON array of strings"),
         # dependencies
-        (["{path}", "[]", ""], "dependencies is not valid JSON"),
-        (["{path}", "[]", "coola"], "dependencies is not valid JSON"),
-        (["{path}", "[]", '{"a": 1}'], "dependencies must be a JSON array of strings"),
-        (["{path}", "[]", "[1]"], "dependencies must be a JSON array of strings"),
+        (["{path}", "[]", ""], "dependencies: not valid JSON"),
+        (["{path}", "[]", "coola"], "dependencies: not valid JSON"),
+        (["{path}", "[]", '{"a": 1}'], "dependencies: must be a JSON array of strings"),
+        (["{path}", "[]", "[1]"], "dependencies: must be a JSON array of strings"),
         # python-candidates
         (["--python-candidates", "3.12", "{path}", "[]"], "python-candidates"),
         (["--python-candidates", "[3.12]", "{path}", "[]"], "python-candidates"),
@@ -70,8 +70,8 @@ def run_script(
         # booleans
         (["--strict", "0", "{path}", "[]"], "strict"),
         # the file
-        (["", "[]"], "not found"),
-        (["{path}.missing", "[]"], "not found"),
+        (["", "[]"], "not a file"),
+        (["{path}.missing", "[]"], "not a file"),
     ],
 )
 def test_invalid_argument_fails_cleanly(tmp_path: Path, args: list[str], message: str) -> None:

@@ -49,7 +49,7 @@ def test_compact_json(value: object, expected: str) -> None:
 
 
 def test_write_github_output_unwritable_file(tmp_path: Path) -> None:
-    with pytest.raises(MetadataError, match=r"cannot write the outputs to .*: "):
+    with pytest.raises(MetadataError, match=r"GITHUB_OUTPUT: cannot write .*: "):
         write_github_output(str(tmp_path), {"name": "coola"})
 
 

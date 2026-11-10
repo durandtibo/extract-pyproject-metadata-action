@@ -29,7 +29,7 @@ _MAX_INCLUDE_DEPTH = 100
 _MAX_GROUP_EXPANSIONS = 10_000
 
 
-def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
+def _cycle_message(cycle: tuple[str, ...]) -> str:
     """Describe an include-group cycle, starting from its smallest group
     name.
 
@@ -39,14 +39,13 @@ def _cycle_message(cycle: tuple[str, ...], pyproject_path: str) -> str:
     start = cycle.index(min(cycle))
     ordered = (*cycle[start:], *cycle[:start])
     path = " -> ".join((*ordered, ordered[0]))
-    return f"{pyproject_path}: [dependency-groups] has an include-group cycle: {path}"
+    return f"[dependency-groups] has an include-group cycle: {path}"
 
 
 def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     groups: dict[str, Any],
     name: str,
     seen: tuple[str, ...] = (),
-    pyproject_path: str = "pyproject.toml",
     budget: list[int] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Return requirement strings of a dependency group, expanding
@@ -60,7 +59,6 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
         groups: The ``[dependency-groups]`` table.
         name: The group to expand.
         seen: The (normalized) groups being expanded, outermost first.
-        pyproject_path: Path of the file, used in the messages.
         budget: A one-item list with the number of expansions left, shared by the recursive
             calls. ``_MAX_GROUP_EXPANSIONS`` when it is not given.
 
@@ -77,10 +75,10 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     """
     key = canonicalize_name(name)
     if key in seen:
-        return [], [_cycle_message(seen[seen.index(key) :], pyproject_path)]
+        return [], [_cycle_message(seen[seen.index(key) :])]
     if len(seen) >= _MAX_INCLUDE_DEPTH:
         msg = (
-            f"{pyproject_path}: [dependency-groups] include-group entries are nested more than "
+            "[dependency-groups]: include-group entries are nested more than "
             f"{_MAX_INCLUDE_DEPTH} levels deep, at group {name!r}"
         )
         raise MetadataError(msg)
@@ -89,7 +87,7 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     budget[0] -= 1
     if budget[0] < 0:
         msg = (
-            f"{pyproject_path}: [dependency-groups] include-group entries expand more than "
+            "[dependency-groups]: include-group entries expand more than "
             f"{_MAX_GROUP_EXPANSIONS} groups in total, at group {name!r}: a group is included "
             "several times by several groups"
         )
@@ -100,7 +98,7 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
         if canonicalize_name(gname) != key:
             continue
         label = f"[dependency-groups].{gname}"
-        for entry in check_array(entries, label, pyproject_path):
+        for entry in check_array(entries, label):
             if isinstance(entry, str):
                 out.append(entry)
             elif isinstance(entry, dict) and set(cast("dict[str, Any]", entry)) == {
@@ -108,43 +106,34 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
             }:
                 included: object = cast("dict[str, Any]", entry)["include-group"]
                 if not isinstance(included, str):
-                    msg = (
-                        f"{pyproject_path}: {label}: include-group must be a string, "
-                        f"got: {included!r}"
-                    )
+                    msg = f"{label}: include-group must be a string, got: {included!r}"
                     raise MetadataError(msg)
                 if not any(
                     canonicalize_name(group) == canonicalize_name(included) for group in groups
                 ):
-                    warnings.append(
-                        f"{pyproject_path}: {label}: include-group {included!r} "
-                        "does not match any group"
-                    )
+                    warnings.append(f"{label}: include-group {included!r} does not match any group")
                 included_reqs, included_warnings = flatten_group(
-                    groups, included, (*seen, key), pyproject_path, budget
+                    groups, included, (*seen, key), budget
                 )
                 out.extend(included_reqs)
                 warnings.extend(included_warnings)
             else:
                 msg = (
-                    f"{pyproject_path}: {label} entries must be strings or "
+                    f"{label}: entries must be strings or "
                     f"{{'include-group': <name>}} tables, got: {entry!r}"
                 )
                 raise MetadataError(msg)
     return out, list(dict.fromkeys(warnings))
 
 
-def _dynamic_message(field: str, pyproject_path: str) -> str:
+def _dynamic_message(field: str) -> str:
     """Describe a dependency field that is dynamic, so cannot be
     read."""
-    return (
-        f"{pyproject_path}: [project].{field} is dynamic, it cannot be read, so no "
-        "requirement is found in it"
-    )
+    return f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it"
 
 
 def _gather(
-    data: dict[str, Any], dynamic: frozenset[str], pyproject_path: str
+    data: dict[str, Any], dynamic: frozenset[str]
 ) -> tuple[list[tuple[str, str]], list[str]]:
     """All requirement strings with the place they are declared in, in
     search order.
@@ -152,7 +141,6 @@ def _gather(
     Args:
         data: The parsed pyproject.toml.
         dynamic: The fields of ``[project].dynamic``, as read by ``read_project``.
-        pyproject_path: Path of the file, used in the messages.
 
     Returns:
         A tuple ``(requirements, warnings)``. ``warnings`` has one message per dependency
@@ -170,23 +158,21 @@ def _gather(
             of their values has the wrong type, or if a requirement of
             ``[project].dependencies`` or of an extra is not a string.
     """
-    project = get_table(data, "project", "[project]", pyproject_path)
+    project = get_table(data, "project", "[project]")
     reqs = [
         (PROJECT_SCOPE, raw)
-        for raw in check_string_array(
-            project.get("dependencies", []), "[project].dependencies", pyproject_path
-        )
+        for raw in check_string_array(project.get("dependencies", []), "[project].dependencies")
     ]
     optional_dependencies = get_table(
-        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
+        project, "optional-dependencies", "[project].optional-dependencies"
     )
     for extra, extra_reqs in optional_dependencies.items():
         label = f"[project.optional-dependencies].{extra}"
         scope = f"extra:{canonicalize_name(extra)}"
-        reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label, pyproject_path))
-    groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+        reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label))
+    groups = get_table(data, "dependency-groups", "[dependency-groups]")
     warnings = [
-        _dynamic_message(field, pyproject_path)
+        _dynamic_message(field)
         for field in ("dependencies", "optional-dependencies")
         if field in dynamic and field not in project
     ]
@@ -196,7 +182,7 @@ def _gather(
     for group in groups:
         first_spellings.setdefault(canonicalize_name(group), group)
     for gname in first_spellings.values():
-        group_reqs, group_warnings = flatten_group(groups, gname, pyproject_path=pyproject_path)
+        group_reqs, group_warnings = flatten_group(groups, gname)
         scope = f"group:{canonicalize_name(gname)}"
         reqs.extend((scope, raw) for raw in group_reqs)
         warnings.extend(group_warnings)
@@ -204,7 +190,7 @@ def _gather(
 
 
 def collect_requirements(
-    data: dict[str, Any], dynamic: frozenset[str], pyproject_path: str = "pyproject.toml"
+    data: dict[str, Any], dynamic: frozenset[str]
 ) -> tuple[list[Requirement], list[str]]:
     """Read and parse every requirement of the file, in search order.
 
@@ -214,7 +200,6 @@ def collect_requirements(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dynamic: The fields of ``[project].dynamic``, as read by ``read_project``.
-        pyproject_path: Path of the file, used in the messages.
 
     Returns:
         A tuple ``(requirements, warnings)``. ``warnings`` lists the dynamic dependency fields,
@@ -225,14 +210,14 @@ def collect_requirements(
         MetadataError: If a table or a value has the wrong type, or an include-group limit is
             exceeded (see ``_gather`` and ``flatten_group``).
     """
-    scoped, warnings = _gather(data, dynamic, pyproject_path)
+    scoped, warnings = _gather(data, dynamic)
     warnings = list(dict.fromkeys(warnings))
     requirements: list[Requirement] = []
     for scope, raw in scoped:
         try:
             parsed = pep508.Requirement(raw)
         except pep508.InvalidRequirement as exc:
-            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
+            warnings.append(f"Ignoring invalid requirement {raw!r}: {exc}")
             continue
         requirements.append(
             Requirement(
@@ -265,14 +250,13 @@ def find_requirements(requirements: list[Requirement], lookup: Lookup) -> list[R
 
 
 def lookup_specifiers(
-    requirements: list[Requirement], lookups: list[Lookup], pyproject_path: str
+    requirements: list[Requirement], lookups: list[Lookup]
 ) -> tuple[dict[str, str | None], list[str]]:
     """Look up the specifier of each requested package.
 
     Args:
         requirements: The requirements, as returned by ``collect_requirements``.
         lookups: The entries to look up.
-        pyproject_path: Path of the file, used in the warning messages.
 
     Returns:
         A tuple ``(specifiers, warnings)``. ``specifiers`` maps each entry, as written, to the
@@ -286,7 +270,7 @@ def lookup_specifiers(
         matches = find_requirements(requirements, lookup)
         if not matches:
             result[lookup.text] = None
-            warnings.append(f"{pyproject_path}: dependency {lookup.text!r} not found")
+            warnings.append(f"dependency {lookup.text!r} not found")
             continue
         result[lookup.text] = matches[0].specifier
     return result, warnings

@@ -39,11 +39,11 @@ def build_report(inputs: Inputs) -> Report:
             warning with ``strict``.
     """
     data = load_pyproject(inputs.pyproject_path)
-    project, warnings = read_project(data, inputs.extra_values, inputs.pyproject_path)
+    project, warnings = read_project(data, inputs.extra_values)
     # Computed in the order of their warnings in the report: the metadata, the Python versions,
     # then the lookups of the requested dependencies.
     python_versions, python_warnings = compatible_python_versions(
-        project.requires_python, inputs.python_candidates, inputs.pyproject_path
+        project.requires_python, inputs.python_candidates
     )
     # The requirement tables are read only for a lookup: without one, a broken table is not
     # the business of the action.
@@ -52,10 +52,8 @@ def build_report(inputs: Inputs) -> Report:
     lookup_warnings: list[str] = []
     if inputs.dependencies:
         # The requirements of the file are read and parsed once, for both lookups.
-        found, found_warnings = collect_requirements(data, project.dynamic, inputs.pyproject_path)
-        specifiers, missing_warnings = lookup_specifiers(
-            found, inputs.dependencies, inputs.pyproject_path
-        )
+        found, found_warnings = collect_requirements(data, project.dynamic)
+        specifiers, missing_warnings = lookup_specifiers(found, inputs.dependencies)
         requirements = lookup_requirements(found, inputs.dependencies)
         lookup_warnings = [*found_warnings, *missing_warnings]
     warnings.extend(python_warnings)
@@ -81,6 +79,6 @@ def build_report(inputs: Inputs) -> Report:
     )
     if inputs.strict and unique_warnings:
         listed = "".join(f"\n- {warning}" for warning in unique_warnings)
-        msg = f"strict is 'true' and there are {len(unique_warnings)} warning(s):{listed}"
+        msg = f"strict: true and there are {len(unique_warnings)} warning(s):{listed}"
         raise MetadataError(msg)
     return report
