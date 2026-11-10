@@ -194,12 +194,9 @@ module above it:
   compares the `json` output with `expected.json` (`scripts/compare_json.py`);
   the other jobs check what the golden files cannot see (failures, `strict`,
   what the action leaves behind). Pass values through `env:`, never interpolate
-  them in `run:` (a test checks it). A job that tests something added after the
-  latest release has a `# local-only` comment; the others are copied to
-  `nightly-test-stable.yaml` (the latest release) by `make workflows`, and CI
-  fails when the copy is out of date. Add a case or a job for every new input or
-  output, and update `STABLE_REF` in `scripts/generate_workflows.py` with every
-  release.
+  them in `run:` (a test checks it). Add a case or a job for every new input or
+  output. There is no workflow that tests a released version: a release is an
+  immutable tag (`vX.Y.Z`) that is never moved or re-tested through a copy of a workflow.
 
 ## Reporting
 
