@@ -69,6 +69,7 @@ exit code is 2.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -84,7 +85,7 @@ if TYPE_CHECKING:
 
     from extract_pyproject_metadata.types import Inputs
 
-__all__ = ["env_name", "main", "read_inputs"]
+__all__ = ["env_name", "main", "read_inputs", "run"]
 
 
 def env_name(input_name: str) -> str:
@@ -161,3 +162,19 @@ def main(environ: Mapping[str, str] | None = None, arguments: Sequence[str] = ()
         )
         return 1
     return 0
+
+
+def run() -> int:
+    """Run the program as the entry points do: UTF-8 streams, the
+    environment and the arguments.
+
+    The log line has non-ASCII characters, which a non-UTF-8 locale cannot encode, so the
+    standard output and error are switched to UTF-8 first.
+
+    Returns:
+        The exit code of ``main``.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
+    return main(os.environ, sys.argv[1:])

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import runpy
+import subprocess
 import sys
 from typing import TYPE_CHECKING
 
@@ -13,6 +15,7 @@ import pytest
 
 from extract_pyproject_metadata.types import Report
 from tests.helpers import (
+    PACKAGE_PATH,
     SCRIPT_PATH,
     parse_github_output,
     run_script,
@@ -213,6 +216,39 @@ def test_running_the_package_with_dash_m_exits_with_the_code_of_main(
 
     assert exc_info.value.code == 0
     assert json.loads(capsys.readouterr().out)["name"] == "coola"
+
+
+@pytest.mark.parametrize("entry_point", ["script", "module"])
+def test_both_entry_points_write_non_ascii_text_with_a_non_utf8_locale(
+    tmp_path: Path, entry_point: str
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    command = (
+        [sys.executable, "-I", "-X", "utf8=0", str(SCRIPT_PATH)]
+        if entry_point == "script"
+        else [sys.executable, "-X", "utf8=0", "-m", "extract_pyproject_metadata"]
+    )
+    environ = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("INPUT_", "PYTHON")) and key != "GITHUB_OUTPUT"
+    }
+    environ.update(
+        {
+            "LC_ALL": "C",
+            "PYTHONCOERCECLOCALE": "0",
+            "PYTHONPATH": str(PACKAGE_PATH.parent),
+            "INPUT_PYPROJECT_PATH": str(path),
+            "INPUT_EXTRA_VALUES": '["é"]',
+        }
+    )
+
+    result = subprocess.run(
+        command, capture_output=True, check=False, timeout=60, env=environ, cwd=tmp_path
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.decode("utf-8"))["extras"] == ["é"]
 
 
 def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch) -> None:
