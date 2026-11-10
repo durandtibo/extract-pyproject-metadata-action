@@ -223,3 +223,51 @@ def test_compare_json_usage(capsys: pytest.CaptureFixture[str]) -> None:
     assert compare_json.main(["compare_json.py"]) == 2
 
     assert "usage: compare_json.py" in capsys.readouterr().err
+
+
+def golden_cases() -> list[str]:
+    """Return the cases of the ``golden`` job of the local workflow."""
+    return load_workflow("ci-test-local.yaml")["jobs"]["golden"]["strategy"]["matrix"]["case"]
+
+
+def test_the_golden_job_lists_its_cases() -> None:
+    assert golden_cases() == ["minimal", "readme-example", "python-candidates-none"]
+
+
+def test_every_golden_case_of_the_workflow_exists() -> None:
+    for case in golden_cases():
+        assert (ROOT_PATH / "test-data" / case / "pyproject.toml").is_file()
+        assert (ROOT_PATH / "test-data" / case / "expected.json").is_file()
+
+
+def test_the_golden_cases_set_every_input_of_the_action() -> None:
+    set_inputs = {"pyproject-path"}  # the workflow passes the path of every case
+    for case in golden_cases():
+        inputs_file = ROOT_PATH / "test-data" / case / "inputs.json"
+        if inputs_file.is_file():
+            set_inputs |= set(json.loads(inputs_file.read_text(encoding="utf-8")))
+
+    assert set_inputs == set(DEFAULT_INPUTS)
+
+
+def test_the_golden_cases_fill_every_output_of_the_action() -> None:
+    filled: set[str] = set()
+    for case in golden_cases():
+        expected = json.loads(
+            (ROOT_PATH / "test-data" / case / "expected.json").read_text(encoding="utf-8")
+        )
+        filled |= {f"{key.replace('_', '-')}" for key, value in expected.items() if value}
+    outputs = set(yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))["outputs"])
+
+    assert outputs - {"json"} <= filled
+
+
+def test_a_golden_case_has_a_warning() -> None:
+    warnings = [
+        json.loads((ROOT_PATH / "test-data" / case / "expected.json").read_text(encoding="utf-8"))[
+            "warnings"
+        ]
+        for case in golden_cases()
+    ]
+
+    assert any(warnings)

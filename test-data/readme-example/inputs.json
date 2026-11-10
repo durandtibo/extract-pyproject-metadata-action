@@ -1,1 +1,1 @@
-{"extra-values": "[\"\"]", "dependencies": "[\"numpy\", \"pytest@group:dev\"]"}
+{"extra-values": "[\"\"]", "dependencies": "[\"numpy\", \"pytest@group:dev\"]", "strict": "true"}
