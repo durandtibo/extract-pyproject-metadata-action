@@ -1,0 +1,50 @@
+# Release workflow.
+# On a tag `vX.Y.Z` (pushed by hand: `git tag v0.3.0 && git push origin v0.3.0`): run the
+# checks, create the GitHub release with the notes of release-notes/vX.Y.Z.md (generated
+# notes when the file does not exist), and move the `vX.Y` tag to the new release, the tag
+# that workflows use (`@v0.3`). The checklist is in the README.
+
+name: Release
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yaml
+
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release and move the minor tag
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          persist-credentials: true # to move the minor tag
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="release-notes/$TAG.md"
+          if [ -f "$notes" ]; then
+            gh release create "$TAG" --title "$TAG" --notes-file "$notes" --verify-tag
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          fi
+
+      - name: Move the minor tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          minor="${TAG%.*}"
+          git tag --force "$minor" "$TAG"
+          git push --force origin "refs/tags/$minor"

@@ -16,7 +16,7 @@ else: no installation, no network. It runs on Linux, macOS and Windows.
 - uses: actions/checkout@v7
 
 - id: metadata
-  uses: durandtibo/extract-pyproject-metadata-action@v1
+  uses: durandtibo/extract-pyproject-metadata-action@v0.3
   with:
     extra-values: '[""]'
     dependencies: '["numpy", "pytest@group:dev"]'
@@ -78,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: metadata
-        uses: durandtibo/extract-pyproject-metadata-action@v1
+        uses: durandtibo/extract-pyproject-metadata-action@v0.3
         with:
           extra-values: '[""]'
 
@@ -100,7 +100,7 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 
 ```yaml
 - id: metadata
-  uses: durandtibo/extract-pyproject-metadata-action@v1
+  uses: durandtibo/extract-pyproject-metadata-action@v0.3
   with:
     strict: "true"
 
@@ -185,7 +185,7 @@ the `json` output lists all of them, in search order, with their `marker` and th
 
 ```yaml
 - id: metadata
-  uses: durandtibo/extract-pyproject-metadata-action@v1
+  uses: durandtibo/extract-pyproject-metadata-action@v0.3
   with:
     dependencies: '["numpy"]'
 
@@ -258,3 +258,9 @@ gate), `make docs` (regenerates the tables of this file from `action.yaml`), `ma
 `tests/integration/test_golden.py` and, with the real action, by `ci-test-local.yaml`, which can
 only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
 removed or changes type.
+
+To release: update the default `python-candidates` in `inputs.py` (every October), check
+that `packaging` is current (`make vendor-packaging`), run `make check` and `make docs`,
+write `release-notes/vX.Y.Z.md`, and push the tag `vX.Y.Z`. `release.yaml` then runs the
+checks, creates the GitHub release and moves the `vX.Y` tag. Afterwards set `STABLE_REF` in
+`scripts/generate_workflows.py` to the new tag and run `make workflows`.

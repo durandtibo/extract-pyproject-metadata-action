@@ -81,6 +81,9 @@ module above it:
 - In the PR description, say what was changed, what was deliberately not
   changed, and any behaviour change (for example a changed input, default or
   output of the action).
+- Releases are made by pushing a tag `vX.Y.Z` (never from a PR): `.github/workflows/release.yaml`
+  creates the GitHub release from `release-notes/vX.Y.Z.md` and moves `vX.Y`. The checklist is in
+  the README. Do not create or move tags.
 - When a PR conflicts with `main`, merge `origin/main` into the branch (do not
   rebase and force-push).
 - Update `README.md` when inputs, outputs or failure modes change. The tables of inputs and
