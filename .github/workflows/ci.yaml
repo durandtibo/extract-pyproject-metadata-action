@@ -37,7 +37,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci-type-checking.yaml
 
-  unit:
+  python:
     needs: get-matrix
     permissions:
       contents: read

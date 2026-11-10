@@ -1,4 +1,4 @@
-# Tests of the Python code. `unit`: unit and integration tests, with the coverage gate. `properties`:
+# Tests of the Python code. `test`: the unit and integration tests, with the coverage gate. `properties`:
 # the Hypothesis tests of tests/properties/ (hypothesis has no free-threaded wheels and is in the
 # `property` group, not in `dev`), on ubuntu-latest and the standard (non-free-threaded) Python versions.
 # Runs on the OS and Python versions of the shared matrix (3.11 is the oldest: tomllib).
@@ -14,7 +14,7 @@ on:
         type: string
 
 jobs:
-  unit:
+  test:
     permissions:
       contents: read
     runs-on: ${{ matrix.os }}
