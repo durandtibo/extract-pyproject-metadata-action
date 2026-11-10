@@ -1,4 +1,4 @@
-"""End-to-end tests that start the command line in a new process or as
+"""End-to-end tests that start the launcher script in a new process or as
 ``__main__``."""
 
 from __future__ import annotations
@@ -203,31 +203,9 @@ def test_running_the_script_as_main_exits_with_one_on_an_error(
     assert "missing.toml" in capsys.readouterr().err
 
 
-def test_running_the_package_with_dash_m_exits_with_the_code_of_main(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_the_script_writes_non_ascii_text_with_a_non_utf8_locale(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
-    monkeypatch.setattr(sys, "argv", ["__main__.py"])
-    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
-
-    with pytest.raises(SystemExit) as exc_info:
-        runpy.run_module("extract_pyproject_metadata", run_name="__main__")
-
-    assert exc_info.value.code == 0
-    assert json.loads(capsys.readouterr().out)["name"] == "coola"
-
-
-@pytest.mark.parametrize("entry_point", ["script", "module"])
-def test_both_entry_points_write_non_ascii_text_with_a_non_utf8_locale(
-    tmp_path: Path, entry_point: str
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
-    command = (
-        [sys.executable, "-I", "-X", "utf8=0", str(SCRIPT_PATH)]
-        if entry_point == "script"
-        else [sys.executable, "-X", "utf8=0", "-m", "extract_pyproject_metadata"]
-    )
+    command = [sys.executable, "-I", "-X", "utf8=0", str(SCRIPT_PATH)]
     environ = {
         key: value
         for key, value in os.environ.items()
@@ -252,9 +230,7 @@ def test_both_entry_points_write_non_ascii_text_with_a_non_utf8_locale(
 
 
 def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sys, "argv", ["extract_metadata.py"]
-    )  # would exit with a usage error if main() ran
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])
     spec = importlib.util.spec_from_file_location("extract_metadata_imported", SCRIPT_PATH)
     assert spec is not None
     assert spec.loader is not None
@@ -263,3 +239,25 @@ def test_importing_the_script_does_not_run_main(monkeypatch: pytest.MonkeyPatch)
     spec.loader.exec_module(module)
 
     assert module.__name__ == "extract_metadata_imported"
+
+
+def test_the_script_ignores_an_argument_on_the_command_line(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    environ = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("INPUT_") and key != "GITHUB_OUTPUT"
+    }
+    environ["INPUT_PYPROJECT_PATH"] = str(path)
+
+    result = subprocess.run(
+        [sys.executable, "-I", str(SCRIPT_PATH), "unused"],
+        capture_output=True,
+        check=False,
+        timeout=60,
+        env=environ,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.decode("utf-8"))["name"] == "coola"

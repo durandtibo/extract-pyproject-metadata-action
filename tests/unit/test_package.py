@@ -14,7 +14,7 @@ from tests.helpers import PACKAGE_PATH
 MODULES = sorted(
     ".".join(["extract_pyproject_metadata", *path.relative_to(PACKAGE_PATH).with_suffix("").parts])
     for path in PACKAGE_PATH.rglob("*.py")
-    if path.stem not in {"__init__", "__main__"} and "_vendor" not in path.parts
+    if path.stem != "__init__" and "_vendor" not in path.parts
 )
 
 

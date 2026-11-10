@@ -748,25 +748,7 @@ def test_main_an_empty_github_output_is_not_set(
     assert json.loads(capsys.readouterr().out)["name"] == "a"
 
 
-def test_main_arguments_are_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main({}, ["pyproject.toml"]) == 2
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "unexpected arguments ['pyproject.toml']" in captured.err
-    assert "INPUT_PYPROJECT_PATH" in captured.err
-
-
-def test_main_arguments_are_an_annotated_usage_error_with_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert main({"GITHUB_OUTPUT": str(tmp_path / "out")}, ["x"]) == 2
-
-    assert capsys.readouterr().err.startswith("::error::extract_pyproject_metadata: error: ")
-    assert not (tmp_path / "out").exists()
-
-
-def test_run_uses_the_environment_and_the_arguments_of_the_process(
+def test_run_uses_the_environment_of_the_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1"\n')
@@ -795,13 +777,3 @@ def test_run_switches_a_text_stream_to_utf8(
     assert run() == 0
     stdout.flush()
     assert json.loads(buffer.getvalue().decode("utf-8"))["extras"] == ["é"]
-
-
-def test_run_with_an_argument_is_a_usage_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(sys, "argv", ["extract_metadata.py", "pyproject.toml"])
-    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-
-    assert run() == 2
-    assert "unexpected arguments" in capsys.readouterr().err

@@ -8,12 +8,12 @@ the Python versions that ``requires-python`` allows, and looks up the dependenci
 it is asked to.
 
 Usage:
-    The program takes no argument. The inputs of the action are read from the environment
+    The program takes no argument (the launcher ignores any). The inputs of the action are read from the environment
     variables ``INPUT_PYPROJECT_PATH``, ``INPUT_EXTRA_VALUES``, ``INPUT_DEPENDENCIES``,
     ``INPUT_PYTHON_CANDIDATES`` and ``INPUT_STRICT`` (an input that is not set has the default
     of ``action.yaml``). A local run is:
 
-        INPUT_PYPROJECT_PATH=path/to/pyproject.toml python -m extract_pyproject_metadata
+        INPUT_PYPROJECT_PATH=path/to/pyproject.toml python scripts/extract_metadata.py
 
 A name of ``INPUT_DEPENDENCIES`` (a JSON array) may be followed by ``@project``,
 ``@extra:<name>`` or ``@group:<name>`` to look it up in ``[project].dependencies``, one
@@ -61,10 +61,6 @@ Exits with 1 and a message ``<field>: <problem>`` on stderr (with ``GITHUB_OUTPU
 file) if an input is invalid, the file is missing, cannot be read, is not UTF-8 or is not
 valid TOML, a field that is read has the wrong type or is missing, ``INPUT_STRICT=true`` and
 there is a warning, or the outputs cannot be written.
-
-An argument on the command line (which the action never passes) is a usage error: the
-message goes to stderr (as an ``::error::`` workflow command with ``GITHUB_OUTPUT``) and the
-exit code is 2.
 """
 
 from __future__ import annotations
@@ -76,12 +72,12 @@ import sys
 from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.github import emit_github_output, escape_annotation, format_error
+from extract_pyproject_metadata.github import emit_github_output, format_error
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS, parse_inputs
 from extract_pyproject_metadata.report import build_report
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
     from extract_pyproject_metadata.types import Inputs
 
@@ -118,33 +114,18 @@ def read_inputs(environ: Mapping[str, str]) -> Inputs:
     return parse_inputs(raw)
 
 
-def _usage_error(arguments: Sequence[str], annotate: bool) -> int:
-    """Print the usage error of a command line with arguments and return
-    the exit code 2."""
-    message = (
-        f"extract_pyproject_metadata: error: unexpected arguments {list(arguments)!r}: the "
-        "inputs are read from the environment variables "
-        + ", ".join(env_name(name) for name in DEFAULT_INPUTS)
-    )
-    print(f"::error::{escape_annotation(message)}" if annotate else message, file=sys.stderr)
-    return 2
-
-
-def main(environ: Mapping[str, str] | None = None, arguments: Sequence[str] = ()) -> int:
+def main(environ: Mapping[str, str] | None = None) -> int:
     """Run the program and return the process exit code.
 
     Args:
         environ: The environment variables, ``os.environ`` by default.
-        arguments: The arguments of the command line, which must be empty.
 
     Returns:
         0 on success, 1 when the input or the file is invalid (or with ``strict`` when there
-        is a warning), 2 when there are arguments.
+        is a warning).
     """
     environ = os.environ if environ is None else environ
     github_output = environ.get("GITHUB_OUTPUT") or None
-    if arguments:
-        return _usage_error(arguments, annotate=github_output is not None)
 
     pyproject_path = environ.get(env_name("pyproject-path"), DEFAULT_INPUTS["pyproject-path"])
     try:
@@ -165,8 +146,8 @@ def main(environ: Mapping[str, str] | None = None, arguments: Sequence[str] = ()
 
 
 def run() -> int:
-    """Run the program as the entry points do: UTF-8 streams, the
-    environment and the arguments.
+    """Run the program as the launcher does: UTF-8 streams and the
+    environment.
 
     The log line has non-ASCII characters, which a non-UTF-8 locale cannot encode, so the
     standard output and error are switched to UTF-8 first.
@@ -177,4 +158,4 @@ def run() -> int:
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
-    return main(os.environ, sys.argv[1:])
+    return main(os.environ)

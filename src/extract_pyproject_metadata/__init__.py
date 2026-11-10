@@ -2,8 +2,7 @@
 pyproject.toml.
 
 The command line interface is in ``extract_pyproject_metadata.cli``. Run it with
-``python scripts/extract_metadata.py`` (what ``scripts/run.sh`` does) or with
-``python -m extract_pyproject_metadata``.
+``python scripts/extract_metadata.py`` (what ``scripts/run.sh`` does).
 
 The modules, from the bottom of the import graph to the top:
 
