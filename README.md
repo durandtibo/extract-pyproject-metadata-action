@@ -530,5 +530,8 @@ The `Makefile` is the only task runner; run `make help` to list the targets, for
 example `make check` (lint, format check, types and tests of the Python code),
 `make format` and `make lint` (also the YAML, Markdown, shell, TOML and Makefile files).
 
-The integration workflows (`.github/workflows/ci-test-local.yaml` and
-`nightly-test-stable.yaml`) can only run on GitHub.
+The integration workflow (`.github/workflows/ci-test-local.yaml`) can only run on
+GitHub. It runs the action on each `test-data/<case>/` and compares the `json`
+output with the `expected.json` of the case; `tests/integration/test_golden.py`
+checks the same files without GitHub. `nightly-test-stable.yaml` (the latest
+release) is generated from it by `make workflows`.

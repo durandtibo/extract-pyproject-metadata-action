@@ -125,12 +125,22 @@ module above it:
   several values. Every `pytest.raises` defines `match`.
 - Cover typical inputs, edge cases (empty, duplicates, missing keys), and error
   conditions. Assert whole outputs against a literal (`assert result == {...}`).
-- The integration workflows (`.github/workflows/ci-test-local.yaml` with `uses:
-./`, and `nightly-test-stable.yaml` with the last release) check only the wiring,
-  using `scripts/test-helper.sh` and the fixtures in `test-data/`. Keep the two
-  files identical except for the name and the `uses:` line, and add a job for
-  every new input or output. A job that tests something added after the latest
-  release goes only in `ci-test-local.yaml`.
+- `test-data/<case>/` is a golden case: a `pyproject.toml`, an optional
+  `inputs.json` (the action inputs of the case, by input name) and the
+  `expected.json` (the `json` output). `tests/integration/test_golden.py` checks
+  every case without GitHub; `UPDATE_GOLDEN=1 pytest tests/integration/test_golden.py`
+  rewrites the files (review the diff). Adding a case is adding a directory.
+- The integration workflow `.github/workflows/ci-test-local.yaml` (`uses: ./`)
+  checks only the wiring: the `golden` job runs the real action on every case and
+  compares the `json` output with `expected.json` (`scripts/compare_json.py`);
+  the other jobs check what the golden files cannot see (failures, `strict`,
+  what the action leaves behind). Pass values through `env:`, never interpolate
+  them in `run:` (a test checks it). A job that tests something added after the
+  latest release has a `# local-only` comment; the others are copied to
+  `nightly-test-stable.yaml` (the latest release) by `make workflows`, and CI
+  fails when the copy is out of date. Add a case or a job for every new input or
+  output, and update `STABLE_REF` in `scripts/generate_workflows.py` with every
+  release.
 
 ## Reporting
 

@@ -135,8 +135,8 @@ src = ["src"]
 extend-exclude = [".venv"]
 
 [tool.ruff.lint.per-file-ignores]
-# The launcher is run as a script (``scripts/run.sh``), it is not a package.
-"scripts/**" = ["INP001"]
+# The launcher and the helpers are run as scripts, they are not a package.
+"scripts/**" = ["INP001", "T201"]
 # The fixtures are read by the action, not imported or linted as code.
 "test-data/**" = ["D", "INP001"]
 # The command line writes its result and its errors to stdout and stderr.

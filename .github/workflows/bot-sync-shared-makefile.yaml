@@ -38,9 +38,11 @@ jobs:
           fetch-depth: 0 # subtree needs full history
 
       - name: Configure git identity
+        env:
+          CI_BOT_EMAIL: ${{ secrets.CI_BOT_EMAIL }}
         run: |
           git config user.name "ci-bot"
-          git config user.email "${{ secrets.CI_BOT_EMAIL }}"
+          git config user.email "$CI_BOT_EMAIL"
 
       - name: Pull subtree updates
         id: subtree

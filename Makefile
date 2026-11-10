@@ -40,6 +40,10 @@ types: ## Check the types of the package and the script (pyright, strict)
 test: ## Run the tests with the coverage gate
 	$(PYTHON_RUN) pytest -q --cov
 
+.PHONY: workflows
+workflows: ## Generate nightly-test-stable.yaml from ci-test-local.yaml
+	python3 scripts/generate_workflows.py
+
 .PHONY: check
 check: lint-python types test ## Run the Python checks (lint, format, types, tests)
 
