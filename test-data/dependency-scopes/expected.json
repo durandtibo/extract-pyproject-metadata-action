@@ -1,0 +1,70 @@
+{
+  "name": "deps-pkg",
+  "normalized_name": "deps-pkg",
+  "version": "0.3.0",
+  "normalized_version": "0.3.0",
+  "description": "",
+  "readme": "",
+  "license": "",
+  "license_files": [],
+  "authors": [],
+  "urls": {},
+  "keywords": [],
+  "classifiers": [],
+  "scripts": {},
+  "requires_python": "",
+  "extras": [
+    "numpy"
+  ],
+  "groups": [
+    "base",
+    "dev"
+  ],
+  "build_backend": "",
+  "build_requires": [],
+  "python_versions": [
+    "3.11",
+    "3.12",
+    "3.13",
+    "3.14",
+    "3.15"
+  ],
+  "python_min": "3.11",
+  "python_max": "3.15",
+  "project_dependencies": {
+    "invoke-tasklib": "<1.0.0,>=0.0.8",
+    "Foo_Bar": "==2.1",
+    "nospec": ""
+  },
+  "dependency_specifiers": {
+    "grp-pkg@group:base": ">=1.5",
+    "grp-pkg@group:dev": ">=1.5",
+    "grp-pkg@project": null,
+    "numpy@extra:numpy": "~=2.0",
+    "numpy@group:dev": null
+  },
+  "dependency_requirements": {
+    "grp-pkg@group:base": [
+      {
+        "specifier": ">=1.5",
+        "marker": ""
+      }
+    ],
+    "grp-pkg@group:dev": [
+      {
+        "specifier": ">=1.5",
+        "marker": ""
+      }
+    ],
+    "grp-pkg@project": [],
+    "numpy@extra:numpy": [
+      {
+        "specifier": "~=2.0",
+        "marker": ""
+      }
+    ],
+    "numpy@group:dev": []
+  },
+  "warnings": [],
+  "schema_version": 1
+}

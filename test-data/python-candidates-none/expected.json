@@ -1,0 +1,30 @@
+{
+  "name": "py-pkg",
+  "normalized_name": "py-pkg",
+  "version": "0.4.0",
+  "normalized_version": "0.4.0",
+  "description": "",
+  "readme": "",
+  "license": "",
+  "license_files": [],
+  "authors": [],
+  "urls": {},
+  "keywords": [],
+  "classifiers": [],
+  "scripts": {},
+  "requires_python": ">=3.10,<4",
+  "extras": [],
+  "groups": [],
+  "build_backend": "",
+  "build_requires": [],
+  "python_versions": [],
+  "python_min": "",
+  "python_max": "",
+  "project_dependencies": {},
+  "dependency_specifiers": {},
+  "dependency_requirements": {},
+  "warnings": [
+    "test-data/python-candidates-none/pyproject.toml: no python-candidates version satisfies [project].requires-python ('>=3.10,<4'): python-versions and python-matrix are empty, and a job matrix built from them is rejected by GitHub"
+  ],
+  "schema_version": 1
+}

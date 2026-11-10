@@ -9,10 +9,6 @@ on:
     - cron: "0 6 * * 3" # Run every Wednesday at 6:00 AM UTC
   workflow_dispatch: # to trigger manually
 
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
-
 permissions: {}
 
 jobs:
@@ -38,9 +34,11 @@ jobs:
           fetch-depth: 0 # subtree needs full history
 
       - name: Configure git identity
+        env:
+          CI_BOT_EMAIL: ${{ secrets.CI_BOT_EMAIL }}
         run: |
           git config user.name "ci-bot"
-          git config user.email "${{ secrets.CI_BOT_EMAIL }}"
+          git config user.email "$CI_BOT_EMAIL"
 
       - name: Pull subtree updates
         id: subtree

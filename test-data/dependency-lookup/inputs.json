@@ -1,0 +1,1 @@
+{"dependencies": "[\"invoke-tasklib\",\"foo.bar\",\"nospec\",\"numpy\",\"grp-pkg\",\"dev-pkg\",\"missing\"]"}

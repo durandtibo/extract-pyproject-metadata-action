@@ -1,0 +1,11 @@
+[project]
+name = "deps-pkg"
+version = "0.3.0"
+dependencies = ["invoke-tasklib>=0.0.8,<1.0.0", "Foo_Bar==2.1", "nospec"]
+
+[project.optional-dependencies]
+numpy = ["numpy~=2.0"]
+
+[dependency-groups]
+base = ["grp-pkg>=1.5"]
+dev = [{ include-group = "base" }, "dev-pkg<3"]

@@ -1,0 +1,31 @@
+{
+  "name": "py-pkg",
+  "normalized_name": "py-pkg",
+  "version": "0.4.0",
+  "normalized_version": "0.4.0",
+  "description": "",
+  "readme": "",
+  "license": "",
+  "license_files": [],
+  "authors": [],
+  "urls": {},
+  "keywords": [],
+  "classifiers": [],
+  "scripts": {},
+  "requires_python": ">=3.10,<4",
+  "extras": [],
+  "groups": [],
+  "build_backend": "",
+  "build_requires": [],
+  "python_versions": [
+    "3.10",
+    "3.12"
+  ],
+  "python_min": "3.10",
+  "python_max": "3.12",
+  "project_dependencies": {},
+  "dependency_specifiers": {},
+  "dependency_requirements": {},
+  "warnings": [],
+  "schema_version": 1
+}

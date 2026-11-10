@@ -1,0 +1,56 @@
+{
+  "name": "fields-pkg",
+  "normalized_name": "fields-pkg",
+  "version": "1.0",
+  "normalized_version": "1.0",
+  "description": "",
+  "readme": "docs/README.md",
+  "license": "MIT",
+  "license_files": [
+    "LICENSE",
+    "licenses/*.txt"
+  ],
+  "authors": [
+    {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com"
+    },
+    {
+      "name": "Bob"
+    }
+  ],
+  "urls": {
+    "Homepage": "https://example.com",
+    "Source Code": "https://example.com/src"
+  },
+  "keywords": [
+    "toml",
+    "metadata"
+  ],
+  "classifiers": [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License"
+  ],
+  "scripts": {
+    "fields-tool": "fields_pkg.cli:main"
+  },
+  "requires_python": "",
+  "extras": [],
+  "groups": [],
+  "build_backend": "",
+  "build_requires": [],
+  "python_versions": [
+    "3.11",
+    "3.12",
+    "3.13",
+    "3.14",
+    "3.15"
+  ],
+  "python_min": "3.11",
+  "python_max": "3.15",
+  "project_dependencies": {},
+  "dependency_specifiers": {},
+  "dependency_requirements": {},
+  "warnings": [],
+  "schema_version": 1
+}

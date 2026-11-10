@@ -1,5 +1,14 @@
 name: Test Local Action
 
+# The integration test of the action (it can only run on GitHub). It checks the wiring: the
+# inputs reach the action and the outputs come back. The logic is covered by tests/.
+#
+# - `stable` only uses what the latest release has: scripts/generate_workflows.py copies it
+#   to nightly-test-stable.yaml, where the action is the latest release.
+# - Every other job is marked `local-only` (it tests something added after the latest
+#   release) and stays here. Add a job there for every new input or output.
+# - Values go through `env:`, never interpolated in `run:`.
+
 on:
   workflow_call:
     inputs:
@@ -12,7 +21,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # What the latest release does: a smoke test of the stable contract.
+  stable:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
@@ -31,9 +41,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # -----------------------------------------------------------------------
-      # Test 1: minimal pyproject.toml (no extras)
-      # -----------------------------------------------------------------------
       - name: 🧪 Test minimal pyproject.toml
         id: test-minimal
         uses: ./
@@ -41,25 +48,17 @@ jobs:
           pyproject-path: test-data/minimal/pyproject.toml
 
       - name: ✓ Verify minimal pyproject.toml
+        env:
+          NAME: ${{ steps.test-minimal.outputs.name }}
+          VERSION: ${{ steps.test-minimal.outputs.version }}
+          EXTRAS: ${{ steps.test-minimal.outputs.extras }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-minimal.outputs.name }}"
-          assert_equal "version" "0.1.0" "${{ steps.test-minimal.outputs.version }}"
-          assert_equal "extras" "[]" '${{ steps.test-minimal.outputs.extras }}'
+          assert_equal "name" "minimal-pkg" "$NAME"
+          assert_equal "version" "0.1.0" "$VERSION"
+          assert_equal "extras" "[]" "$EXTRAS"
           print_success "minimal pyproject.toml test passed"
 
-      # The json output (added after the last release) holds the whole result
-      - name: ✓ Verify the json output of the minimal pyproject.toml
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "json name" "minimal-pkg" "${{ fromJSON(steps.test-minimal.outputs.json).name }}"
-          assert_equal "json version" "0.1.0" "${{ fromJSON(steps.test-minimal.outputs.json).version }}"
-          assert_equal "json schema_version" "1" "${{ fromJSON(steps.test-minimal.outputs.json).schema_version }}"
-          print_success "json output test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 2: pyproject.toml with optional-dependencies
-      # -----------------------------------------------------------------------
       - name: 🧪 Test pyproject.toml with extras
         id: test-extras
         uses: ./
@@ -67,32 +66,17 @@ jobs:
           pyproject-path: test-data/with-extras/pyproject.toml
 
       - name: ✓ Verify extras
+        env:
+          NAME: ${{ steps.test-extras.outputs.name }}
+          VERSION: ${{ steps.test-extras.outputs.version }}
+          EXTRAS: ${{ steps.test-extras.outputs.extras }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "coola" "${{ steps.test-extras.outputs.name }}"
-          assert_equal "version" "1.2.3" "${{ steps.test-extras.outputs.version }}"
-          assert_equal "extras" '["numpy","pandas"]' '${{ steps.test-extras.outputs.extras }}'
+          assert_equal "name" "coola" "$NAME"
+          assert_equal "version" "1.2.3" "$VERSION"
+          assert_equal "extras" '["numpy","pandas"]' "$EXTRAS"
           print_success "extras test passed"
 
-      # -----------------------------------------------------------------------
-      # Test 3: extra-values input is prepended
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test extra-values input
-        id: test-extra-values
-        uses: ./
-        with:
-          pyproject-path: test-data/with-extras/pyproject.toml
-          extra-values: '[""]'
-
-      - name: ✓ Verify extra-values prepended
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "extras" '["","numpy","pandas"]' '${{ steps.test-extra-values.outputs.extras }}'
-          print_success "extra-values test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 4: missing required key should fail the step
-      # -----------------------------------------------------------------------
       - name: 🧪 Test missing version (should fail)
         id: test-missing-version
         uses: ./
@@ -100,222 +84,176 @@ jobs:
           pyproject-path: test-data/missing-version/pyproject.toml
         continue-on-error: true
 
-      - name: ✓ Verify missing version fails the step
+      - name: ✓ Verify a missing version fails the step
+        env:
+          OUTCOME: ${{ steps.test-missing-version.outcome }}
         run: |
           source scripts/test-helper.sh
-          if [ "${{ steps.test-missing-version.outcome }}" = "success" ]; then
-            print_error "Missing version should cause the step to fail"
-            exit 1
-          fi
-          print_success "missing version correctly failed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "a missing version fails the step"
 
-      # -----------------------------------------------------------------------
-      # Test 5: missing file should fail the step
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test missing file (should fail)
+  # The list of the cases is the list of the directories of test-data/ with an expected.json.
+  cases:
+    # local-only
+    runs-on: ubuntu-slim
+    timeout-minutes: 2
+    outputs:
+      cases: ${{ steps.list.outputs.cases }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: List the cases
+        id: list
+        run: |
+          cases="$(for file in test-data/*/expected.json; do basename "$(dirname "$file")"; done | jq -R . | jq -sc .)"
+          echo "cases=$cases" >> "$GITHUB_OUTPUT"
+
+  # Each case runs the action with the inputs of its inputs.json (the other inputs have their
+  # default, repeated here: tests/integration/test_workflows.py checks them against action.yaml)
+  # and compares the json output with its expected.json. tests/integration/test_golden.py
+  # checks the same files without GitHub.
+  golden:
+    # local-only
+    needs: cases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJSON(needs.cases.outputs.cases) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Read the inputs of the case
+        id: case
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          file="test-data/$CASE/inputs.json"
+          if [ -f "$file" ]; then inputs="$(jq -c . "$file")"; else inputs='{}'; fi
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+
+      - name: 🧪 Run the action on the case
+        id: action
+        uses: ./
+        with:
+          pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
+          extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
+          dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
+          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '["3.11","3.12","3.13","3.14","3.15"]' }}
+          fail-on-missing: ${{ fromJSON(steps.case.outputs.inputs)['fail-on-missing'] || 'false' }}
+          fail-on-dynamic-version: ${{ fromJSON(steps.case.outputs.inputs)['fail-on-dynamic-version'] || 'false' }}
+          strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
+          step-summary: ${{ fromJSON(steps.case.outputs.inputs)['step-summary'] || 'false' }}
+          resolve-dynamic-version: ${{ fromJSON(steps.case.outputs.inputs)['resolve-dynamic-version'] || 'false' }}
+
+      - name: ✓ Compare the json output with the golden file
+        env:
+          EXPECTED: test-data/${{ matrix.case }}/expected.json
+          ACTUAL: ${{ steps.action.outputs.json }}
+        run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
+
+  # What the golden files cannot see: failures, strict, and what the action leaves behind.
+  wiring:
+    # local-only
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      max-parallel: 8
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
+        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 🧪 Test a successful run
+        id: test-minimal
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Compare the json output with the golden file
+        env:
+          EXPECTED: test-data/minimal/expected.json
+          ACTUAL: ${{ steps.test-minimal.outputs.json }}
+        run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
+
+      - name: 🧪 Test a missing file (should fail)
         id: test-missing-file
         uses: ./
         with:
           pyproject-path: test-data/does-not-exist/pyproject.toml
         continue-on-error: true
 
-      - name: ✓ Verify missing file fails the step
+      - name: ✓ Verify Test a missing file fails the step
+        env:
+          OUTCOME: ${{ steps.test-missing-file.outcome }}
         run: |
           source scripts/test-helper.sh
-          if [ "${{ steps.test-missing-file.outcome }}" = "success" ]; then
-            print_error "Missing file should cause the step to fail"
-            exit 1
-          fi
-          print_success "missing file correctly failed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "Test a missing file fails the step"
 
-      # -----------------------------------------------------------------------
-      # Test 6: invalid extra-values JSON should fail the step
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test invalid extra-values (should fail)
-        id: test-invalid-extra-values
+      - name: 🧪 Test an invalid extra-values (should fail)
+        id: test-invalid-input
         uses: ./
         with:
           pyproject-path: test-data/minimal/pyproject.toml
           extra-values: "not json"
         continue-on-error: true
 
-      - name: ✓ Verify invalid extra-values fails the step
+      - name: ✓ Verify Test an invalid extra-values fails the step
+        env:
+          OUTCOME: ${{ steps.test-invalid-input.outcome }}
         run: |
           source scripts/test-helper.sh
-          if [ "${{ steps.test-invalid-extra-values.outcome }}" = "success" ]; then
-            print_error "Invalid extra-values should cause the step to fail"
-            exit 1
-          fi
-          print_success "invalid extra-values correctly failed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "Test an invalid extra-values fails the step"
 
-      # -----------------------------------------------------------------------
-      # Test 7: dynamic version gives an empty version output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test dynamic version
-        id: test-dynamic-version
+      - name: 🧪 Test strict with a warning (should fail)
+        id: test-strict
         uses: ./
         with:
           pyproject-path: test-data/dynamic-version/pyproject.toml
-
-      - name: ✓ Verify dynamic version is empty
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "dynamic-pkg" "${{ steps.test-dynamic-version.outputs.name }}"
-          assert_equal "version" "" "${{ steps.test-dynamic-version.outputs.version }}"
-          assert_equal "extras" '["numpy"]' '${{ steps.test-dynamic-version.outputs.extras }}'
-          print_success "dynamic version test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 8: dependencies input is looked up in the pyproject.toml
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test dependencies input
-        id: test-dependencies
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '["invoke-tasklib","foo.bar","nospec","numpy","grp-pkg","dev-pkg","missing"]'
-
-      - name: ✓ Verify dependency-specifiers
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "deps-pkg" "${{ steps.test-dependencies.outputs.name }}"
-          assert_equal "dependency-specifiers" '{"invoke-tasklib":"<1.0.0,>=0.0.8","foo.bar":"==2.1","nospec":"","numpy":"~=2.0","grp-pkg":">=1.5","dev-pkg":"<3","missing":null}' '${{ steps.test-dependencies.outputs.dependency-specifiers }}'
-          print_success "dependencies test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 9: dependency-specifiers is an empty object by default
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test default dependencies
-        id: test-default-dependencies
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-
-      - name: ✓ Verify default dependency-specifiers
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "dependency-specifiers" '{}' '${{ steps.test-default-dependencies.outputs.dependency-specifiers }}'
-          print_success "default dependencies test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 10: invalid dependencies JSON should fail the step
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test invalid dependencies (should fail)
-        id: test-invalid-dependencies
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '{"not": "an array"}'
+          strict: "true"
         continue-on-error: true
 
-      - name: ✓ Verify invalid dependencies fails the step
+      - name: ✓ Verify Test strict with a warning fails the step
+        env:
+          OUTCOME: ${{ steps.test-strict.outcome }}
         run: |
           source scripts/test-helper.sh
-          if [ "${{ steps.test-invalid-dependencies.outcome }}" = "success" ]; then
-            print_error "Invalid dependencies should cause the step to fail"
-            exit 1
-          fi
-          print_success "invalid dependencies correctly failed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "Test strict with a warning fails the step"
 
-      # -----------------------------------------------------------------------
-      # Test 11: normalized-name output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test normalized-name output
-        id: test-normalized-name
-        uses: ./
-        with:
-          pyproject-path: test-data/normalized-name/pyproject.toml
-
-      - name: ✓ Verify normalized-name
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "My_Package.Name" "${{ steps.test-normalized-name.outputs.name }}"
-          assert_equal "normalized-name" "my-package-name" "${{ steps.test-normalized-name.outputs.normalized-name }}"
-          print_success "normalized-name test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 11b: normalized-version output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test normalized-version output
-        id: test-normalized-version
-        uses: ./
-        with:
-          pyproject-path: test-data/normalized-version/pyproject.toml
-
-      - name: 🧪 Test normalized-version output with a dynamic version
-        id: test-normalized-version-dynamic
+      - name: 🧪 Test the same file without strict
+        id: test-not-strict
         uses: ./
         with:
           pyproject-path: test-data/dynamic-version/pyproject.toml
 
-      - name: ✓ Verify normalized-version
+      - name: ✓ Verify a warning does not fail the step without strict
+        env:
+          OUTCOME: ${{ steps.test-not-strict.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "version" "1.0-RC1" "${{ steps.test-normalized-version.outputs.version }}"
-          assert_equal "normalized-version" "1.0rc1" "${{ steps.test-normalized-version.outputs.normalized-version }}"
-          assert_equal "normalized-version" "" "${{ steps.test-normalized-version-dynamic.outputs.normalized-version }}"
-          print_success "normalized-version test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 12: requires-python output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test requires-python output
-        id: test-requires-python
-        uses: ./
-        with:
-          pyproject-path: test-data/requires-python/pyproject.toml
-
-      - name: 🧪 Test requires-python output when not declared
-        id: test-no-requires-python
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify requires-python
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "requires-python" ">=3.10,<4" '${{ steps.test-requires-python.outputs.requires-python }}'
-          assert_equal "requires-python" "" '${{ steps.test-no-requires-python.outputs.requires-python }}'
-          print_success "requires-python test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 13: groups output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test groups output
-        id: test-groups
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-
-      - name: 🧪 Test groups output without dependency groups
-        id: test-no-groups
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify groups
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "groups" '["base","dev"]' '${{ steps.test-groups.outputs.groups }}'
-          assert_equal "groups" '[]' '${{ steps.test-no-groups.outputs.groups }}'
-          print_success "groups test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 14: fail-on-missing input
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test fail-on-missing with all dependencies found
-        id: test-fail-on-missing-found
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '["invoke-tasklib","nospec"]'
-          fail-on-missing: "true"
-
-      - name: ✓ Verify fail-on-missing succeeds when all dependencies are found
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "dependency-specifiers" '{"invoke-tasklib":"<1.0.0,>=0.0.8","nospec":""}' '${{ steps.test-fail-on-missing-found.outputs.dependency-specifiers }}'
-          print_success "fail-on-missing (all found) test passed"
+          assert_equal "outcome" "success" "$OUTCOME"
+          print_success "a warning does not fail the step without strict"
 
       - name: 🧪 Test fail-on-missing with a missing dependency (should fail)
         id: test-fail-on-missing
@@ -326,491 +264,41 @@ jobs:
           fail-on-missing: "true"
         continue-on-error: true
 
-      - name: ✓ Verify fail-on-missing fails the step
-        run: |
-          source scripts/test-helper.sh
-          if [ "${{ steps.test-fail-on-missing.outcome }}" = "success" ]; then
-            print_error "A missing dependency with fail-on-missing should cause the step to fail"
-            exit 1
-          fi
-          print_success "fail-on-missing correctly failed"
-
-      - name: 🧪 Test invalid fail-on-missing (should fail)
-        id: test-invalid-fail-on-missing
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          fail-on-missing: "maybe"
-        continue-on-error: true
-
-      - name: ✓ Verify invalid fail-on-missing fails the step
-        run: |
-          source scripts/test-helper.sh
-          if [ "${{ steps.test-invalid-fail-on-missing.outcome }}" = "success" ]; then
-            print_error "Invalid fail-on-missing should cause the step to fail"
-            exit 1
-          fi
-          print_success "invalid fail-on-missing correctly failed"
-
-      # -----------------------------------------------------------------------
-      # Test 15: python-versions output and python-candidates input
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test python-versions output with the default candidates
-        id: test-python-versions
-        uses: ./
-        with:
-          pyproject-path: test-data/requires-python/pyproject.toml
-
-      - name: 🧪 Test python-versions output with custom candidates
-        id: test-python-candidates
-        uses: ./
-        with:
-          pyproject-path: test-data/requires-python/pyproject.toml
-          python-candidates: '["3.9","3.10","3.12"]'
-
-      - name: 🧪 Test python-versions output when requires-python is not declared
-        id: test-python-versions-undeclared
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          python-candidates: '["3.9","3.12"]'
-
-      - name: ✓ Verify python-versions
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "python-versions" '["3.11","3.12","3.13","3.14","3.15"]' '${{ steps.test-python-versions.outputs.python-versions }}'
-          assert_equal "python-versions" '["3.10","3.12"]' '${{ steps.test-python-candidates.outputs.python-versions }}'
-          assert_equal "python-versions" '["3.9","3.12"]' '${{ steps.test-python-versions-undeclared.outputs.python-versions }}'
-          assert_equal "python-min" "3.11" "${{ steps.test-python-versions.outputs.python-min }}"
-          assert_equal "python-min" "3.10" "${{ steps.test-python-candidates.outputs.python-min }}"
-          assert_equal "python-min" "3.9" "${{ steps.test-python-versions-undeclared.outputs.python-min }}"
-          assert_equal "python-max" "3.15" "${{ steps.test-python-versions.outputs.python-max }}"
-          assert_equal "python-max" "3.12" "${{ steps.test-python-candidates.outputs.python-max }}"
-          assert_equal "python-max" "3.12" "${{ steps.test-python-versions-undeclared.outputs.python-max }}"
-          assert_equal "python-matrix" '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}' '${{ steps.test-python-versions.outputs.python-matrix }}'
-          assert_equal "python-matrix" '{"python-version":["3.10","3.12"]}' '${{ steps.test-python-candidates.outputs.python-matrix }}'
-          print_success "python-versions test passed"
-
-      - name: 🧪 Test invalid python-candidates (should fail)
-        id: test-invalid-python-candidates
-        uses: ./
-        with:
-          pyproject-path: test-data/requires-python/pyproject.toml
-          python-candidates: '["3.12.1"]'
-        continue-on-error: true
-
-      - name: ✓ Verify invalid python-candidates fails the step
-        run: |
-          source scripts/test-helper.sh
-          if [ "${{ steps.test-invalid-python-candidates.outcome }}" = "success" ]; then
-            print_error "Invalid python-candidates should cause the step to fail"
-            exit 1
-          fi
-          print_success "invalid python-candidates correctly failed"
-
-      # -----------------------------------------------------------------------
-      # Test 16: project-dependencies output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test project-dependencies output
-        id: test-project-dependencies
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-
-      - name: 🧪 Test project-dependencies output without dependencies
-        id: test-no-project-dependencies
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify project-dependencies
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "project-dependencies" '{"invoke-tasklib":"<1.0.0,>=0.0.8","Foo_Bar":"==2.1","nospec":""}' '${{ steps.test-project-dependencies.outputs.project-dependencies }}'
-          assert_equal "project-dependencies" '{}' '${{ steps.test-no-project-dependencies.outputs.project-dependencies }}'
-          print_success "project-dependencies test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 17: fail-on-dynamic-version input
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test fail-on-dynamic-version with a static version
-        id: test-fail-on-dynamic-static
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          fail-on-dynamic-version: "true"
-
-      - name: ✓ Verify fail-on-dynamic-version succeeds with a static version
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "version" "0.1.0" "${{ steps.test-fail-on-dynamic-static.outputs.version }}"
-          print_success "fail-on-dynamic-version (static version) test passed"
-
-      - name: 🧪 Test fail-on-dynamic-version with a dynamic version (should fail)
-        id: test-fail-on-dynamic
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-          fail-on-dynamic-version: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify fail-on-dynamic-version fails the step
-        run: |
-          source scripts/test-helper.sh
-          if [ "${{ steps.test-fail-on-dynamic.outcome }}" = "success" ]; then
-            print_error "A dynamic version with fail-on-dynamic-version should cause the step to fail"
-            exit 1
-          fi
-          print_success "fail-on-dynamic-version correctly failed"
-
-      - name: 🧪 Test invalid fail-on-dynamic-version (should fail)
-        id: test-invalid-fail-on-dynamic
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          fail-on-dynamic-version: "maybe"
-        continue-on-error: true
-
-      - name: ✓ Verify invalid fail-on-dynamic-version fails the step
-        run: |
-          source scripts/test-helper.sh
-          if [ "${{ steps.test-invalid-fail-on-dynamic.outcome }}" = "success" ]; then
-            print_error "Invalid fail-on-dynamic-version should cause the step to fail"
-            exit 1
-          fi
-          print_success "invalid fail-on-dynamic-version correctly failed"
-
-      # -----------------------------------------------------------------------
-      # Test 18: step-summary input
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test step-summary
-        id: test-step-summary
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          step-summary: "true"
-
-      - name: ✓ Verify step-summary does not change the outputs
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "deps-pkg" "${{ steps.test-step-summary.outputs.name }}"
-          print_success "step-summary test passed"
-
-      # "auto" (added after the last release) is the default: no input needed to test it
-      - name: 🧪 Test step-summary auto
-        id: test-step-summary-auto
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          step-summary: "auto"
-
-      - name: ✓ Verify step-summary auto does not change the outputs
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "deps-pkg" "${{ steps.test-step-summary-auto.outputs.name }}"
-          print_success "step-summary auto test passed"
-
-      - name: 🧪 Test invalid step-summary (should fail)
-        id: test-invalid-step-summary
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          step-summary: "maybe"
-        continue-on-error: true
-
-      - name: ✓ Verify invalid step-summary fails the step
-        run: |
-          source scripts/test-helper.sh
-          if [ "${{ steps.test-invalid-step-summary.outcome }}" = "success" ]; then
-            print_error "Invalid step-summary should cause the step to fail"
-            exit 1
-          fi
-          print_success "invalid step-summary correctly failed"
-
-      # -----------------------------------------------------------------------
-      # Test 19: strict input
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test strict without warnings
-        id: test-strict-ok
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          strict: "true"
-
-      - name: ✓ Verify strict succeeds without warnings
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-strict-ok.outputs.name }}"
-          print_success "strict (no warning) test passed"
-
-      - name: 🧪 Test strict with a warning (should fail)
-        id: test-strict-warning
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-          strict: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify strict fails the step on a warning
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-strict-warning.outcome }}"
-          print_success "strict correctly failed"
-
-      - name: 🧪 Test the same file without strict
-        id: test-not-strict
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-
-      - name: ✓ Verify a warning does not fail the step without strict
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "dynamic-pkg" "${{ steps.test-not-strict.outputs.name }}"
-          print_success "warning without strict test passed"
-
-      - name: 🧪 Test invalid strict (should fail)
-        id: test-invalid-strict
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          strict: "maybe"
-        continue-on-error: true
-
-      - name: ✓ Verify invalid strict fails the step
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-invalid-strict.outcome }}"
-          print_success "invalid strict correctly failed"
-
-      # -----------------------------------------------------------------------
-      # Test 20: description output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test description output
-        id: test-description
-        uses: ./
-        with:
-          pyproject-path: test-data/description/pyproject.toml
-
-      - name: 🧪 Test description output when not declared
-        id: test-no-description
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify description
+      - name: ✓ Verify Test fail-on-missing with a missing dependency fails the step
         env:
-          DESCRIPTION: ${{ steps.test-description.outputs.description }}
+          OUTCOME: ${{ steps.test-fail-on-missing.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "description" 'A package, with a description: "quoted" | piped' "$DESCRIPTION"
-          assert_equal "description" "" "${{ steps.test-no-description.outputs.description }}"
-          print_success "description test passed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "Test fail-on-missing with a missing dependency fails the step"
 
-      # -----------------------------------------------------------------------
-      # Test 21: readme output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test the project fields (readme, license)
-        id: test-project-fields
+      - name: 🧪 Test a dynamic version that cannot be resolved (should fail)
+        id: test-unresolved
         uses: ./
         with:
-          pyproject-path: test-data/project-fields/pyproject.toml
-
-      - name: 🧪 Test the project fields when not declared
-        id: test-no-project-fields
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify readme
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "readme" "docs/README.md" "${{ steps.test-project-fields.outputs.readme }}"
-          assert_equal "readme" "" "${{ steps.test-no-project-fields.outputs.readme }}"
-          print_success "readme test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 22: license output
-      # -----------------------------------------------------------------------
-      - name: ✓ Verify license
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "license" "MIT" "${{ steps.test-project-fields.outputs.license }}"
-          assert_equal "license" "" "${{ steps.test-no-project-fields.outputs.license }}"
-          print_success "license test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 22b: license-files output
-      # -----------------------------------------------------------------------
-      - name: ✓ Verify license-files
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "license-files" '["LICENSE","licenses/*.txt"]' '${{ steps.test-project-fields.outputs.license-files }}'
-          assert_equal "license-files" '[]' '${{ steps.test-no-project-fields.outputs.license-files }}'
-          print_success "license-files test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 22c: an invalid license expression is only a warning
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test an invalid license expression
-        id: test-invalid-license
-        uses: ./
-        with:
-          pyproject-path: test-data/invalid-license/pyproject.toml
-
-      - name: ✓ Verify the license is still output
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "license" "MIT License" "${{ steps.test-invalid-license.outputs.license }}"
-          print_success "invalid license test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 23: authors output
-      # -----------------------------------------------------------------------
-      - name: ✓ Verify authors
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "authors" '[{"name":"Ada Lovelace","email":"ada@example.com"},{"name":"Bob"}]' '${{ steps.test-project-fields.outputs.authors }}'
-          assert_equal "authors" '[]' '${{ steps.test-no-project-fields.outputs.authors }}'
-          print_success "authors test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 24: urls output
-      # -----------------------------------------------------------------------
-      - name: ✓ Verify urls
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "urls" '{"Homepage":"https://example.com","Source Code":"https://example.com/src"}' '${{ steps.test-project-fields.outputs.urls }}'
-          assert_equal "urls" '{}' '${{ steps.test-no-project-fields.outputs.urls }}'
-          print_success "urls test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 24b: keywords, classifiers and scripts outputs
-      # -----------------------------------------------------------------------
-      - name: ✓ Verify keywords, classifiers and scripts
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "keywords" '["toml","metadata"]' '${{ steps.test-project-fields.outputs.keywords }}'
-          assert_equal "keywords" '[]' '${{ steps.test-no-project-fields.outputs.keywords }}'
-          assert_equal "classifiers" '["Programming Language :: Python :: 3","License :: OSI Approved :: MIT License"]' '${{ steps.test-project-fields.outputs.classifiers }}'
-          assert_equal "classifiers" '[]' '${{ steps.test-no-project-fields.outputs.classifiers }}'
-          assert_equal "scripts" '{"fields-tool":"fields_pkg.cli:main"}' '${{ steps.test-project-fields.outputs.scripts }}'
-          assert_equal "scripts" '{}' '${{ steps.test-no-project-fields.outputs.scripts }}'
-          print_success "keywords, classifiers and scripts test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 25: dependency-requirements output
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test dependency-requirements output
-        id: test-dependency-requirements
-        uses: ./
-        with:
-          pyproject-path: test-data/with-markers/pyproject.toml
-          dependencies: '["numpy","plain","missing"]'
-
-      - name: ✓ Verify dependency-requirements
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "dependency-requirements" '{"numpy":[{"specifier":">=1.20","marker":"python_version < \"3.12\""},{"specifier":">=1.26","marker":"python_version >= \"3.12\""}],"plain":[{"specifier":"","marker":""}],"missing":[]}' '${{ steps.test-dependency-requirements.outputs.dependency-requirements }}'
-          print_success "dependency-requirements test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 26: python-executable input
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test python-executable input
-        id: test-python-executable
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          python-executable: python3
-
-      - name: 🧪 Test python-executable that does not exist (should fail)
-        id: test-missing-python-executable
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          python-executable: python-does-not-exist
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          resolve-dynamic-version: "true"
+          fail-on-dynamic-version: "true"
         continue-on-error: true
 
-      - name: ✓ Verify python-executable
+      - name: ✓ Verify Test a dynamic version that cannot be resolved fails the step
+        env:
+          OUTCOME: ${{ steps.test-unresolved.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-python-executable.outputs.name }}"
-          assert_equal "outcome" "failure" "${{ steps.test-missing-python-executable.outcome }}"
-          print_success "python-executable test passed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "Test a dynamic version that cannot be resolved fails the step"
 
-      # -----------------------------------------------------------------------
-      # Test 29: dependencies with a scope
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test dependencies with a scope
-        id: test-dependency-scopes
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '["grp-pkg@group:base","grp-pkg@group:dev","grp-pkg@project","numpy@extra:numpy","numpy@group:dev"]'
-
-      - name: 🧪 Test an invalid dependency scope (should fail)
-        id: test-invalid-dependency-scope
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '["numpy@numpy"]'
-        continue-on-error: true
-
-      - name: ✓ Verify the dependency scopes
+      - name: ✓ Verify the action leaves nothing behind
         run: |
           source scripts/test-helper.sh
-          assert_equal "dependency-specifiers" '{"grp-pkg@group:base":">=1.5","grp-pkg@group:dev":">=1.5","grp-pkg@project":null,"numpy@extra:numpy":"~=2.0","numpy@group:dev":null}' '${{ steps.test-dependency-scopes.outputs.dependency-specifiers }}'
-          assert_equal "outcome" "failure" "${{ steps.test-invalid-dependency-scope.outcome }}"
-          print_success "dependency scopes test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 30: no python-candidates version is allowed by requires-python
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test python-versions when no candidate is allowed
-        id: test-no-python-version
-        uses: ./
-        with:
-          pyproject-path: test-data/requires-python/pyproject.toml
-          python-candidates: '["3.9"]'
-
-      - name: 🧪 Test strict when no candidate is allowed (should fail)
-        id: test-no-python-version-strict
-        uses: ./
-        with:
-          pyproject-path: test-data/requires-python/pyproject.toml
-          python-candidates: '["3.9"]'
-          strict: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify the empty python-versions warning
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "python-versions" '[]' '${{ steps.test-no-python-version.outputs.python-versions }}'
-          assert_equal "python-matrix" '{"python-version":[]}' '${{ steps.test-no-python-version.outputs.python-matrix }}'
-          assert_equal "outcome" "failure" "${{ steps.test-no-python-version-strict.outcome }}"
-          print_success "empty python-versions test passed"
-
-      # -----------------------------------------------------------------------
-      # Test 31: build-backend and build-requires outputs
-      # -----------------------------------------------------------------------
-      - name: 🧪 Test build-backend and build-requires outputs
-        id: test-build-system
-        uses: ./
-        with:
-          pyproject-path: test-data/build-system/pyproject.toml
-
-      - name: ✓ Verify build-backend and build-requires
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "build-backend" "hatchling.build" "${{ steps.test-build-system.outputs.build-backend }}"
-          assert_equal "build-requires" '["hatchling","hatch-vcs>=0.4"]' '${{ steps.test-build-system.outputs.build-requires }}'
-          assert_equal "build-backend" "" "${{ steps.test-no-project-fields.outputs.build-backend }}"
-          assert_equal "build-requires" '[]' '${{ steps.test-no-project-fields.outputs.build-requires }}'
-          print_success "build-system test passed"
+          assert_equal "__pycache__ directories" "0" "$(count_pycache)"
+          assert_equal "venvs left" "0" "$(count_venvs)"
+          print_success "nothing left behind"
 
   # Windows runners are not supported: the action must fail with an explicit error
   test-windows:
+    # local-only
     runs-on: windows-latest
     timeout-minutes: 5
 
@@ -827,86 +315,18 @@ jobs:
 
       - name: ✓ Verify the action fails on Windows
         shell: bash
+        env:
+          OUTCOME: ${{ steps.test-windows.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-windows.outcome }}"
+          assert_equal "outcome" "failure" "$OUTCOME"
           print_success "Windows correctly rejected"
-
-  # resolve-dynamic-version (added after the last release) reads a dynamic version from the
-  # file of the build backend
-  test-resolve-dynamic-version:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: 🧪 Test a setuptools version file
-        id: test-file
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version-file/pyproject.toml
-          resolve-dynamic-version: "true"
-          fail-on-dynamic-version: "true"
-          strict: "true"
-
-      - name: ✓ Verify the version of the file
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "version" "1.4.0-RC1" "${{ steps.test-file.outputs.version }}"
-          assert_equal "normalized-version" "1.4.0rc1" "${{ steps.test-file.outputs.normalized-version }}"
-          print_success "setuptools version file test passed"
-
-      - name: 🧪 Test a hatch version path
-        id: test-hatch
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version-hatch/pyproject.toml
-          resolve-dynamic-version: "true"
-
-      - name: ✓ Verify the version of the hatch file
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "version" "2.1.0" "${{ steps.test-hatch.outputs.version }}"
-          print_success "hatch version path test passed"
-
-      - name: 🧪 Test a version that cannot be resolved (should fail)
-        id: test-unresolved
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-          resolve-dynamic-version: "true"
-          fail-on-dynamic-version: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify an unresolved version still fails with fail-on-dynamic-version
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-unresolved.outcome }}"
-          print_success "unresolved dynamic version correctly failed"
-
-      - name: 🧪 Test without resolve-dynamic-version
-        id: test-not-resolved
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version-file/pyproject.toml
-
-      - name: ✓ Verify the version is empty without resolve-dynamic-version
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "version" "" "${{ steps.test-not-resolved.outputs.version }}"
-          print_success "default dynamic version test passed"
 
   # The action installs "packaging" in a private venv when the Python on PATH lacks
   # it. setup-python's Python has no "packaging" module, but the job removes it
   # anyway so that the test does not depend on the runner image.
   test-bootstrap:
+    # local-only
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -929,9 +349,7 @@ jobs:
           fi
           assert_equal "venvs" "0" "$(count_venvs)"
 
-      # -----------------------------------------------------------------------
       # packaging is missing and cannot be installed: the step fails
-      # -----------------------------------------------------------------------
       - name: 🧪 Test without packaging and without index (should fail)
         id: test-no-index
         uses: ./
@@ -942,15 +360,15 @@ jobs:
         continue-on-error: true
 
       - name: ✓ Verify the step fails when packaging cannot be installed
+        env:
+          OUTCOME: ${{ steps.test-no-index.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-no-index.outcome }}"
+          assert_equal "outcome" "failure" "$OUTCOME"
           assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "missing packaging correctly failed"
 
-      # -----------------------------------------------------------------------
       # packaging is missing: it is installed in a private venv, removed afterwards
-      # -----------------------------------------------------------------------
       - name: 🧪 Test without packaging
         id: test-no-packaging
         uses: ./
@@ -958,9 +376,11 @@ jobs:
           pyproject-path: test-data/minimal/pyproject.toml
 
       - name: ✓ Verify packaging is installed in a private venv
+        env:
+          NAME: ${{ steps.test-no-packaging.outputs.name }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-no-packaging.outputs.name }}"
+          assert_equal "name" "minimal-pkg" "$NAME"
           if python -c "import packaging" 2> /dev/null; then
             print_error "the Python on PATH must not be modified"
             exit 1
@@ -968,9 +388,7 @@ jobs:
           assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "bootstrap test passed"
 
-      # -----------------------------------------------------------------------
       # packaging is available: the Python on PATH is used
-      # -----------------------------------------------------------------------
       - name: Install packaging in the Python on PATH
         run: python -m pip install --quiet packaging
 
@@ -981,13 +399,16 @@ jobs:
           pyproject-path: test-data/minimal/pyproject.toml
 
       - name: ✓ Verify the action works when packaging is available
+        env:
+          NAME: ${{ steps.test-packaging.outputs.name }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-packaging.outputs.name }}"
+          assert_equal "name" "minimal-pkg" "$NAME"
           print_success "packaging available test passed"
 
   # The installer input chooses the tool that installs "packaging" in the private venv.
   test-installer:
+    # local-only
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -1018,10 +439,12 @@ jobs:
         continue-on-error: true
 
       - name: ✓ Verify an invalid installer fails
+        env:
+          OUTCOME: ${{ steps.test-invalid-installer.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-invalid-installer.outcome }}"
-          print_success "invalid installer correctly failed"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "an invalid installer fails"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # ratchet:astral-sh/setup-uv@v10.3.3
@@ -1034,9 +457,11 @@ jobs:
           installer: uv
 
       - name: ✓ Verify packaging is installed with uv
+        env:
+          NAME: ${{ steps.test-uv.outputs.name }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-uv.outputs.name }}"
+          assert_equal "name" "minimal-pkg" "$NAME"
           if python -c "import packaging" 2> /dev/null; then
             print_error "the Python on PATH must not be modified"
             exit 1
@@ -1052,14 +477,17 @@ jobs:
           installer: auto
 
       - name: ✓ Verify packaging is installed with the auto installer
+        env:
+          NAME: ${{ steps.test-auto.outputs.name }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "${{ steps.test-auto.outputs.name }}"
+          assert_equal "name" "minimal-pkg" "$NAME"
           assert_equal "venvs left" "0" "$(count_venvs)"
           print_success "auto installer test passed"
 
   # Only Python 3.11 or later is supported: the action must fail with an explicit error
   test-old-python:
+    # local-only
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -1079,8 +507,10 @@ jobs:
           pyproject-path: test-data/minimal/pyproject.toml
         continue-on-error: true
 
-      - name: ✓ Verify the action fails with Python 3.10
+      - name: ✓ Verify Python 3.10 is rejected
+        env:
+          OUTCOME: ${{ steps.test-old-python.outcome }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "${{ steps.test-old-python.outcome }}"
-          print_success "Python 3.10 correctly rejected"
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "Python 3.10 is rejected"
