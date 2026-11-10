@@ -11,6 +11,7 @@ from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array, check_string_array, get_table, is_table
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import PROJECT_SCOPE
+from extract_pyproject_metadata.pyproject import read_groups
 from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 
 __all__ = [
@@ -19,7 +20,6 @@ __all__ = [
     "flatten_group",
     "lookup_requirements",
     "lookup_specifiers",
-    "read_groups",
 ]
 
 # Limits that turn a pathological dependency-groups table into an error instead of a Python
@@ -44,24 +44,6 @@ def _cycle_warning(cycle: tuple[str, ...]) -> ReportWarning:
     return ReportWarning(
         "include-group-cycle", f"[dependency-groups] has an include-group cycle: {path}"
     )
-
-
-def read_groups(table: dict[str, Any]) -> dict[str, list[tuple[str, object]]]:
-    """Group the entries of ``[dependency-groups]`` by normalized name.
-
-    Args:
-        table: The ``[dependency-groups]`` table.
-
-    Returns:
-        A dict that maps each normalized group name (PEP 503) to the ``(name, value)`` pairs of
-        every spelling of it, as written in the file. The keys are in the order of the first
-        spelling of each group. The values are not checked here: ``_Expansion`` checks them
-        when the group is expanded.
-    """
-    groups: dict[str, list[tuple[str, object]]] = {}
-    for name, value in table.items():
-        groups.setdefault(canonicalize_name(name), []).append((name, value))
-    return groups
 
 
 @dataclass
