@@ -1,5 +1,5 @@
 """Tests of ``extract_pyproject_metadata.cli``: ``main`` and the
-options."""
+environment variables."""
 
 from __future__ import annotations
 
@@ -8,11 +8,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-import extract_pyproject_metadata.cli as extract_metadata_module
 import extract_pyproject_metadata.report as report_module
-from extract_pyproject_metadata.cli import main, parse_cli_inputs
+from extract_pyproject_metadata.cli import env_name, main, read_inputs
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import parse_inputs
 from extract_pyproject_metadata.output.github import (
     format_error,
 )
@@ -24,8 +22,8 @@ from tests.helpers import (
     GROUPS_TOML,
     _specifier_error,
     messages,
-    parse_args,
     parse_github_output,
+    run_main,
     write_pyproject,
 )
 
@@ -38,7 +36,7 @@ def test_report_keys_match_the_json_output(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
 
     assert list(json.loads(capsys.readouterr().out)) == list(Report.__annotations__)
 
@@ -47,7 +45,7 @@ def test_github_output_has_no_schema_version(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
     output = tmp_path / "out"
 
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
     assert "schema-version" not in parse_github_output(output.read_text(encoding="utf-8"))
 
 
@@ -57,7 +55,7 @@ def test_main_returns_one_for_an_invalid_utf8_file(
     path = tmp_path / "pyproject.toml"
     path.write_bytes(b"\xff\xfe")
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert run_main([str(path), "[]"]) == 1
     assert "not valid UTF-8" in capsys.readouterr().err
 
 
@@ -66,7 +64,7 @@ def test_main_returns_one_when_the_outputs_cannot_be_written(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(tmp_path), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(tmp_path), str(path), "[]"])
 
     assert exit_code == 1
     assert "::error file=" in capsys.readouterr().err
@@ -80,7 +78,7 @@ def test_main_returns_one_when_the_job_summary_cannot_be_written(
         tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n'
     )  # a warning, so the summary is written
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
 
     assert exit_code == 1
     assert "GITHUB_STEP_SUMMARY: cannot write" in capsys.readouterr().err
@@ -92,7 +90,7 @@ def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
     path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
 
     assert exit_code == 1
     err = capsys.readouterr().err
@@ -107,7 +105,7 @@ def test_main_json_keeps_non_ascii_characters(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "Héllo ✓"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
 
     out = capsys.readouterr().out
     assert '"requires_python": "Héllo ✓"' in out
@@ -121,7 +119,7 @@ def test_main_strict_fails_on_a_static_and_dynamic_field(
         tmp_path, '[project]\nname = "coola"\nversion = "1"\ndynamic = ["version"]\n'
     )
 
-    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert run_main(["--strict", "true", str(path), "[]"]) == 1
     assert (
         "[project].version is set and also listed in [project].dynamic" in capsys.readouterr().err
     )
@@ -132,7 +130,7 @@ def test_main_dynamic_version_warning_in_json(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\ndynamic = ["version"]\n')
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out) == {
@@ -169,7 +167,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         """,
     )
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -204,7 +202,7 @@ def test_main_parses_the_file_once(
 
     monkeypatch.setattr(report_module, "load_pyproject", counting_load)
 
-    exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
+    exit_code = run_main([str(path), "[]", '["numpy"]'])
     capsys.readouterr()
 
     assert exit_code == 0
@@ -214,49 +212,11 @@ def test_main_parses_the_file_once(
 def test_main_returns_nonzero_on_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
-    exit_code = main(["extract_metadata.py", str(missing), "[]"])
+    exit_code = run_main([str(missing), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
     assert "not a file" in captured.err
-
-
-def test_main_returns_usage_error_on_bad_args() -> None:
-    exit_code = main(["extract_metadata.py"])
-
-    assert exit_code == 2
-
-
-def test_main_prints_the_usage_error_on_stderr(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["extract_metadata.py"]) == 2
-
-    err = capsys.readouterr().err
-    assert err.startswith("usage: extract_metadata.py [-h]")
-    assert err.endswith(
-        "\nextract_metadata.py: error: the following arguments are required: "
-        "pyproject_path, extra_values\n"
-    )
-
-
-@pytest.mark.parametrize("option", [["--github-output", "out"], ["--github-output=out"]])
-def test_main_annotates_the_usage_error_with_github_output(
-    option: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert main(["extract_metadata.py", *option]) == 2
-
-    err = capsys.readouterr().err
-    assert err.startswith("::error::usage: extract_metadata.py [-h]")
-    assert err.endswith(
-        "%0Aextract_metadata.py: error: the following arguments are required: "
-        "pyproject_path, extra_values\n"
-    )
-    assert err.count("\n") == 1
-
-
-def test_main_help_exits_with_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["extract_metadata.py", "--github-output", "out", "--help"]) == 0
-
-    assert capsys.readouterr().out.startswith("usage: extract_metadata.py [-h]")
 
 
 def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
@@ -264,7 +224,7 @@ def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
 ) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    exit_code = main(["extract_metadata.py", str(path), "[]", '["missing"]'])
+    exit_code = run_main([str(path), "[]", '["missing"]'])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -278,9 +238,8 @@ def test_main_github_output_writes_outputs_and_annotations(
     path = write_pyproject(tmp_path, DEPS_TOML)
     output = tmp_path / "github_output"
 
-    exit_code = main(
+    exit_code = run_main(
         [
-            "extract_metadata.py",
             "--github-output",
             str(output),
             str(path),
@@ -326,9 +285,8 @@ def test_main_strict_fails_without_writing_the_outputs(
     path = write_pyproject(tmp_path, DEPS_TOML)
     output = tmp_path / "out"
 
-    exit_code = main(
+    exit_code = run_main(
         [
-            "extract_metadata.py",
             "--github-output",
             str(output),
             "--strict",
@@ -353,29 +311,8 @@ def test_main_invalid_strict_returns_one(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    assert main(["extract_metadata.py", "--strict", "maybe", str(path), "[]"]) == 1
+    assert run_main(["--strict", "maybe", str(path), "[]"]) == 1
     assert "strict: must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
-
-
-def test_parse_cli_inputs_maps_every_option() -> None:
-    args = parse_args(
-        "--strict", "true", "--python-candidates", '["3.12"]', "p.toml", '["a"]', '["numpy"]',
-    )  # fmt: skip
-
-    assert parse_cli_inputs(args) == parse_inputs(
-        {
-            "pyproject-path": "p.toml",
-            "extra-values": '["a"]',
-            "dependencies": '["numpy"]',
-            "python-candidates": '["3.12"]',
-            "strict": "true",
-        }
-    )
-
-
-def test_parse_cli_inputs_invalid_value() -> None:
-    with pytest.raises(MetadataError, match=r"strict: must be 'true' or 'false', got: 'maybe'"):
-        parse_cli_inputs(parse_args("--strict", "maybe", "p.toml", "[]"))
 
 
 def test_main_summary_lists_the_warnings(
@@ -385,9 +322,8 @@ def test_main_summary_lists_the_warnings(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    exit_code = main(
+    exit_code = run_main(
         [
-            "extract_metadata.py",
             "--github-output",
             str(tmp_path / "out"),
             str(path),
@@ -410,7 +346,7 @@ def test_main_summary_reports_an_error(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
 
     assert exit_code == 1
     text = summary.read_text(encoding="utf-8")
@@ -427,7 +363,7 @@ def test_main_summary_lists_the_warnings_of_a_strict_failure(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    exit_code = main(["extract_metadata.py", "--strict", "true", str(path), "[]"])
+    exit_code = run_main(["--strict", "true", str(path), "[]"])
 
     assert exit_code == 1
     text = summary.read_text(encoding="utf-8")
@@ -444,7 +380,7 @@ def test_main_summary_writes_nothing_without_warnings(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert not summary.exists()
 
 
@@ -454,22 +390,8 @@ def test_main_summary_writes_nothing_outside_a_workflow(
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["name"] == "a"
-
-
-@pytest.mark.parametrize(
-    "option", ["--step-summary", "--fail-on-missing", "--fail-on-dynamic-version"]
-)
-def test_main_removed_options_are_usage_errors(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], option: str
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert main(["extract_metadata.py", option, "true", str(path), "[]"]) == 2
-    assert (
-        "unrecognized arguments" in capsys.readouterr().err or "usage:" in capsys.readouterr().err
-    )
 
 
 @pytest.mark.parametrize(
@@ -490,7 +412,7 @@ def test_main_error_is_a_plain_message_without_github_output(
 ) -> None:
     path = tmp_path / "nope.toml"
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert run_main([str(path), "[]"]) == 1
     captured = capsys.readouterr()
 
     assert captured.err == f"{path}: pyproject-path: not a file\n"
@@ -502,9 +424,7 @@ def test_main_error_is_an_annotation_with_github_output(
 ) -> None:
     path = tmp_path / "nope.toml"
 
-    exit_code = main(
-        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"]
-    )
+    exit_code = run_main(["--github-output", str(tmp_path / "out"), str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -516,9 +436,7 @@ def test_main_error_annotation_cannot_inject_a_command(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = 3\n')
 
-    exit_code = main(
-        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), str(path), "[]"]
-    )
+    exit_code = run_main(["--github-output", str(tmp_path / "out"), str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -531,31 +449,13 @@ def test_main_github_output_error_writes_nothing(
 ) -> None:
     output = tmp_path / "github_output"
 
-    exit_code = main(
-        ["extract_metadata.py", "--github-output", str(output), str(tmp_path / "nope.toml"), "[]"]
-    )
+    exit_code = run_main(["--github-output", str(output), str(tmp_path / "nope.toml"), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
     assert "not a file" in captured.err
     assert captured.out == ""
     assert not output.exists()
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["extract_metadata.py", "--github-output"],
-        ["extract_metadata.py", "--github-output", "out"],
-        ["extract_metadata.py", "--github-output", "out", "a", "[]", "[]", "extra"],
-        ["extract_metadata.py", "--unknown", "a", "[]"],
-    ],
-)
-def test_main_usage_errors_with_options(
-    argv: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert main(argv) == 2
-    assert "usage:" in capsys.readouterr().err
 
 
 def test_main_github_output_multiline_name_is_rejected(
@@ -567,7 +467,7 @@ def test_main_github_output_multiline_name_is_rejected(
     )
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -592,26 +492,12 @@ def test_main_invalid_inputs_return_one(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    exit_code = main(["extract_metadata.py", str(path), *argv_tail])
+    exit_code = run_main([str(path), *argv_tail])
     captured = capsys.readouterr()
 
     assert exit_code == 1
     assert message in captured.err
     assert captured.out == ""
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["extract_metadata.py", "a"],
-        ["extract_metadata.py", "a", "[]", "[]", "extra"],
-    ],
-)
-def test_main_wrong_number_of_arguments_returns_two(
-    argv: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert main(argv) == 2
-    assert "usage:" in capsys.readouterr().err
 
 
 def test_main_unknown_group_entry_returns_one(
@@ -622,7 +508,7 @@ def test_main_unknown_group_entry_returns_one(
         '[project]\nname = "coola"\nversion = "1"\n\n[dependency-groups]\ndev = [{include_group = "a"}]\n',
     )
 
-    assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 1
+    assert run_main([str(path), "[]", '["x"]']) == 1
     assert "[dependency-groups].dev: entries must be strings or" in capsys.readouterr().err
 
 
@@ -633,7 +519,7 @@ def test_main_malformed_dependency_table_returns_one(
         tmp_path, '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\ndev = "numpy"\n'
     )
 
-    exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
+    exit_code = run_main([str(path), "[]", '["numpy"]'])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -651,9 +537,7 @@ def test_main_include_group_cycle_warning_annotation(
     )
     output = tmp_path / "github_output"
 
-    exit_code = main(
-        ["extract_metadata.py", "--github-output", str(output), str(path), "[]", '["x"]']
-    )
+    exit_code = run_main(["--github-output", str(output), str(path), "[]", '["x"]'])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -671,7 +555,7 @@ def test_main_warning_annotation_escapes_the_file_property(
     path.write_text('[project]\nname = "p"\ndynamic = ["version"]\n')
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
     captured = capsys.readouterr()
 
     escaped = str(path).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
@@ -687,9 +571,7 @@ def test_main_warning_annotation_names_the_file(
     write_pyproject(tmp_path, '[project]\nname = "p"\ndynamic = ["version"]\n')
     monkeypatch.chdir(tmp_path)
 
-    exit_code = main(
-        ["extract_metadata.py", "--github-output", str(tmp_path / "out"), "pyproject.toml", "[]"]
-    )
+    exit_code = run_main(["--github-output", str(tmp_path / "out"), "pyproject.toml", "[]"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines()[0] == (
@@ -702,7 +584,7 @@ def test_main_invalid_version_returns_one(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "latest"\n')
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -714,7 +596,7 @@ def test_main_github_output_normalized_name(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "My_Package.Name"\nversion = "1"\n')
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
 
     assert exit_code == 0
     outputs = parse_github_output(output.read_text(encoding="utf-8"))
@@ -728,7 +610,7 @@ def test_main_github_output_requires_python(tmp_path: Path) -> None:
     )
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
 
     assert exit_code == 0
     assert parse_github_output(output.read_text(encoding="utf-8"))["requires-python"] == ">=3.10,<4"
@@ -739,7 +621,7 @@ def test_main_json_requires_python(tmp_path: Path, capsys: pytest.CaptureFixture
         tmp_path, '[project]\nname = "p"\nversion = "1"\nrequires-python = ">=3.10"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["requires_python"] == ">=3.10"
 
 
@@ -747,7 +629,7 @@ def test_main_github_output_groups(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, GROUPS_TOML)
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
 
     assert exit_code == 0
     assert (
@@ -758,7 +640,7 @@ def test_main_github_output_groups(tmp_path: Path) -> None:
 def test_main_json_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(tmp_path, GROUPS_TOML)
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["groups"] == ["Dev", "docs", "test"]
 
 
@@ -768,9 +650,8 @@ def test_main_missing_dependency_is_a_warning(
     path = write_pyproject(tmp_path, DEPS_TOML)
     output = tmp_path / "github_output"
 
-    exit_code = main(
+    exit_code = run_main(
         [
-            "extract_metadata.py",
             "--github-output",
             str(output),
             str(path),
@@ -796,9 +677,8 @@ def test_main_strict_fails_for_a_missing_dependency(
     path = write_pyproject(tmp_path, DEPS_TOML)
     output = tmp_path / "github_output"
 
-    exit_code = main(
+    exit_code = run_main(
         [
-            "extract_metadata.py",
             "--github-output",
             str(output),
             "--strict",
@@ -825,7 +705,7 @@ def test_main_no_warning_when_all_the_dependencies_are_found(
 ) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    exit_code = main(["extract_metadata.py", "--strict", "true", str(path), "[]", '["nospec"]'])
+    exit_code = run_main(["--strict", "true", str(path), "[]", '["nospec"]'])
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {"nospec": ""}
@@ -838,7 +718,7 @@ def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
         tmp_path, '[project]\nname = "a"\nversion = "1"\ndynamic = ["dependencies"]\n'
     )
 
-    exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
+    exit_code = run_main([str(path), "[]", '["numpy"]'])
 
     assert exit_code == 0
     assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
@@ -851,7 +731,7 @@ def test_main_github_output_normalized_version(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1.0-RC1"\n')
     output = tmp_path / "out"
 
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
     values = parse_github_output(output.read_text(encoding="utf-8"))
     assert (values["version"], values["normalized-version"]) == ("1.0-RC1", "1.0rc1")
 
@@ -859,7 +739,7 @@ def test_main_github_output_normalized_version(tmp_path: Path) -> None:
 def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert (
         json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 3
     )
@@ -870,7 +750,7 @@ def test_main_python_max_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[s
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "<3.13"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["python_max"] == "3.12"
 
 
@@ -881,7 +761,7 @@ def test_main_python_max_is_empty_without_allowed_version(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert (report["python_versions"], report["python_max"]) == ([], "")
 
@@ -893,7 +773,7 @@ def test_main_warns_when_no_python_version_is_allowed(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
         (
             "no python-candidates version satisfies [project].requires-python ('>=4'): "
@@ -909,7 +789,7 @@ def test_main_strict_fails_when_no_python_version_is_allowed(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
     )
 
-    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert run_main(["--strict", "true", str(path), "[]"]) == 1
     assert "strict: true and there are 1 warning(s)" in capsys.readouterr().err
 
 
@@ -918,9 +798,7 @@ def test_main_python_max_compares_versions_as_numbers(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    assert (
-        main(["extract_metadata.py", "--python-candidates", '["3.9","3.10"]', str(path), "[]"]) == 0
-    )
+    assert run_main(["--python-candidates", '["3.9","3.10"]', str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["python_max"] == "3.10"
 
 
@@ -930,7 +808,7 @@ def test_main_github_output_python_max(tmp_path: Path) -> None:
     )
     output = tmp_path / "out"
 
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
     assert parse_github_output(output.read_text(encoding="utf-8"))["python-max"] == "3.13"
 
 
@@ -939,7 +817,7 @@ def test_main_python_min_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[s
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["python_min"] == "3.11"
 
 
@@ -950,7 +828,7 @@ def test_main_python_min_is_empty_without_allowed_version(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert (report["python_versions"], report["python_min"]) == ([], "")
 
@@ -960,9 +838,7 @@ def test_main_python_min_compares_versions_as_numbers(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    exit_code = main(
-        ["extract_metadata.py", "--python-candidates", '["3.10","3.9"]', str(path), "[]"]
-    )
+    exit_code = run_main(["--python-candidates", '["3.10","3.9"]', str(path), "[]"])
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["python_min"] == "3.9"
@@ -974,7 +850,7 @@ def test_main_github_output_python_min(tmp_path: Path) -> None:
     )
     output = tmp_path / "github_output"
 
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
     assert parse_github_output(output.read_text(encoding="utf-8"))["python-min"] == "3.13"
 
 
@@ -983,7 +859,7 @@ def test_main_python_versions_in_json(tmp_path: Path, capsys: pytest.CaptureFixt
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.11,<3.13"\n'
     )
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.11", "3.12"]
@@ -994,9 +870,7 @@ def test_main_python_candidates_option(tmp_path: Path, capsys: pytest.CaptureFix
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.9"\n'
     )
 
-    exit_code = main(
-        ["extract_metadata.py", "--python-candidates", '["3.8","3.9","3.15"]', str(path), "[]"]
-    )
+    exit_code = run_main(["--python-candidates", '["3.8","3.9","3.15"]', str(path), "[]"])
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["python_versions"] == ["3.9", "3.15"]
@@ -1009,7 +883,7 @@ def test_main_invalid_requires_python_specifier_warns_and_gives_no_versions(
         tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "python3"\n'
     )
 
-    exit_code = main(["extract_metadata.py", str(path), "[]"])
+    exit_code = run_main([str(path), "[]"])
     report = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
@@ -1024,7 +898,7 @@ def test_main_github_output_python_versions(tmp_path: Path) -> None:
     )
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
 
     assert exit_code == 0
     assert parse_github_output(output.read_text(encoding="utf-8"))["python-versions"] == (
@@ -1038,7 +912,7 @@ def test_main_invalid_python_candidates_return_one(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    exit_code = main(["extract_metadata.py", "--python-candidates", raw, str(path), "[]"])
+    exit_code = run_main(["--python-candidates", raw, str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
@@ -1055,7 +929,7 @@ def test_main_warnings_are_in_the_order_of_the_sources(
         'dependencies = ["x>=1", "x>=2"]\n\n[dependency-groups]\ndev = ["x>=3", "not valid!"]\n',
     )
 
-    assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 0
+    assert run_main([str(path), "[]", '["x"]']) == 0
     warnings = json.loads(capsys.readouterr().out)["warnings"]
     assert len(warnings) == 3
     # The metadata, the Python versions, then the lookups.
@@ -1075,9 +949,8 @@ def test_main_dependency_requirements_with_a_scope(
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
     assert (
-        main(
+        run_main(
             [
-                "extract_metadata.py",
                 str(path),
                 "[]",
                 '["numpy", "numpy@extra:slow", "pytest@group:dev"]',
@@ -1108,7 +981,7 @@ def test_main_missing_dependency_names_the_entry_with_a_scope(
 ) -> None:
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
-    assert main(["extract_metadata.py", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 0
+    assert run_main([str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 0
     assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
         "dependency 'tqdm@extra:fast' not found"
     ]
@@ -1119,21 +992,8 @@ def test_main_returns_one_for_an_invalid_dependency_scope(
 ) -> None:
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
-    assert main(["extract_metadata.py", str(path), "[]", '["numpy@dev"]']) == 1
+    assert run_main([str(path), "[]", '["numpy@dev"]']) == 1
     assert "dependencies: entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
-
-
-def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
-    parser = extract_metadata_module._build_parser("extract_metadata.py")
-
-    assert parser.description == (extract_metadata_module.__doc__ or "").splitlines()[0]
-
-
-def test_build_parser_without_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Python runs with -OO strip the docstrings.
-    monkeypatch.setattr(extract_metadata_module, "__doc__", None)
-
-    assert extract_metadata_module._build_parser("extract_metadata.py").description == ""
 
 
 def test_main_non_string_requirement_returns_one(
@@ -1143,7 +1003,7 @@ def test_main_non_string_requirement_returns_one(
         tmp_path, '[project]\nname = "coola"\nversion = "1"\ndependencies = ["a", 1]\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]", '["a"]']) == 1
+    assert run_main([str(path), "[]", '["a"]']) == 1
     assert "[project].dependencies: must contain only strings, got: 1" in capsys.readouterr().err
 
 
@@ -1152,11 +1012,11 @@ def test_main_dynamic_version_is_a_warning_and_strict_fails(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert run_main([str(path), "[]"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert (report["version"], len(report["warnings"])) == ("", 1)
 
-    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
+    assert run_main(["--strict", "true", str(path), "[]"]) == 1
     captured = capsys.readouterr()
     assert "[project].version is dynamic" in captured.err
     assert captured.out == ""
@@ -1171,7 +1031,7 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
     )
     output = tmp_path / "github_output"
 
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
+    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -1194,7 +1054,7 @@ def test_main_dependency_requirements_in_json(
         "dependencies = [\"numpy>=1; python_version < '3.12'\", \"numpy>=2; python_version >= '3.12'\"]\n",
     )
 
-    assert main(["extract_metadata.py", str(path), "[]", '["numpy", "missing"]']) == 0
+    assert run_main([str(path), "[]", '["numpy", "missing"]']) == 0
     assert json.loads(capsys.readouterr().out)["dependency_requirements"] == {
         "numpy": [
             {"specifier": ">=1", "marker": 'python_version < "3.12"', "source": "project"},
@@ -1202,3 +1062,115 @@ def test_main_dependency_requirements_in_json(
         ],
         "missing": [],
     }
+
+
+@pytest.mark.parametrize(
+    ("name", "variable"),
+    [
+        ("pyproject-path", "INPUT_PYPROJECT_PATH"),
+        ("extra-values", "INPUT_EXTRA_VALUES"),
+        ("dependencies", "INPUT_DEPENDENCIES"),
+        ("python-candidates", "INPUT_PYTHON_CANDIDATES"),
+        ("strict", "INPUT_STRICT"),
+    ],
+)
+def test_env_name(name: str, variable: str) -> None:
+    assert env_name(name) == variable
+
+
+def test_read_inputs_reads_every_variable() -> None:
+    environ = {
+        "INPUT_PYPROJECT_PATH": "sub/pyproject.toml",
+        "INPUT_EXTRA_VALUES": '["", "a"]',
+        "INPUT_DEPENDENCIES": '["numpy@project"]',
+        "INPUT_PYTHON_CANDIDATES": '["3.12"]',
+        "INPUT_STRICT": "true",
+        "OTHER": "ignored",
+    }
+
+    inputs = read_inputs(environ)
+
+    assert (
+        inputs.pyproject_path,
+        inputs.extra_values,
+        inputs.python_candidates,
+        inputs.strict,
+    ) == (
+        "sub/pyproject.toml",
+        ["", "a"],
+        ["3.12"],
+        True,
+    )
+    assert [lookup.text for lookup in inputs.dependencies] == ["numpy@project"]
+
+
+def test_read_inputs_uses_the_defaults_of_the_inputs_that_are_not_set() -> None:
+    inputs = read_inputs({})
+
+    assert inputs.pyproject_path == "pyproject.toml"
+    assert (inputs.extra_values, inputs.dependencies, inputs.strict) == ([], [], False)
+    assert inputs.python_candidates == ["3.11", "3.12", "3.13", "3.14", "3.15"]
+
+
+def test_read_inputs_empty_python_candidates_is_the_default() -> None:
+    assert read_inputs({"INPUT_PYTHON_CANDIDATES": ""}) == read_inputs({})
+
+
+def test_read_inputs_invalid_value() -> None:
+    with pytest.raises(MetadataError, match=r"^strict: must be 'true' or 'false'"):
+        read_inputs({"INPUT_STRICT": "maybe"})
+
+
+def test_main_reads_os_environ_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+
+    assert main() == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "a"
+
+
+def test_main_without_github_output_prints_the_json_and_no_annotation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
+
+    assert main({"INPUT_PYPROJECT_PATH": str(path)}) == 0
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["warnings"][0]["code"] == "dynamic-version"
+    assert "::" not in captured.out
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("github_output", ["", None])
+def test_main_an_empty_github_output_is_not_set(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], github_output: str | None
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+    environ = {"INPUT_PYPROJECT_PATH": str(path)}
+    if github_output is not None:
+        environ["GITHUB_OUTPUT"] = github_output
+
+    assert main(environ) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "a"
+
+
+def test_main_arguments_are_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main({}, ["pyproject.toml"]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "unexpected arguments ['pyproject.toml']" in captured.err
+    assert "INPUT_PYPROJECT_PATH" in captured.err
+
+
+def test_main_arguments_are_an_annotated_usage_error_with_github_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main({"GITHUB_OUTPUT": str(tmp_path / "out")}, ["x"]) == 2
+
+    assert capsys.readouterr().err.startswith("::error::extract_pyproject_metadata: error: ")
+    assert not (tmp_path / "out").exists()

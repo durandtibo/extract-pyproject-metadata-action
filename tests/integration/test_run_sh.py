@@ -17,34 +17,32 @@ from tests.helpers import (
     write_pyproject,
 )
 
-ARGS = ["--flag", "a b", "", "[]"]
-
 
 def test_run_sh_isolates_python_and_runs_the_script_with_python3(tmp_path: Path) -> None:
-    process, calls = run_run_sh(tmp_path, ARGS)
+    process, calls = run_run_sh(tmp_path)
 
     assert process.returncode == 0
-    assert calls == [["python3", "-I", "-B", str(SCRIPT_PATH), *ARGS]]
+    assert calls == [["python3", "-I", "-B", str(SCRIPT_PATH)]]
 
 
 def test_run_sh_falls_back_to_python_when_python3_is_missing(tmp_path: Path) -> None:
-    process, calls = run_run_sh(tmp_path, ARGS, pythons=("python",))
+    process, calls = run_run_sh(tmp_path, pythons=("python",))
 
     assert process.returncode == 0
-    assert calls == [["python", "-I", "-B", str(SCRIPT_PATH), *ARGS]]
+    assert calls == [["python", "-I", "-B", str(SCRIPT_PATH)]]
 
 
 def test_run_sh_falls_back_to_python_when_python3_is_older_than_3_11(tmp_path: Path) -> None:
     process, calls = run_run_sh(
-        tmp_path, ARGS, pythons=("python3", "python"), STUB_VERSION_STATUS_PYTHON3="1"
+        tmp_path, pythons=("python3", "python"), STUB_VERSION_STATUS_PYTHON3="1"
     )
 
     assert process.returncode == 0
-    assert calls == [["python", "-I", "-B", str(SCRIPT_PATH), *ARGS]]
+    assert calls == [["python", "-I", "-B", str(SCRIPT_PATH)]]
 
 
 def test_run_sh_prefers_python3(tmp_path: Path) -> None:
-    _, calls = run_run_sh(tmp_path, ARGS, pythons=("python3", "python"))
+    _, calls = run_run_sh(tmp_path, pythons=("python3", "python"))
 
     assert [call[0] for call in calls] == ["python3"]
 
@@ -63,7 +61,7 @@ def test_run_sh_prefers_python3(tmp_path: Path) -> None:
 def test_run_sh_fails_with_a_clear_message_without_python_3_11(
     tmp_path: Path, pythons: tuple[str, ...], env: dict[str, str]
 ) -> None:
-    process, calls = run_run_sh(tmp_path, ARGS, pythons=pythons, **env)
+    process, calls = run_run_sh(tmp_path, pythons=pythons, **env)
 
     assert process.returncode == 1
     assert process.stderr.startswith(
@@ -76,13 +74,13 @@ def test_run_sh_fails_with_a_clear_message_without_python_3_11(
 
 @pytest.mark.parametrize("status", ["1", "2", "7"])
 def test_run_sh_exits_with_the_status_of_the_script(tmp_path: Path, status: str) -> None:
-    process, _ = run_run_sh(tmp_path, ARGS, STUB_SCRIPT_STATUS=status)
+    process, _ = run_run_sh(tmp_path, STUB_SCRIPT_STATUS=status)
 
     assert process.returncode == int(status)
 
 
 def test_run_sh_installs_nothing_and_needs_no_temporary_directory(tmp_path: Path) -> None:
-    process, calls = run_run_sh(tmp_path, ARGS)
+    process, calls = run_run_sh(tmp_path)
 
     assert process.returncode == 0
     assert process.stdout == ""
@@ -105,11 +103,15 @@ def test_run_sh_end_to_end_with_the_real_python(tmp_path: Path) -> None:
     output = tmp_path / "github_output"
 
     process = subprocess.run(
-        ["/bin/bash", str(RUN_PATH), "--github-output", str(output), "--", str(path), "[]"],
+        ["/bin/bash", str(RUN_PATH)],
         capture_output=True,
         text=True,
         check=False,
-        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "GITHUB_OUTPUT": str(output),
+            "INPUT_PYPROJECT_PATH": str(path),
+        },
     )
 
     assert process.returncode == 0, process.stderr
@@ -129,12 +131,17 @@ def test_run_sh_ignores_modules_and_variables_of_the_caller(tmp_path: Path) -> N
     output = tmp_path / "github_output"
 
     process = subprocess.run(
-        ["/bin/bash", str(RUN_PATH), "--github-output", str(output), "--", str(path), "[]"],
+        ["/bin/bash", str(RUN_PATH)],
         capture_output=True,
         text=True,
         check=False,
         cwd=workspace,
-        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "PYTHONPATH": str(hostile)},
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "PYTHONPATH": str(hostile),
+            "GITHUB_OUTPUT": str(output),
+            "INPUT_PYPROJECT_PATH": str(path),
+        },
     )
 
     assert process.returncode == 0, process.stderr
@@ -153,12 +160,12 @@ def test_run_sh_writes_no_bytecode(tmp_path: Path) -> None:
     path = write_pyproject(workspace, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
     process = subprocess.run(
-        ["/bin/bash", str(action / "scripts" / "run.sh"), "--", str(path), "[]"],
+        ["/bin/bash", str(action / "scripts" / "run.sh")],
         capture_output=True,
         text=True,
         check=False,
         cwd=workspace,
-        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "INPUT_PYPROJECT_PATH": str(path)},
     )
 
     assert process.returncode == 0, process.stderr

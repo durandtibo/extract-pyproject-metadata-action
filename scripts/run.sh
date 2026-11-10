@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run scripts/extract_metadata.py with the Python 3.11 or later found on PATH.
 #
-# Usage: run.sh <arguments of extract_metadata.py>...
+# Usage: run.sh (no argument: the inputs of the action are the variables INPUT_*)
 #
 # The interpreter is the first of "python3" and "python" that is Python 3.11 or later (a
 # runner may only have one of them, and "python3" can be an older or a stub interpreter).
@@ -21,7 +21,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for python in python3 python; do
 	if command -v "$python" >/dev/null 2>&1 &&
 		"$python" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
-		exec "$python" -I -B "$script_dir/extract_metadata.py" "$@"
+		exec "$python" -I -B "$script_dir/extract_metadata.py"
 	fi
 done
 

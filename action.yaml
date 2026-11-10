@@ -6,7 +6,8 @@
 # `pip install` actually installs.
 #
 # The logic lives in the package src/extract_pyproject_metadata, started by scripts/run.sh;
-# this file only wires the inputs to the scripts and their output to the action outputs.
+# this file only passes the inputs to the program (as the variables INPUT_*) and its output to
+# the action outputs ($GITHUB_OUTPUT).
 # Requires the repository to already be checked out and a Python 3.11+ interpreter
 # (python3 or python) to be available on PATH. Nothing is installed: the only dependency,
 # "packaging", is vendored. Linux, macOS and Windows runners are supported.
@@ -117,14 +118,9 @@ runs:
     - id: metadata
       shell: bash
       env:
-        PYPROJECT_PATH: ${{ inputs.pyproject-path }}
-        EXTRA_VALUES: ${{ inputs.extra-values }}
-        DEPENDENCIES: ${{ inputs.dependencies }}
-        PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
-        STRICT: ${{ inputs.strict }}
-      run: |
-        bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
-          --github-output "$GITHUB_OUTPUT" \
-          --python-candidates "$PYTHON_CANDIDATES" \
-          --strict "$STRICT" \
-          -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"
+        INPUT_PYPROJECT_PATH: ${{ inputs.pyproject-path }}
+        INPUT_EXTRA_VALUES: ${{ inputs.extra-values }}
+        INPUT_DEPENDENCIES: ${{ inputs.dependencies }}
+        INPUT_PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
+        INPUT_STRICT: ${{ inputs.strict }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run.sh"

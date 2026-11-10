@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from extract_pyproject_metadata.cli import main
+from extract_pyproject_metadata.cli import env_name, main
 from tests.helpers import ROOT_PATH, parse_github_output
 
 if TYPE_CHECKING:
@@ -26,10 +26,8 @@ if TYPE_CHECKING:
 TEST_DATA_PATH = ROOT_PATH / "test-data"
 CASES = sorted(path.parent.name for path in TEST_DATA_PATH.glob("*/expected.json"))
 
+
 # The inputs that are positional arguments of the command line, with their default.
-POSITIONAL_INPUTS = {"extra-values": "[]", "dependencies": "[]"}
-
-
 def read_inputs(case: str) -> dict[str, str]:
     """Return the inputs of a case (none when it has no ``inputs.json``)."""
     path = TEST_DATA_PATH / case / "inputs.json"
@@ -38,26 +36,13 @@ def read_inputs(case: str) -> dict[str, str]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def build_argv(case: str, output: Path) -> list[str]:
-    """Build the command line that the action runs for a case."""
-    inputs = read_inputs(case)
-    pyproject_path = inputs.get("pyproject-path", f"test-data/{case}/pyproject.toml")
-    options = [
-        arg
-        for name, value in inputs.items()
-        if name != "pyproject-path" and name not in POSITIONAL_INPUTS
-        for arg in (f"--{name}", value)
-    ]
-    positional = [inputs.get(name, default) for name, default in POSITIONAL_INPUTS.items()]
-    return [
-        "extract_metadata.py",
-        "--github-output",
-        str(output),
-        *options,
-        "--",
-        pyproject_path,
-        *positional,
-    ]
+def build_environ(case: str, output: Path) -> dict[str, str]:
+    """Build the environment that the action sets for a case."""
+    inputs = {"pyproject-path": f"test-data/{case}/pyproject.toml", **read_inputs(case)}
+    return {
+        "GITHUB_OUTPUT": str(output),
+        **{env_name(name): value for name, value in inputs.items()},
+    }
 
 
 def test_there_are_golden_cases() -> None:
@@ -80,7 +65,7 @@ def test_the_json_output_is_the_golden_file(
     output = tmp_path / "output"
     expected_path = TEST_DATA_PATH / case / "expected.json"
 
-    assert main(build_argv(case, output)) == 0
+    assert main(build_environ(case, output)) == 0
 
     capsys.readouterr()
     actual = parse_github_output(output.read_bytes().decode("utf-8"))["json"]

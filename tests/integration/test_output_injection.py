@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from extract_pyproject_metadata.cli import main
 from extract_pyproject_metadata.inputs import parse_inputs
 from extract_pyproject_metadata.output.github import (
     format_outputs,
@@ -24,6 +23,7 @@ from extract_pyproject_metadata.output.github import (
 )
 from extract_pyproject_metadata.output.summary import format_warning_summary
 from extract_pyproject_metadata.report import build_report
+from tests.helpers import run_main
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -128,15 +128,7 @@ def test_stdout_has_only_the_workflow_commands_of_the_script(
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary"))
 
-    status = main(
-        [
-            "extract_metadata.py",
-            "--github-output",
-            str(output),
-            str(path),
-            "[]",
-        ]
-    )
+    status = run_main(["--github-output", str(output), str(path), "[]"])
 
     assert status == 0
     lines = capsys.readouterr().out.splitlines()
@@ -154,7 +146,7 @@ def test_the_output_file_of_a_hostile_pyproject_reads_back_unchanged(
     path = hostile_pyproject(tmp_path)
     output = tmp_path / "output"
 
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
+    assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
 
     capsys.readouterr()
     expected = format_outputs(build_report(_inputs(path)))
