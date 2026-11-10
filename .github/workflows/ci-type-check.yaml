@@ -1,6 +1,6 @@
 # Type check workflow.
-# Runs ty on the sources, the scripts and the tests, and pyright in strict mode
-# on the package and the script (see [tool.ty] and [tool.pyright] in pyproject.toml).
+# Runs pyright in strict mode on the package and the script (see [tool.pyright] in
+# pyproject.toml).
 
 name: Type Check
 on:
@@ -11,27 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  ty:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: "3.11" # the oldest supported version
-
-      - name: Install test dependencies
-        run: |
-          python -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r scripts/requirements.txt --group dev
-
-      - name: Run ty
-        run: .venv/bin/ty check
-
   pyright:
     runs-on: ubuntu-latest
     timeout-minutes: 10

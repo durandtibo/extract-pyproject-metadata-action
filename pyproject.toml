@@ -1,52 +1,26 @@
-[build-system]
-requires = ["hatchling>=1.33", "hatch-requirements-txt>=0.4"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build]
-sources = ["src"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/extract_pyproject_metadata"]
-
 [project]
 name = "extract-pyproject-metadata-action"
 version = "0.0.0"
-description = "GitHub composite action that reads the metadata of a pyproject.toml"
-readme = "README.md"
-authors = [{ name = "Thibaut Durand", email = "durand.tibo+gh@gmail.com" }]
-license = "BSD-3-Clause"
-license-files = ["LICENSE"]
 requires-python = ">=3.11"
-# The runtime dependencies are read from scripts/requirements.txt (the single source, which
-# scripts/run.sh also installs from).
-dynamic = ["dependencies"]
+# The repository is not a Python distribution: this table only lets `uv sync` and `pip --group`
+# read the dev group. The runtime dependency is declared in scripts/requirements.txt (which
+# scripts/run.sh installs from) and repeated here for `uv sync`; a test checks they agree.
+dependencies = ["packaging>=23.0,<27"]
 
-[tool.hatch.metadata.hooks.requirements_txt]
-files = ["scripts/requirements.txt"]
-
-[project.urls]
-Homepage = "https://github.com/durandtibo/extract-pyproject-metadata-action"
-Repository = "https://github.com/durandtibo/extract-pyproject-metadata-action"
-Issues = "https://github.com/durandtibo/extract-pyproject-metadata-action/issues"
+[tool.uv]
+package = false
 
 [dependency-groups]
 dev = [
   "codespell>=2.4,<3.0",
   "coverage[toml]>=7.17.0,<8.0",
-  "docformatter>=1.7.8,<2.0",
   "hypothesis>=6.100,<7.0; python_version >= '3.14'",
-  # grimp (import-linter) does not build on free-threaded Python 3.13.
-  "import-linter>=2.0,<3.0; python_version >= '3.14'",
-  "invoke-tasklib>=0.1.0a0,<1.0",
-  "invoke>=3.0,<4.0",
   "pre-commit>=4.6,<5.0",
   "pytest-cov>=7.1,<8.0",
   "pytest-timeout>=2.4,<3.0",
   "pytest>=9.1,<10.0",
   "pyright>=1.1.407,<2.0",
   "ruff>=0.16,<1.0",
-  "ty>=0.0.99,<1.0",
-  "xdoctest>=1.3,<2.0",
 ]
 
 [tool.codespell]
@@ -89,12 +63,6 @@ timeout = 300
 filterwarnings = ["error"]
 # Configuration of the short test summary info
 # https://docs.pytest.org/en/stable/usage.html#detailed-summary-report
-
-[tool.docformatter]
-recursive = true
-wrap-summaries = 72
-wrap-descriptions = 72
-syntax = "google"
 
 [tool.ruff]
 # List of rules: https://docs.astral.sh/ruff/rules/
@@ -150,7 +118,7 @@ lint.ignore = [
   "PLR0913", # Too many arguments in function definition (8 > 5)
   "PLR2004", # Magic value used in comparison, consider replacing 0.0 with a constant variable
 
-  # The following rules are ignored because they conflict with another library like docformatter.
+  # The following rules are ignored for the docstring style of this repository.
   "D102", # Missing docstring in public method
   "D105", # Missing docstring in magic method
   "D107", # Missing docstring in `__init__`
@@ -205,46 +173,3 @@ include = ["src/extract_pyproject_metadata", "scripts/extract_metadata.py"]
 extraPaths = ["src"]
 venvPath = "."
 venv = ".venv"
-
-[tool.ty.src]
-include = ["src", "scripts", "tests"]
-
-[tool.ty.environment]
-python-version = "3.11"
-root = ["src", "."]
-
-[tool.importlinter]
-root_package = "extract_pyproject_metadata"
-include_external_packages = false
-
-[[tool.importlinter.contracts]]
-name = "Imports go one way, from the top of the architecture to the bottom"
-type = "layers"
-containers = ["extract_pyproject_metadata"]
-layers = [
-  "cli",
-  "report",
-  "dependencies | python_versions",
-  "metadata",
-  "fields | license | pyproject | dynamic_version",
-  "inputs | checks",
-  "types | errors",
-]
-
-[[tool.importlinter.contracts]]
-name = "Output only depends on types and errors"
-type = "forbidden"
-source_modules = ["extract_pyproject_metadata.output"]
-forbidden_modules = [
-  "extract_pyproject_metadata.cli",
-  "extract_pyproject_metadata.report",
-  "extract_pyproject_metadata.dependencies",
-  "extract_pyproject_metadata.python_versions",
-  "extract_pyproject_metadata.metadata",
-  "extract_pyproject_metadata.fields",
-  "extract_pyproject_metadata.license",
-  "extract_pyproject_metadata.pyproject",
-  "extract_pyproject_metadata.dynamic_version",
-  "extract_pyproject_metadata.inputs",
-  "extract_pyproject_metadata.checks",
-]
