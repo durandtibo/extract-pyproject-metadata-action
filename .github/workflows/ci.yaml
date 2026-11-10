@@ -1,14 +1,13 @@
 # Main CI workflow: it only calls the per-check reusable workflows (ci-*.yaml), so that each
-# check can also be run on its own (workflow_dispatch). nightly.yaml runs it every night.
-# Runs on pull requests, pushes to main, manual dispatch and from the release workflow.
+# check can also be run on its own (workflow_dispatch).
+# Runs on pull requests, pushes to main, every night and manual dispatch.
 #
 # - lib-get-test-matrix.yaml: the shared OS and Python matrix (durandtibo/workflow-config-action).
 # - ci-lint.yaml: ruff, pre-commit, generated README tables.
 # - ci-type-checking.yaml: pyright.
-# - ci-test-python.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
-# - ci-test-python-properties.yaml: the property-based tests, on the standard Python versions.
-# - ci-test-action.yaml: the integration test of the current code of the action (`uses: ./`).
-# - ci-verify-workflows.yaml: lints the workflows.
+# - ci-python.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
+# - ci-action.yaml: the integration test of the current code of the action (`uses: ./`).
+# ci-verify-workflows.yaml lints the workflows; it has its own triggers and is not called from here.
 # The test of the published action is nightly-test-released.yaml (called from nightly.yaml).
 
 name: CI
@@ -17,8 +16,9 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: "10 9 * * *" # Run nightly at 9:10 AM UTC to catch issues from external changes
   workflow_dispatch: # to trigger manually
-  workflow_call: # the release workflow runs the checks first
 
 jobs:
   # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
@@ -32,11 +32,6 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci-lint.yaml
 
-  verify-workflows:
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-verify-workflows.yaml
-
   types:
     permissions:
       contents: read
@@ -46,16 +41,7 @@ jobs:
     needs: get-matrix
     permissions:
       contents: read
-    uses: ./.github/workflows/ci-test-python.yaml
-    with:
-      test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
-
-  # The property-based tests (hypothesis has no free-threaded wheels): standard versions only
-  properties:
-    needs: get-matrix
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-test-python-properties.yaml
+    uses: ./.github/workflows/ci-python.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
@@ -64,6 +50,6 @@ jobs:
     needs: get-matrix
     permissions:
       contents: read
-    uses: ./.github/workflows/ci-test-action.yaml
+    uses: ./.github/workflows/ci-action.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

@@ -1,9 +1,14 @@
-# Lint the files of .github/workflows (syntax and best practices).
-# Called from ci.yaml; can also be run by hand.
+# Workflow validation workflow.
+# Verifies GitHub Actions workflow files are valid and follow best practices.
+# Runs on every pull request and push to main (no path filter, so it can be a
+# required check). It is not called from ci.yaml.
 
 name: Verify Workflows
 on:
-  workflow_call:
+  pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch: # to trigger manually
 
 jobs:
@@ -16,5 +21,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
+      # Verify workflow files are valid and follow best practices
       - name: Verify GitHub Workflows
         uses: durandtibo/verify-github-workflow-action@e5dc341675711838a82b2433f70a225858ad70d1 # ratchet:durandtibo/verify-github-workflow-action@v0.0.3

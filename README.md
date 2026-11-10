@@ -279,11 +279,10 @@ gate), `make docs` (regenerates the tables of this file from `action.yaml`); `ma
 fails when they are out of date, as the CI does. `test-data/<case>/` holds the golden cases: a
 `pyproject.toml`, the `inputs.json` and the `expected.json` (the `json` output), checked by
 `tests/integration/test_golden.py` and, for three of them, with the real action by
-`ci-test-action.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
+`ci-action.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
 removed or changes type.
 
 To release: update the default `python-candidates` in `python_versions.py` (every October; `maintenance.yaml` opens an issue), check
 that `packaging` is current (`make vendor-packaging`), run `make check` and `make docs`,
-write `release-notes/vX.Y.Z.md`, and push the tag `vX.Y.Z`. `release.yaml` then runs the
-checks and creates the GitHub release. Tags are immutable: a published tag is never moved or
+push the tag `vX.Y.Z` and create the GitHub release with its notes. Tags are immutable: a published tag is never moved or
 deleted, a fix is a new version, and workflows pin the exact tag (`@vX.Y.Z`).

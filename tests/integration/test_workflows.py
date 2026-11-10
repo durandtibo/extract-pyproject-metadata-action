@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 WORKFLOWS_PATH = ROOT_PATH / ".github" / "workflows"
 ACTION_PATH = ROOT_PATH / "action.yaml"
-LOCAL_PATH = WORKFLOWS_PATH / "ci-test-action.yaml"
+LOCAL_PATH = WORKFLOWS_PATH / "ci-action.yaml"
 MAKEFILE_PATH = ROOT_PATH / "Makefile"
 PYPROJECT_PATH = ROOT_PATH / "pyproject.toml"
 
@@ -94,13 +94,13 @@ def test_permissions_are_set_on_every_job_and_not_on_the_workflow(path: Path) ->
     assert [name for name, job in workflow["jobs"].items() if "permissions" not in job] == []
 
 
-def test_ci_runs_every_night_through_the_nightly_workflow_only() -> None:
+def test_ci_and_the_released_test_both_run_every_night() -> None:
     ci = (WORKFLOWS_PATH / "ci.yaml").read_text(encoding="utf-8")
     nightly = (WORKFLOWS_PATH / "nightly.yaml").read_text(encoding="utf-8")
 
-    assert "schedule:" not in ci
+    assert "schedule:" in ci
     assert "schedule:" in nightly
-    assert "uses: ./.github/workflows/ci.yaml" in nightly
+    assert "uses: ./.github/workflows/ci.yaml" not in nightly
     assert "uses: ./.github/workflows/nightly-test-released.yaml" in nightly
 
 
@@ -119,12 +119,10 @@ def test_ci_only_calls_the_reusable_workflows() -> None:
 
     assert all("uses" in job for job in jobs.values())
     assert sorted(job["uses"] for job in jobs.values()) == [
+        "./.github/workflows/ci-action.yaml",
         "./.github/workflows/ci-lint.yaml",
-        "./.github/workflows/ci-test-action.yaml",
-        "./.github/workflows/ci-test-python-properties.yaml",
-        "./.github/workflows/ci-test-python.yaml",
+        "./.github/workflows/ci-python.yaml",
         "./.github/workflows/ci-type-checking.yaml",
-        "./.github/workflows/ci-verify-workflows.yaml",
         "./.github/workflows/lib-get-test-matrix.yaml",
     ]
 
@@ -162,7 +160,7 @@ def python_matrices(workflow: dict) -> list[list[str]]:
     ]
 
 
-MATRIX_WORKFLOWS = ["ci-test-python.yaml", "ci-test-action.yaml", "nightly-test-released.yaml"]
+MATRIX_WORKFLOWS = ["ci-python.yaml", "ci-action.yaml", "nightly-test-released.yaml"]
 
 
 @pytest.mark.parametrize("name", MATRIX_WORKFLOWS)
@@ -180,7 +178,7 @@ def test_the_matrix_jobs_use_the_shared_matrix(name: str) -> None:
 
 
 def test_the_property_tests_run_on_the_standard_python_versions_only() -> None:
-    job = load_workflow("ci-test-python-properties.yaml")["jobs"]["properties"]
+    job = load_workflow("ci-python.yaml")["jobs"]["properties"]
 
     assert job["strategy"]["matrix"] == {
         "python-version": "${{ fromJson(inputs.test-matrix).python_versions_standard }}"
@@ -199,9 +197,8 @@ def test_hypothesis_is_in_the_property_group_only() -> None:
 @pytest.mark.parametrize(
     ("name", "caller"),
     [
-        ("ci-test-python-properties.yaml", "ci.yaml"),
-        ("ci-test-python.yaml", "ci.yaml"),
-        ("ci-test-action.yaml", "ci.yaml"),
+        ("ci-python.yaml", "ci.yaml"),
+        ("ci-action.yaml", "ci.yaml"),
         ("nightly-test-released.yaml", "nightly.yaml"),
     ],
 )
@@ -216,7 +213,7 @@ def test_the_callers_pass_the_shared_matrix(name: str, caller: str) -> None:
 def test_ci_runs_the_checks_through_make() -> None:
     commands = [
         step["run"]
-        for name in ("ci-lint.yaml", "ci-test-python.yaml", "ci-type-checking.yaml")
+        for name in ("ci-lint.yaml", "ci-python.yaml", "ci-type-checking.yaml")
         for job in load_workflow(name)["jobs"].values()
         for step in job.get("steps", [])
         if "run" in step
@@ -301,7 +298,7 @@ def test_compare_json_usage(capsys: pytest.CaptureFixture[str]) -> None:
 
 def golden_cases() -> list[str]:
     """Return the cases of the ``golden`` job of the local workflow."""
-    return load_workflow("ci-test-action.yaml")["jobs"]["golden"]["strategy"]["matrix"]["case"]
+    return load_workflow("ci-action.yaml")["jobs"]["golden"]["strategy"]["matrix"]["case"]
 
 
 def test_the_golden_job_lists_its_cases() -> None:
