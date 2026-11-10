@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata._vendor.packaging.version import Version
 from extract_pyproject_metadata.errors import MetadataError
@@ -74,7 +76,7 @@ def build_report(inputs: Inputs) -> Report:
         python_max=highest_python_version(python_versions),
         dependency_specifiers=specifiers,
         dependency_requirements=requirements,
-        warnings=[{"code": w.code, "message": w.message} for w in unique_warnings],
+        warnings=[asdict(w) for w in unique_warnings],
         schema_version=SCHEMA_VERSION,
     )
     if inputs.strict and unique_warnings:

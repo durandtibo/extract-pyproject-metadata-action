@@ -13,7 +13,6 @@ __all__ = [
     "ReportWarning",
     "Requirement",
     "WarningCode",
-    "WarningItem",
 ]
 
 
@@ -41,13 +40,6 @@ class ReportWarning:
     """
 
     code: WarningCode
-    message: str
-
-
-class WarningItem(TypedDict):
-    """A warning in the report: the ``code`` and the ``message``."""
-
-    code: str
     message: str
 
 
@@ -138,5 +130,5 @@ class Report(TypedDict):
     python_max: str
     dependency_specifiers: dict[str, str | None]
     dependency_requirements: dict[str, list[dict[str, str]]]
-    warnings: list[WarningItem]
+    warnings: list[dict[str, str]]
     schema_version: int
