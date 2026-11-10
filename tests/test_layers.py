@@ -30,13 +30,10 @@ RANKS = {
     "pyproject": 2,
     "requirements": 4,
     "python_versions": 4,
-    "output": 4,
+    "github": 4,
     "report": 5,
     "cli": 6,
 }
-
-# The only modules that a sub-package may import from outside itself.
-ALLOWED_IMPORTS = {"output": {"types", "errors"}}
 
 # The vendored code is not ours, and has its own imports.
 MODULES = sorted(
@@ -83,5 +80,3 @@ def test_a_module_imports_only_from_lower_ranks(path: Path) -> None:
 
     too_high = sorted(name for name in imported if RANKS[name] >= RANKS[top])
     assert too_high == []
-    if top in ALLOWED_IMPORTS:
-        assert sorted(imported - ALLOWED_IMPORTS[top]) == []

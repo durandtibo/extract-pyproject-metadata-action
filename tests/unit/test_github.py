@@ -1,4 +1,4 @@
-"""Tests of ``extract_pyproject_metadata.output.github``."""
+"""Tests of ``extract_pyproject_metadata.github``."""
 
 from __future__ import annotations
 
@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-import extract_pyproject_metadata.output.github as output_github_module
+import extract_pyproject_metadata.github as output_github_module
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.output.github import (
+from extract_pyproject_metadata.github import (
     emit_github_output,
+    escape_annotation,
+    escape_annotation_property,
+    format_log_line,
     format_outputs,
-    format_summary,
     new_delimiter,
     write_github_output,
 )
@@ -198,8 +200,8 @@ def test_log_line_leaves_out_only_derived_outputs() -> None:
     }
 
 
-def test_format_summary() -> None:
-    assert format_summary(format_outputs(METADATA)) == (
+def test_format_log_line() -> None:
+    assert format_log_line(format_outputs(METADATA)) == (
         "📦 name=coola version=1.2.3 requires-python=>=3.10 "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","numpy"] '
         'groups=["dev","test"] '
@@ -207,10 +209,10 @@ def test_format_summary() -> None:
     )
 
 
-def test_format_summary_is_one_line_and_escapes_values() -> None:
+def test_format_log_line_is_one_line_and_escapes_values() -> None:
     outputs = {**format_outputs(METADATA), "requires-python": "a\nb\r\n::error::boom\\"}
 
-    summary = format_summary(outputs)
+    summary = format_log_line(outputs)
 
     assert "\n" not in summary
     assert "\r" not in summary
@@ -236,3 +238,45 @@ def test_write_github_output_appends(tmp_path: Path) -> None:
     write_github_output(str(output), {"name": "coola"}, lambda: "DELIM")
 
     assert output.read_text(encoding="utf-8") == "previous=step\nname<<DELIM\ncoola\nDELIM\n"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("plain", "plain"),
+        ("", ""),
+        ("100%", "100%25"),
+        ("a\nb", "a%0Ab"),
+        ("a\r\nb", "a%0D%0Ab"),
+        ("%0A", "%250A"),
+    ],
+)
+def test_escape_annotation(message: str, expected: str) -> None:
+    assert escape_annotation(message) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("plain", "plain"), ("", ""), ("a\nb", "a\\nb"), ("a\r\nb", "a\\r\\nb"), ("a\\nb", "a\\\\nb")],
+)
+def test_single_line(value: str, expected: str) -> None:
+    assert output_github_module.single_line(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("pyproject.toml", "pyproject.toml"),
+        ("", ""),
+        ("sub dir/pyproject.toml", "sub dir/pyproject.toml"),
+        ("C:\\pyproject.toml", "C%3A\\pyproject.toml"),
+        ("a,b", "a%2Cb"),
+        ("a::b", "a%3A%3Ab"),
+        ("100%", "100%25"),
+        ("a\nb", "a%0Ab"),
+        ("a\r\nb", "a%0D%0Ab"),
+        ("%3A", "%253A"),
+    ],
+)
+def test_escape_annotation_property(value: str, expected: str) -> None:
+    assert escape_annotation_property(value) == expected
