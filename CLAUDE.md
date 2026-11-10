@@ -130,15 +130,40 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 - Start each workflow with a comment saying what it does and when it runs, and update it when
   that changes. Use top-level `permissions: {}` or `contents: read`, the minimum permissions per
   job, and `timeout-minutes` on every job.
-- Files are prefixed by role: `ci-` (checks, reusable with `workflow_call` plus
-  `workflow_dispatch`, called from `ci.yaml`, the single entry point; the ones that take the `test-matrix` input of
-  `lib-get-test-matrix.yaml` have `workflow_call` only), `lib-` (shared helpers), `nightly-` (scheduled tests
-  of the published action), `bot-` (scheduled automation), `release-`/`release.yaml`. Add a check
-  as a new `ci-<name>.yaml` plus a job in `ci.yaml`. Put `make` targets in the steps rather than
-  duplicating commands.
 - Check workflow changes with `actionlint` when available.
 - Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
   runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
+
+## Workflow structure (`.github/workflows/`)
+
+Files are prefixed by role:
+
+- `ci.yaml`: entry point for pull requests, pushes to `main` and manual runs. It holds no steps,
+  only jobs that call the reusable `ci-*.yaml` workflows below.
+  - `ci-lint.yaml`: ruff, pre-commit hooks and the generated README tables.
+  - `ci-type-checking.yaml`: pyright.
+  - `ci-test-python.yaml`: the Python tests (unit, integration) on the OS and Python matrix.
+  - `ci-test-python-properties.yaml`: the property-based tests, on the standard Python versions.
+  - `ci-test-action.yaml`: runs the action from this checkout (`uses: ./`), i.e. the version not
+    released yet.
+- `ci-verify-workflows.yaml`: lints the workflow files themselves. It has its own triggers and is
+  not called from `ci.yaml`.
+- `nightly.yaml`: scheduled entry point that calls `nightly-test-released.yaml`, which tests the
+  latest released action. It is not part of `ci.yaml`.
+- `lib-get-test-matrix.yaml`: reusable workflow that loads the shared OS matrix once; callers pass
+  it down through the `test-matrix` input.
+- `bot-*.yaml`: scheduled automation that opens PRs or acts on runs (format files, pin actions,
+  sync `.make/`, cancel stale runs).
+- `release.yaml`: creates the GitHub release from a pushed tag.
+
+Conventions:
+
+- Each `ci-*` check is a `workflow_call` workflow that also has `workflow_dispatch`, so it can be
+  run alone (the ones that take the `test-matrix` input have `workflow_call` only). Add a check as
+  a new `ci-<name>.yaml` plus a job in `ci.yaml`.
+- Name test workflows by what they test: `ci-test-action` tests the action, `ci-test-python` tests
+  the Python code, `nightly-test-released` tests the published action.
+- Put `make` targets in the steps rather than duplicating commands, so local runs and CI match.
 
 ## Python script
 
@@ -192,7 +217,7 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   every case without GitHub; `UPDATE_GOLDEN=1 pytest tests/integration/test_golden.py`
   rewrites the files (review the diff). Adding a case is adding a directory (it is checked by `test_golden.py`; add it to the
   `golden` matrix only if it covers a new input or output).
-- The integration workflow `.github/workflows/ci-test-local.yaml` (`uses: ./`)
+- The integration workflow `.github/workflows/ci-test-action.yaml` (`uses: ./`)
   checks only the wiring: the `golden` job runs the real action on three
   cases (`minimal`, `readme-example`, `python-candidates-none`: a three-item matrix) and
   compares the `json` output with `expected.json` (`scripts/compare_json.py`); a test checks that
@@ -200,7 +225,7 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   the other jobs check what the golden files cannot see (failures, `strict`,
   what the action leaves behind). Pass values through `env:`, never interpolate
   them in `run:` (a test checks it). Add a case or a job for every new input or
-  output. `nightly-test-stable.yaml` (called from `nightly.yaml`) tests the latest
+  output. `nightly-test-released.yaml` (called from `nightly.yaml`) tests the latest
   published tag, pinned by SHA, with the inputs and outputs of that version; update the pin
   after each release. A tag is never moved.
 

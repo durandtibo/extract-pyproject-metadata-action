@@ -279,7 +279,7 @@ gate), `make docs` (regenerates the tables of this file from `action.yaml`); `ma
 fails when they are out of date, as the CI does. `test-data/<case>/` holds the golden cases: a
 `pyproject.toml`, the `inputs.json` and the `expected.json` (the `json` output), checked by
 `tests/integration/test_golden.py` and, for three of them, with the real action by
-`ci-test-local.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
+`ci-test-action.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
 removed or changes type.
 
 To release: update the default `python-candidates` in `python_versions.py` (every October; `maintenance.yaml` opens an issue), check
