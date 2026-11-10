@@ -15,12 +15,12 @@ The package `src/extract_pyproject_metadata/` is split by concern. Imports go on
 way, from the bottom of this list to the top, and a module never imports from a
 module above it:
 
-1. `errors` (`MetadataError`), `types` (`Inputs`, `Metadata`, `Report`), `checks`
+1. `errors` (`MetadataError`), `types` (`Inputs`, `Project`, `Report`), `checks`
    (type checks of the values read from the file), `inputs` (`parse_inputs`: the
    single place that validates the input strings and builds `Inputs`).
-2. `pyproject` (read and parse the file, the names of the extras and groups) and
-   `metadata` (`extract_metadata`: name, version, `requires-python`, extras and groups).
-   Only what the action outputs is read and validated.
+2. `pyproject` (read and parse the file; `read_project`: name, version,
+   `requires-python`, `dynamic`, extras and groups, as a `Project`). Only what the
+   action outputs is read and validated; `report` derives the normalized names.
 3. `requirements` (the requirements of `[project].dependencies`, the extras and the
    groups with `include-group`, and the lookup of the requested dependencies) and
    `python_versions`.
@@ -119,7 +119,7 @@ module above it:
 ## Tests
 
 - The tests mirror the package. `tests/unit/` has one module per module of
-  `src/extract_pyproject_metadata/` (`tests/unit/test_metadata.py`,
+  `src/extract_pyproject_metadata/` (`tests/unit/test_pyproject.py`,
   `tests/unit/test_requirements.py`, `tests/unit/output/test_github.py`,
   ...). `tests/integration/` runs the command line in a new process
   (`test_cli_process.py`, `test_cli_invalid_arguments.py`, `test_limits.py`),

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
+from extract_pyproject_metadata._vendor.packaging.version import Version
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.metadata import extract_metadata
-from extract_pyproject_metadata.pyproject import load_pyproject
+from extract_pyproject_metadata.pyproject import load_pyproject, read_project
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
     highest_python_version,
@@ -30,7 +31,7 @@ def build_report(inputs: Inputs) -> Report:
         inputs: The parsed inputs, as returned by ``parse_inputs``.
 
     Returns:
-        The report: the metadata, the Python versions, the dependency
+        The report: the project fields, the Python versions, the dependency
         specifiers and the warnings (without duplicates).
 
     Raises:
@@ -38,11 +39,11 @@ def build_report(inputs: Inputs) -> Report:
             warning with ``strict``.
     """
     data = load_pyproject(inputs.pyproject_path)
-    metadata, warnings = extract_metadata(data, inputs.extra_values, inputs.pyproject_path)
+    project, warnings = read_project(data, inputs.extra_values, inputs.pyproject_path)
     # Computed in the order of their warnings in the report: the metadata, the Python versions,
     # then the lookups of the requested dependencies.
     python_versions, python_warnings = compatible_python_versions(
-        metadata["requires_python"], inputs.python_candidates, inputs.pyproject_path
+        project.requires_python, inputs.python_candidates, inputs.pyproject_path
     )
     # The requirement tables are read only for a lookup: without one, a broken table is not
     # the business of the action.
@@ -59,8 +60,16 @@ def build_report(inputs: Inputs) -> Report:
     warnings.extend(python_warnings)
     warnings.extend(lookup_warnings)
     unique_warnings = list(dict.fromkeys(warnings))
+    normalized_name = canonicalize_name(project.name)
     report = Report(
-        **metadata,
+        name=project.name,
+        normalized_name=normalized_name,
+        file_name=normalized_name.replace("-", "_"),
+        version=project.version or "",
+        normalized_version=str(Version(project.version)) if project.version else "",
+        requires_python=project.requires_python,
+        extras=project.extras,
+        groups=project.groups,
         python_versions=python_versions,
         python_min=lowest_python_version(python_versions),
         python_max=highest_python_version(python_versions),

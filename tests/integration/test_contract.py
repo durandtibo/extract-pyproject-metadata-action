@@ -12,7 +12,7 @@ import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import DEFAULT_PYTHON_CANDIDATES, parse_dependencies
 from extract_pyproject_metadata.report import build_report
-from extract_pyproject_metadata.types import Metadata, Report
+from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     ACTION_PATH,
     PACKAGE_PATH,
@@ -28,7 +28,7 @@ from tests.helpers import (
 def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    assert list(extract(path)) == list(Metadata.__annotations__)
+    assert list(extract(path)) == list(Report.__annotations__)[:8]
 
 
 def test_action_yaml_does_not_repeat_the_default_of_python_candidates() -> None:
