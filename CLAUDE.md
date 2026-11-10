@@ -107,6 +107,8 @@ module above it:
 - Keep the logic in `src/extract_pyproject_metadata/` and `scripts/run.sh` (which
   finds Python 3.11 or later and starts the script), not inline in
   `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
+- Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
+  runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
 
 ## Python script
 

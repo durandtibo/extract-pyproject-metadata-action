@@ -178,7 +178,7 @@ source = { virtual = "." }
 dev = [
     { name = "codespell" },
     { name = "coverage" },
-    { name = "hypothesis", marker = "python_full_version >= '3.14'" },
+    { name = "hypothesis" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
@@ -194,7 +194,7 @@ dev = [
 dev = [
     { name = "codespell", specifier = ">=2.4.3,<3.0" },
     { name = "coverage", extras = ["toml"], specifier = ">=7.17.2,<8.0" },
-    { name = "hypothesis", marker = "python_full_version >= '3.14'", specifier = ">=6.170.15,<7.0" },
+    { name = "hypothesis", specifier = ">=6.170.15,<7.0" },
     { name = "pre-commit", specifier = ">=4.7.0,<5.0" },
     { name = "pyright", specifier = ">=1.1.414,<2.0" },
     { name = "pytest", specifier = ">=9.2.0,<10.0" },

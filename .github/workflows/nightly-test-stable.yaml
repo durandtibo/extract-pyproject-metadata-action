@@ -13,11 +13,6 @@ name: Test Stable Action
 
 on:
   workflow_call:
-    inputs:
-      test-matrix:
-        description: "JSON test matrix from lib-get-test-matrix.yaml, loaded once by the caller"
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -28,11 +23,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
-      max-parallel: 8
       fail-fast: false
       matrix:
-        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
-        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.14"] # the oldest and the newest supported version
 
     steps:
       - name: Checkout
