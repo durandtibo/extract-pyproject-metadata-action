@@ -8,6 +8,7 @@ import re
 from typing import TYPE_CHECKING, Any, cast
 
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
+from extract_pyproject_metadata.checks import is_package_name
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.types import Inputs, Lookup
@@ -37,9 +38,9 @@ DEFAULT_INPUTS = {
     "strict": "false",
 }
 
-# A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
-# also match before a trailing line break.
-_MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
+# A canonical "major.minor" Python version, such as "3.12" (no leading zero: "03.12" is not
+# one). Always used with ``fullmatch``: ``$`` would also match before a trailing line break.
+_MINOR_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -106,11 +107,15 @@ def parse_dependencies(raw: str) -> list[Lookup]:
 
     Raises:
         MetadataError: If ``raw`` is not a JSON array of strings, or an entry has a scope that is
-            not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name).
+            not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name), or a name is not a
+            valid package name (PEP 508).
     """
     lookups: list[Lookup] = []
     for entry in parse_string_array(raw, "dependencies"):
         name, separator, scope = entry.partition("@")
+        if not is_package_name(name):
+            msg = f"dependencies: entry {entry!r} is not a valid package name"
+            raise MetadataError(msg)
         kind, _, scope_name = scope.partition(":")
         if not separator:
             source = None
@@ -139,12 +144,12 @@ def parse_python_candidates(raw: str) -> list[str]:
 
     Raises:
         MetadataError: If ``raw`` is not a JSON array of strings, or a string
-            is not of the form "major.minor" (such as ``"3.12"``).
+            is not a canonical "major.minor" (such as ``"3.12"``, not ``"03.12"``).
     """
     candidates = parse_string_array(raw, "python-candidates")
     for candidate in candidates:
         if not _MINOR_VERSION.fullmatch(candidate):
-            msg = f"python-candidates: must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
+            msg = f"python-candidates: must contain canonical 'major.minor' versions such as '3.12', got: {candidate!r}"
             raise MetadataError(msg)
     return list(dict.fromkeys(candidates))
 

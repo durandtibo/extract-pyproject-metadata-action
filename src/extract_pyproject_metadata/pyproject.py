@@ -3,14 +3,18 @@ action outputs (name, version, ``requires-python``, extras and dependency groups
 
 from __future__ import annotations
 
-import re
 import tomllib
 from pathlib import Path
 from typing import Any
 
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion, Version
-from extract_pyproject_metadata.checks import check_str, check_string_array, get_table
+from extract_pyproject_metadata.checks import (
+    check_str,
+    check_string_array,
+    get_table,
+    is_package_name,
+)
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.types import Project, ReportWarning
 
@@ -18,10 +22,6 @@ __all__ = ["UTF8_BOM", "load_pyproject", "read_extra_names", "read_group_names",
 
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
-
-# A project name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
-# letter or a digit. Always used with ``fullmatch``.
-_VALID_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
 
 
 def load_pyproject(pyproject_path: str) -> dict[str, Any]:
@@ -207,7 +207,7 @@ def _valid_name(name: object) -> str:
     if not isinstance(name, str) or not name:
         msg = f"[project].name: must be a non-empty string, got: {name!r}"
         raise MetadataError(msg)
-    if not _VALID_NAME.fullmatch(name):
+    if not is_package_name(name):
         msg = (
             "[project].name: not a valid project name (letters, digits, "
             f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"

@@ -59,7 +59,7 @@ def test_parse_inputs_invalid_strict() -> None:
         ("extra-values", "not json", r"extra-values: not valid JSON"),
         ("dependencies", "[1]", r"dependencies: must be a JSON array of strings"),
         ("dependencies", '["numpy@dev"]', r"dependencies: entry 'numpy@dev' has an invalid scope"),
-        ("python-candidates", '["3"]', r"python-candidates: must contain 'major.minor'"),
+        ("python-candidates", '["3"]', r"python-candidates: must contain canonical 'major.minor'"),
     ],
 )
 def test_parse_inputs_invalid_array(name: str, value: str, match: str) -> None:
@@ -101,6 +101,7 @@ def test_parse_bool_invalid(value: str) -> None:
         ('["3.12"]', ["3.12"]),
         ('["3.10", "3.9", "3.10"]', ["3.10", "3.9"]),
         ('["0.1", "10.20"]', ["0.1", "10.20"]),
+        ('["3.0", "10.11"]', ["3.0", "10.11"]),
         (DEFAULT_PYTHON_CANDIDATES, ["3.11", "3.12", "3.13", "3.14", "3.15"]),
     ],
 )
@@ -110,11 +111,24 @@ def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
 
 @pytest.mark.parametrize(
     "raw",
-    ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]', '["3.12\\n"]'],
+    [
+        '["3"]',
+        '["3.12.1"]',
+        '["3.x"]',
+        '["v3.12"]',
+        '["3.12 "]',
+        '[""]',
+        '["3.1a"]',
+        '["3.12\\n"]',
+        '["03.12"]',
+        '["3.012"]',
+        '["3."]',
+        '["00.0"]',
+    ],
 )
 def test_parse_python_candidates_not_major_minor(raw: str) -> None:
     with pytest.raises(
-        MetadataError, match=r"python-candidates: must contain 'major.minor' versions"
+        MetadataError, match=r"python-candidates: must contain canonical 'major.minor' versions"
     ):
         parse_python_candidates(raw)
 
@@ -171,6 +185,18 @@ def test_parse_dependencies_invalid_scope(entry: str) -> None:
     with pytest.raises(
         MetadataError,
         match=rf"^dependencies: entry {re.escape(repr(entry))} has an invalid scope, ",
+    ):
+        parse_dependencies(json.dumps([entry]))
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["", "not a name!", "@project", "x y", "-a", "a-", "a/b", "a b@group:dev", "@group:dev", "\n"],
+)
+def test_parse_dependencies_invalid_name(entry: str) -> None:
+    with pytest.raises(
+        MetadataError,
+        match=rf"^dependencies: entry {re.escape(repr(entry))} is not a valid package name$",
     ):
         parse_dependencies(json.dumps([entry]))
 
