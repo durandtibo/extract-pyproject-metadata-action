@@ -88,10 +88,8 @@ def test_the_local_workflow_passes_every_input_of_the_action() -> None:
     golden = LOCAL_PATH.read_text(encoding="utf-8")
     golden = golden[golden.index("\n  golden:") : golden.index("\n  wiring:")]
 
-    # `installer` and `python-executable` are about the installation, not the golden files.
-    expected = [name for name in names if name not in {"installer", "python-executable"}]
-    assert [name for name in expected if f"          {name}: " not in golden] == []
-    assert sorted(DEFAULT_INPUTS) == sorted(expected)
+    assert [name for name in names if f"          {name}: " not in golden] == []
+    assert sorted(DEFAULT_INPUTS) == sorted(names)
 
 
 def test_the_stable_workflow_is_generated_from_the_local_one() -> None:

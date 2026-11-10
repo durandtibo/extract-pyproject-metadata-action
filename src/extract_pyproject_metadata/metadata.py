@@ -6,9 +6,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from packaging.utils import canonicalize_name
-from packaging.version import InvalidVersion, Version
-
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
+from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion, Version
 from extract_pyproject_metadata.checks import check_str, check_string_array, get_table
 from extract_pyproject_metadata.dynamic_version import read_dynamic_version
 from extract_pyproject_metadata.errors import MetadataError

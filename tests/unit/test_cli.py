@@ -29,7 +29,6 @@ from tests.helpers import (
     _specifier_error,
     parse_args,
     parse_github_output,
-    requires_licenses,
     write_pyproject,
 )
 
@@ -209,7 +208,6 @@ def test_main_returns_one_for_an_invalid_build_system(
     assert f"{path}: [build-system].requires must be an array, got: 'x'" in capsys.readouterr().err
 
 
-@requires_licenses
 def test_main_strict_fails_on_an_invalid_license_expression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

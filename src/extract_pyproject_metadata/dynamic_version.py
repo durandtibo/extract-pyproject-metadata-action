@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from packaging.version import InvalidVersion, Version
+from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion, Version
 
 __all__ = ["HATCH_DEFAULT_PATTERN", "MAX_VERSION_FILE_BYTES", "read_dynamic_version"]
 

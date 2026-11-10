@@ -22,7 +22,7 @@ on:
   workflow_call:
     outputs:
       test_matrix:
-        description: "JSON string containing python_versions, python_versions_standard and os_matrix"
+        description: "JSON string containing python_versions, python_versions_standard, os_matrix and os_matrix_all (os_matrix and windows-latest)"
         value: ${{ jobs.get-matrix.outputs.test_matrix }}
 
   workflow_dispatch: # Allows manual triggering for testing purposes
@@ -55,7 +55,7 @@ jobs:
             --argjson python_versions_standard "$PYTHON_VERSIONS_STANDARD" \
             --argjson os_matrix "$OS_UNIX" \
             'def supported: map(select(capture("^3\\.(?<minor>[0-9]+)").minor | tonumber >= 11));
-             {python_versions: ($python_versions | supported), python_versions_standard: ($python_versions_standard | supported), os_matrix: $os_matrix}')
+             {python_versions: ($python_versions | supported), python_versions_standard: ($python_versions_standard | supported), os_matrix: $os_matrix, os_matrix_all: ($os_matrix + ["windows-latest"])}')
           echo "test_matrix=$test_matrix" >> "$GITHUB_OUTPUT"
 
       - name: Display test matrix

@@ -44,6 +44,11 @@ test: ## Run the tests with the coverage gate
 workflows: ## Generate nightly-test-stable.yaml from ci-test-local.yaml
 	python3 scripts/generate_workflows.py
 
+.PHONY: vendor-packaging
+vendor-packaging: ## Vendor a release of packaging: make vendor-packaging VERSION=x.y
+	@test -n "$(VERSION)" || { echo "usage: make vendor-packaging VERSION=x.y" >&2; exit 1; }
+	python3 scripts/vendor_packaging.py "$(VERSION)"
+
 .PHONY: check
 check: lint-python types test ## Run the Python checks (lint, format, types, tests)
 

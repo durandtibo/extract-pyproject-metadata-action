@@ -24,11 +24,6 @@ assert_equal() {
 	fi
 }
 
-# Print the number of private virtual environments left under $RUNNER_TEMP (the action removes its own).
-count_venvs() {
-	find "$RUNNER_TEMP" -maxdepth 1 -name 'extract-pyproject-metadata-venv.*' | wc -l | tr -d ' '
-}
-
 # Print the number of __pycache__ directories in the workspace (the action must not leave any).
 count_pycache() {
 	find . -name __pycache__ -not -path './.git/*' | wc -l | tr -d ' '

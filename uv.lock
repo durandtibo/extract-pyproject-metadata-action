@@ -173,9 +173,6 @@ wheels = [
 name = "extract-pyproject-metadata-action"
 version = "0.0.0"
 source = { virtual = "." }
-dependencies = [
-    { name = "packaging" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -191,7 +188,6 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "packaging", specifier = ">=23.0,<27" }]
 
 [package.metadata.requires-dev]
 dev = [

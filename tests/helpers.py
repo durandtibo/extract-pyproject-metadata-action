@@ -2,18 +2,18 @@
 builders of inputs."""
 
 import argparse
-import importlib.util
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
-import packaging
 import pytest
-from packaging.requirements import InvalidRequirement, Requirement
-from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 import extract_pyproject_metadata.cli as extract_metadata_module
+from extract_pyproject_metadata._vendor.packaging.requirements import (
+    InvalidRequirement,
+    Requirement,
+)
+from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
 from extract_pyproject_metadata.dependencies.lookup import extract_dependency_specifiers
 from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.metadata import extract_metadata
@@ -24,16 +24,6 @@ ROOT_PATH = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
 PACKAGE_PATH = Path(__file__).resolve().parents[1] / "src" / "extract_pyproject_metadata"
 RUN_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
-
-
-REQUIREMENTS_PATH = Path(__file__).resolve().parents[1] / "scripts" / "requirements.txt"
-
-
-# ``packaging.licenses`` (which checks the license expressions) needs packaging 24.2 or later.
-requires_licenses = pytest.mark.skipif(
-    importlib.util.find_spec("packaging.licenses") is None,
-    reason="packaging before 24.2 cannot validate license expressions",
-)
 
 
 def write_pyproject(tmp_path: Path, content: str) -> Path:
@@ -272,101 +262,46 @@ dev = ["numpy>=1.26", {include-group = "lint"}, "pytest"]
 """
 
 
-STUB_SYSTEM_PYTHON = """#!/usr/bin/env bash
-case "$1" in
-  -c)
-    case "$2" in
-      *version_info*) name=version; status="${STUB_VERSION_STATUS:-0}" ;;
-      *)
-        name=probe
-        if [ -n "${STUB_REAL_PYTHON:-}" ]; then
-          # The real check of run.sh, run by a real Python with a "packaging" of another version.
-          PYTHONPATH="$STUB_FAKE_PACKAGING" "$STUB_REAL_PYTHON" -c "$2" "${@:3}" 2>/dev/null
-          status=$?
-        else
-          status="${STUB_PROBE_STATUS:-0}"
-        fi ;;
-    esac
-    printf '%s\\037' python3 "$name" >> "$STUB_LOG"; echo >> "$STUB_LOG"
-    exit "$status" ;;
-  -m)
-    printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
-    [ "${STUB_VENV_STATUS:-0}" = 0 ] || exit "$STUB_VENV_STATUS"
-    venv="${@: -1}"
-    mkdir -p "$venv/bin"
-    cp "$STUB_VENV_PYTHON" "$venv/bin/python"
-    chmod +x "$venv/bin/python"
-    exit 0 ;;
-  *) printf '%s\\037' python3 "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
-     echo "${PYTHONDONTWRITEBYTECODE-unset}" > "$STUB_LOG.bytecode"
-     exit "${STUB_SCRIPT_STATUS:-0}" ;;
-esac
-"""
-
-
-STUB_VENV_PYTHON = """#!/usr/bin/env bash
-printf '%s\\037' venv-python "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
-if [ "$1" = "-m" ] && [ "$2" = "pip" ]; then exit "${STUB_PIP_STATUS:-0}"; fi
+STUB_PYTHON = """#!/usr/bin/env bash
+# A stand-in for a Python interpreter: logs the calls, answers the version check with
+# STUB_VERSION_STATUS_<NAME> (0 = Python 3.11 or later) and runs the script with the
+# status STUB_SCRIPT_STATUS.
+if [ "$1" = "-c" ]; then
+  status="STATUS_VAR"
+  exit "${!status:-0}"
+fi
+printf '%s\\037' NAME "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
+echo "from-$$" >&2
 exit "${STUB_SCRIPT_STATUS:-0}"
 """
 
 
-STUB_UV = """#!/usr/bin/env bash
-printf '%s\\037' uv "$@" >> "$STUB_LOG"; echo >> "$STUB_LOG"
-case "$1" in
-  venv)
-    [ "${STUB_VENV_STATUS:-0}" = 0 ] || exit "$STUB_VENV_STATUS"
-    venv="${@: -1}"
-    mkdir -p "$venv/bin"
-    cp "$STUB_VENV_PYTHON" "$venv/bin/python"
-    chmod +x "$venv/bin/python"
-    exit 0 ;;
-  pip) exit "${STUB_PIP_STATUS:-0}" ;;
-esac
-"""
-
-
-class RunResult:
-    """Outcome of ``run.sh``: the process, the calls to the stubs and
-    the directory of the venvs."""
-
-    def __init__(self, process: subprocess.CompletedProcess[str], log: Path, temp: Path) -> None:
-        self.process = process
-        self.calls = (
-            [line.split("\x1f")[:-1] for line in log.read_text().splitlines()]
-            if log.exists()
-            else []
-        )
-        self.venvs = sorted(
-            temp.glob("extract-pyproject-metadata-venv.*")
-        )  # the ones left after the run
-        self.created_venvs = [
-            Path(call[-1])
-            for call in self.calls
-            if call[:3] == ["python3", "-m", "venv"] or call[:2] == ["uv", "venv"]
-        ]
-
-
-def run_run_sh(tmp_path: Path, args: list[str], *, with_uv: bool = False, **env: str) -> RunResult:
-    """Run ``run.sh`` with the stubs and the status codes in ``env``.
+def run_run_sh(
+    tmp_path: Path, args: list[str], *, pythons: tuple[str, ...] = ("python3",), **env: str
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    """Run ``run.sh`` with stand-ins for the interpreters ``pythons`` on ``PATH``.
 
     Args:
         tmp_path: The directory of the test.
         args: The arguments of ``run.sh``.
-        with_uv: Whether a stub of ``uv`` is on ``PATH``.
-        env: The environment variables of the run.
+        pythons: The names of the interpreters that exist (``python3``, ``python``).
+        env: The environment variables of the run: ``STUB_VERSION_STATUS_<NAME>`` (the status of
+            the version check of an interpreter, in capitals) and ``STUB_SCRIPT_STATUS``.
+
+    Returns:
+        The process, and the calls that ran the script: the name of the interpreter, then its
+        arguments.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    (bin_dir / "python3").write_text(STUB_SYSTEM_PYTHON)
-    (bin_dir / "python3").chmod(0o755)
-    if with_uv:
-        (bin_dir / "uv").write_text(STUB_UV)
-        (bin_dir / "uv").chmod(0o755)
-    venv_python = tmp_path / "venv-python"
-    venv_python.write_text(STUB_VENV_PYTHON)
-    temp = tmp_path / "runner-temp"
-    temp.mkdir(exist_ok=True)
+    for name in pythons:
+        stub = bin_dir / name
+        stub.write_text(
+            STUB_PYTHON.replace("NAME", name).replace(
+                "STATUS_VAR", f"STUB_VERSION_STATUS_{name.upper()}"
+            )
+        )
+        stub.chmod(0o755)
     log = tmp_path / "calls.log"
     log.unlink(missing_ok=True)  # only the calls of this run
     process = subprocess.run(
@@ -374,22 +309,9 @@ def run_run_sh(tmp_path: Path, args: list[str], *, with_uv: bool = False, **env:
         capture_output=True,
         text=True,
         check=False,
-        env={
-            "PATH": f"{bin_dir}:/usr/bin:/bin",
-            "RUNNER_TEMP": str(temp),
-            "STUB_LOG": str(log),
-            "STUB_VENV_PYTHON": str(venv_python),
-            **env,
-        },
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "STUB_LOG": str(log), **env},
     )
-    return RunResult(process, log, temp)
-
-
-def fake_packaging(tmp_path: Path, version: str) -> Path:
-    """Return a directory with a copy of ``packaging`` that says it is
-    ``version``."""
-    fake = tmp_path / f"fake-packaging-{version}"
-    shutil.copytree(Path(packaging.__file__).parent, fake / "packaging")
-    init = fake / "packaging" / "__init__.py"
-    init.write_text(re.sub(r"__version__ = .*", f'__version__ = "{version}"', init.read_text()))
-    return fake
+    calls = (
+        [line.split("\x1f")[:-1] for line in log.read_text().splitlines()] if log.exists() else []
+    )
+    return process, calls

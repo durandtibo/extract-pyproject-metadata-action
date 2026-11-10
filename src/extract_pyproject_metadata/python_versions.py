@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -37,7 +37,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r scripts/requirements.txt --group dev
+          pip install --group dev
 
       # The hooks of .pre-commit-config.yaml; pyright runs in the `types` job.
       - name: Run pre-commit
@@ -76,7 +76,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r scripts/requirements.txt --group dev
+          .venv/bin/pip install --group dev
 
       - name: Run pyright
         run: .venv/bin/pyright
@@ -104,42 +104,10 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r scripts/requirements.txt --group dev
+          pip install --group dev
 
       - name: Run unit tests
         run: python -m pytest -v --cov --cov-report=term-missing
-
-  # The lower bound of scripts/requirements.txt is documented as the oldest `packaging` the
-  # tests were run with: check it. The coverage threshold is not enforced, because the
-  # license tests are skipped with a `packaging` that cannot validate license expressions.
-  unit-oldest-packaging:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: "3.11" # the oldest supported version
-
-      - name: Install dev dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r scripts/requirements.txt --group dev
-
-      - name: Install the oldest supported packaging
-        # --no-deps: the version of pytest may require a newer packaging than the action does.
-        run: |
-          floor="$(python -c "import re; print(re.search(r'packaging>=([0-9.]+)', open('scripts/requirements.txt').read()).group(1))")"
-          echo "Installing packaging==$floor"
-          pip install --no-deps --force-reinstall "packaging==$floor"
-          python -c "import packaging; print(packaging.__version__)"
-        shell: bash
-
-      - name: Run unit tests
-        run: python -m pytest -v -rs
 
   # Run the integration test of the local action
   action:

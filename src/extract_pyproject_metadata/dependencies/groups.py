@@ -5,8 +5,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from packaging.utils import canonicalize_name
-
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array
 from extract_pyproject_metadata.errors import MetadataError
 

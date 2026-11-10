@@ -3,9 +3,8 @@ name = "extract-pyproject-metadata-action"
 version = "0.0.0"
 requires-python = ">=3.11"
 # The repository is not a Python distribution: this table only lets `uv sync` and `pip --group`
-# read the dev group. The runtime dependency is declared in scripts/requirements.txt (which
-# scripts/run.sh installs from) and repeated here for `uv sync`; a test checks they agree.
-dependencies = ["packaging>=23.0,<27"]
+# read the dev group. The action has no runtime dependency (`packaging` is vendored).
+dependencies = []
 
 [tool.uv]
 package = false
@@ -24,13 +23,15 @@ dev = [
 ]
 
 [tool.codespell]
-skip = "*.lock,./.git,./htmlcov,coverage.xml,./.venv,./.make"
+skip = "*.lock,./.git,./htmlcov,coverage.xml,./.venv,./.make,./src/extract_pyproject_metadata/_vendor"
 # Invalid values on purpose in the tests: a misspelt boolean and a Latin-1 byte.
 ignore-words-list = "tru,caf"
 
 [tool.coverage.run]
 branch = true
 source = ["src/extract_pyproject_metadata"]
+# The vendored packaging is not our code.
+omit = ["src/extract_pyproject_metadata/_vendor/*"]
 
 [tool.coverage.report]
 # The unit tests cover the whole script on every supported Python version.
@@ -132,7 +133,7 @@ lint.extend-select = ["D400", "D401", "D404"]
 line-length = 100
 target-version = "py311"
 src = ["src"]
-extend-exclude = [".venv"]
+extend-exclude = [".venv", "src/extract_pyproject_metadata/_vendor"]
 
 [tool.ruff.lint.per-file-ignores]
 # The launcher and the helpers are run as scripts, they are not a package.
@@ -170,6 +171,7 @@ known-first-party = ["extract_pyproject_metadata"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 include = ["src/extract_pyproject_metadata", "scripts/extract_metadata.py"]
+exclude = ["src/extract_pyproject_metadata/_vendor"]
 extraPaths = ["src"]
 venvPath = "."
 venv = ".venv"

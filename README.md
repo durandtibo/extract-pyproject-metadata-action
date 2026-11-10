@@ -9,31 +9,14 @@ steps, ...) from drifting out of sync with what `pip install` actually
 installs.
 
 Requires the repository to already be checked out and a **Python 3.11 or
-later** interpreter (`python3`, or the one named by the `python-executable` input) available on `PATH`, for example set up with
-`actions/setup-python`; the action fails with a clear message otherwise. If the
-`packaging` package is missing or older than `23.0`, the action installs it in a
-private virtual environment under `$RUNNER_TEMP` (removed at the end of the
-step), with the versions listed in
-`scripts/requirements.txt` (`packaging>=23.0,<27`; a `packaging` that is already
-installed is used as it is when it is `23.0` or later, even when it is newer than
-the upper bound). The step logs when it installs it. It never modifies the Python environment of the caller.
-
-That installation needs a package index: PyPI by default, or the one that `pip`
-is configured to use (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `pip.conf`, ...). On
-a runner without network access, or when you prefer not to download anything
-in the job, install `packaging` in the Python of the job beforehand (for
-example `python -m pip install --upgrade packaging`, from a mirror or a cache): the
-action then uses it as it is and does not touch the network.
-
-To make the install faster when it is needed, set `installer: uv` (or `auto`): the
-virtual environment is then created and filled by [uv](https://docs.astral.sh/uv/),
-which you can set up with `astral-sh/setup-uv`. uv reads its own configuration
-(`UV_INDEX_URL`, `uv.toml`), not the one of pip, which is why `pip` stays the default.
-
-> [!NOTE]
-> The action supports **Linux and macOS** runners only. **Windows runners are
-> not supported**: the step expects `python3` and a POSIX `bash`, and fails
-> with an explicit error on them.
+later** interpreter (`python3`, or `python`) on `PATH`, for example set up with
+`actions/setup-python`; the action fails with a clear message otherwise.
+Nothing is installed and nothing is downloaded: the only dependency,
+[`packaging`](https://github.com/pypa/packaging), is vendored in the action
+(`src/extract_pyproject_metadata/_vendor/`), so the result does not depend on the
+`packaging` of the runner. The action runs on **Linux, macOS and Windows**
+runners (the step uses `bash`, which is Git Bash on Windows). It does not modify the
+Python environment of the caller and writes no bytecode.
 
 ## Usage
 
@@ -121,9 +104,7 @@ jobs:
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                                                                                                                                                                                                                                                       | No       | `["3.11","3.12","3.13","3.14","3.15"]` |
 | `fail-on-missing`         | `true` to fail when a package listed in `dependencies` is not found, instead of reporting it as `null` in `dependency-specifiers`.                                                                                                                                                                                                                                                                                                                                                                                                   | No       | `false`                                |
 | `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it. Use it in CI to keep a `pyproject.toml` free of suspicious input.                                                                                                                                                                                                                                                                                                                                                                      | No       | `false`                                |
-| `python-executable`       | Python interpreter that runs the action: a command found on `PATH` or a path to an executable (Python 3.11 or later, e.g. `python3.12` or `/opt/python/bin/python`), for runners where `python3` is not the interpreter to use. The private virtual environment, if one is needed, is created with it.                                                                                                                                                                                                                               | No       | `python3`                              |
 | `step-summary`            | `true` to always write the outputs and the warnings to the job summary of the workflow run (a table with one row per output), `false` to never write them, or `auto` to write them only when there are warnings (a failure is always written).                                                                                                                                                                                                                                                                                       | No       | `auto`                                 |
-| `installer`               | Tool that installs `packaging` in the private virtual environment when the Python lacks it: `pip` (follows the pip configuration), `uv` (faster; follows the configuration of uv, and fails if uv is not on `PATH` when an install is needed) or `auto` (`uv` if it is on `PATH`, `pip` otherwise). Nothing is installed, whatever the value, when `packaging` is available.                                                                                                                                                         | No       | `pip`                                  |
 
 `fail-on-dynamic-version`, `resolve-dynamic-version`, `fail-on-missing` and `strict` are boolean inputs: the
 value must be `true` or `false`, the case and the surrounding spaces are ignored,
@@ -140,7 +121,7 @@ and any other value fails the step. `step-summary` is the same with a third valu
 | `normalized-version`      | Project version in the canonical form of [PEP 440](https://peps.python.org/pep-0440/#normalization) (e.g. `1.0rc1` for `1.0-RC1`, `1.0.post1` for `1.0-1`, `2020.1.5` for `2020.01.05`). Use it for the names of wheel/sdist files and for tags, which are built from this form. Empty if `version` is listed in `[project].dynamic`.                                                                                                                                                                                                                                                                                                                                                   |
 | `description`             | Project description, as declared in `[project].description`, as written. Empty if it is not declared (also if it is listed in `[project].dynamic`). It may contain line breaks: pass it to the shell through `env:`. It is not shown in the `📦` log line.                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `readme`                  | Path of the readme file, from `[project].readme` (a string, or the `file` of a table), as written (e.g. `README.md`). Empty if it is not declared, if the readme is inline (`text`) or if it is listed in `[project].dynamic`. The action does not read the file. Not in the `📦` log line.                                                                                                                                                                                                                                                                                                                                                                                             |
-| `license`                 | License, from `[project].license`: the SPDX expression ([PEP 639](https://peps.python.org/pep-0639/)) or the `text` of the table of PEP 621, as written (e.g. `MIT`, `Apache-2.0 OR MIT`). Empty if it is not declared, if it is a `file` or if it is listed in `[project].dynamic`. A string that is not a valid SPDX expression (for example `MIT License`) gives a warning, when `packaging` 24.2 or later checks it; the value is still the one written. The table of PEP 621 is not validated. Not in the `📦` log line.                                                                                                                                                           |
+| `license`                 | License, from `[project].license`: the SPDX expression ([PEP 639](https://peps.python.org/pep-0639/)) or the `text` of the table of PEP 621, as written (e.g. `MIT`, `Apache-2.0 OR MIT`). Empty if it is not declared, if it is a `file` or if it is listed in `[project].dynamic`. A string that is not a valid SPDX expression (for example `MIT License`) gives a warning; the value is still the one written. The table of PEP 621 is not validated. Not in the `📦` log line.                                                                                                                                                           |
 | `license-files`           | JSON array of the patterns of `[project].license-files` ([PEP 639](https://peps.python.org/pep-0639/)), as written and in order (e.g. `["LICENSE","licenses/*.txt"]`). `[]` if it is not declared (also if it is listed in `[project].dynamic`). The patterns are not expanded: the action does not look at the files. Not in the `📦` log line.                                                                                                                                                                                                                                                                                                                                        |
 | `authors`                 | JSON array of the authors of `[project].authors`, in order, each an object with the `name` and the `email` that the author has (e.g. `[{"name":"Ada","email":"ada@example.com"},{"name":"Bob"}]`); other keys are ignored. `[]` if there is none or if `authors` is listed in `[project].dynamic`. Not in the `📦` log line.                                                                                                                                                                                                                                                                                                                                                            |
 | `urls`                    | JSON object mapping each label of `[project.urls]` to its URL, as written and in the order of the file (e.g. `{"Homepage":"https://example.com"}`). `{}` if there is none. Look a label up in a workflow with `fromJSON(...)["Homepage"]`. Not in the `📦` log line.                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -413,7 +394,7 @@ warnings.
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `is set and also listed in [project].dynamic`                   | A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621): the static value is used.                           |
 | `[project].version is dynamic, the version output is empty`     | `version` is in `dynamic` and not set: `version` and `normalized-version` are empty.                                                    |
-| `is not a valid SPDX license expression`                        | `[project].license` is a string that is not a valid SPDX expression (only checked with `packaging` 24.2 or later).                      |
+| `is not a valid SPDX license expression`                        | `[project].license` is a string that is not a valid SPDX expression (PEP 639).                      |
 | `[project].requires-python is not a valid version specifier`    | `requires-python` cannot be parsed: `python-versions` is empty.                                                                         |
 | `no python-candidates version satisfies`                        | No version of `python-candidates` is allowed by `requires-python`: `python-versions` and `python-matrix` are empty.                     |
 | `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                                  |
@@ -430,9 +411,7 @@ The same messages can come from several places; each is reported once.
 
 The action's step fails (non-zero exit) when:
 
-- It runs on a Windows runner (`RUNNER_OS` is `Windows`), which is not supported.
-- The Python interpreter (`python3`, or `python-executable`) is older than 3.11, missing or cannot be run, or `packaging` is missing
-  or older than `23.0` and cannot be installed (for example, no access to a package index).
+- Neither `python3` nor `python` on `PATH` is Python 3.11 or later (older, missing or cannot be run).
 - `pyproject-path` does not point to an existing file.
 - The file is not valid TOML, is not UTF-8 or cannot be read (for example for lack of
   permission). A UTF-8 byte order mark at the start of the file is accepted and ignored
@@ -494,8 +473,6 @@ The action's step fails (non-zero exit) when:
   error lists them; no output is written).
 - `step-summary` is not `true`, `false` or `auto`, or is `true` and the job summary
   file (`$GITHUB_STEP_SUMMARY`) is not set.
-- `installer` is not `pip`, `uv` or `auto`, or is `uv` and uv is not on `PATH` while
-  `packaging` has to be installed.
 - `fail-on-missing` is not `true` or `false`, or is `true` and a package listed in
   `dependencies` is not found (the error says when `[project].dependencies` or
   `[project].optional-dependencies` is dynamic and so cannot be read).
@@ -514,9 +491,14 @@ it: `tests/unit` (one module per module), `tests/integration` and
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -r scripts/requirements.txt --group dev
+.venv/bin/pip install --group dev
 .venv/bin/pytest -q --cov
 ```
+
+`packaging` is vendored: update it with `make vendor-packaging VERSION=x.y`
+(`scripts/vendor_packaging.py` downloads the wheel, checks its digest and records the
+version in `src/extract_pyproject_metadata/_vendor/README.md`). A monthly workflow opens an
+issue when a newer release exists.
 
 CI fails if the unit tests do not cover 100% of `src/extract_pyproject_metadata`.
 
