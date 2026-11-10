@@ -411,7 +411,7 @@ an error for a typo; the new behaviour is easier to explain than the old one.
 
 ## 11. Decisions to take
 
-Each has a recommendation; the plan assumes they are accepted.
+Each has a recommendation. **All five are accepted by the maintainer** (2026-11-10); the plan assumes them.
 
 1. **Reset `schema_version` to `1`** (step 2). _Recommended:_ yes. No caller has seen `1`,
    `2` or `3`; starting at `3` tells a reader about a history that does not exist.
