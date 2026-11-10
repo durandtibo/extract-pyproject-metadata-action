@@ -1,395 +1,450 @@
 # Target state of `extract-pyproject-metadata-action`
 
-Review date: 2026-11-10. Reviewed commit: `2f853c5` (`main`).
+Review date: 2026-11-10. Reviewed commit: `e66a1f2` (`main`, release notes of `v0.3.0`).
 
-This document has three parts: the **properties** the action must have
-(section 1), a **review of the current state** against them (section 2), and
-the **target state** with a migration path (sections 3 to 10). Breaking changes
-are accepted: the target is released as `v1`, and the current `v0.x` tags stay
-as they are.
+This document **replaces** the review written at commit `2f853c5` (still in the git
+history). That review is implemented: the install step, the pass-through outputs, the
+dynamic-version resolution, the extra inputs and the conflict warning are gone, and the
+README, the golden fixtures and the release workflow exist. This review judges the result
+and proposes the next, smaller, round.
+
+Structure: the **properties** (1), the **measured state** and the **findings** (2), the
+**target behaviour** (3), the **target architecture** (4), **tests** (5), **CI, release and
+tooling** (6), what is **deliberately left out** (7), the **migration plan** (8), the
+**expected result** (9) and the **decisions** to take (10).
+
+Breaking changes are accepted. All of them ship in `v0.3.0`, which is not tagged yet (see 6.3); callers pin the exact tag `@v0.3.0`.
 
 ---
 
 ## 1. Properties of the action
 
-These are the properties the design is judged by. They come from the current
-`README.md`, `CLAUDE.md` and `action.yaml`, made explicit and ordered. When two
-conflict, the lower number wins.
+The design is judged by these properties. They come from `README.md`, `CLAUDE.md` and
+`action.yaml`, made explicit, ordered and checkable. When two conflict, the lower number
+wins. "How to check" is what a maintainer or a test does to verify the property.
 
-| #   | Property                | Meaning                                                                                                                                                                                 |
-| --- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1  | **Single purpose**      | Read a `pyproject.toml` and expose the values that drive a workflow: what to build, what to test (extras, groups, Python versions) and which dependency specifiers to install.          |
-| P2  | **Read-only and safe**  | Never runs project code, never builds, never writes outside `$GITHUB_OUTPUT` / `$GITHUB_STEP_SUMMARY`. Values from the file can never become shell code, workflow commands or Markdown. |
-| P3  | **Zero setup**          | Needs only a Python >= 3.11 on `PATH`. No network access, no install, no virtual environment, no change to the caller's Python. Same behaviour on Linux, macOS and Windows.             |
-| P4  | **Fast**                | Adds well under a second to a job (interpreter start plus parsing a small file). Nothing is downloaded.                                                                                 |
-| P5  | **Deterministic**       | Same file, same inputs, same outputs. Order is the file order or a documented sort. No dependence on the runner except the interpreter.                                                 |
-| P6  | **Fails loudly, early** | Invalid input (a wrong input value, a malformed field that is read) fails with one message that names the field and the file (`::error file=...`). No Python traceback, ever.           |
-| P7  | **Warns, never hides**  | Suspicious but usable input is a warning (annotation, job summary). `strict` turns every warning into a failure. No silent fallback.                                                    |
-| P8  | **Small surface**       | Few inputs, few outputs, each with one meaning and a safe default. Everything else is reachable through one structured `json` output.                                                   |
-| P9  | **Single source**       | Each fact (an input, an output, a default, a message) is defined once; docs, tests and the action file are checked against it or generated from it.                                     |
-| P10 | **Easy to maintain**    | Small modules, one-way imports, strict typing, one task runner, one type checker, tests that mirror the code. A new maintainer reads the whole source in an hour.                       |
-| P11 | **Honest docs**         | The README describes the current behaviour only (no history, no "it used to"), is short, and its tables are generated from `action.yaml`.                                               |
+| #   | Property                | Meaning                                                                                                                                                                       | How to check                                                                                                  |
+| --- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| P1  | **Single purpose**      | Read a `pyproject.toml` and expose the values that drive a workflow: what to build (name, version), what to test (extras, groups, Python versions), what to install (specifiers). | Every output answers one of these three questions; a new output must say which.                               |
+| P2  | **Read-only and safe**  | Never runs project code or a build backend. Writes only `$GITHUB_OUTPUT`. A value from the file can never become shell code, a workflow command or Markdown.                   | Injection tests (`test_output_injection.py`); inputs go through `env:`; the workflows follow the same rule.   |
+| P3  | **Zero setup**          | Needs only Python >= 3.11 on `PATH`. No network, no install, no change to the caller's Python. Same behaviour on Linux, macOS and Windows.                                    | `run.sh` has no install branch; the CI matrix has the three systems.                                          |
+| P4  | **Fast**                | Adds well under a second to a job.                                                                                                                                            | Measured: about 100 ms per run (23 ms is the bare interpreter). Keep it under 250 ms on a runner.             |
+| P5  | **Deterministic**       | Same file and inputs give the same outputs. Order is the file order or a documented sort. Nothing depends on the runner but the interpreter.                                   | Golden files; property tests.                                                                                 |
+| P6  | **Reads only what it outputs** | A field that no output needs is neither read nor validated. A lookup that is not requested does not read the requirement tables.                                       | A `pyproject.toml` with a broken `description`, or a broken `dependencies` when `dependencies: []`, still works. |
+| P7  | **Fails loudly, early** | Invalid input fails with **one** message `<field>: <problem>` and an `::error file=...` annotation. Inputs are validated before the file is read. Never a traceback.          | One error format, tested once per field; the process tests check exit code and stderr.                        |
+| P8  | **Warns, never hides**  | Suspicious but usable input is a warning with a stable **code**. `strict` turns every warning into a failure. No silent fallback.                                             | Every warning has a code, a row in the README and a golden case.                                              |
+| P9  | **Small surface**       | Few inputs and outputs, each with one meaning and a safe default. Everything else is in the structured `json` output.                                                         | 5 inputs, 13 outputs today; the target does not grow them.                                                    |
+| P10 | **Single source**       | Each fact (an input, an output, a default, a warning) is defined once; the docs and the tests are generated from it or checked against it.                                    | `make docs`, `make workflows` and the contract tests fail on a diff.                                          |
+| P11 | **Easy to maintain**    | Small modules, one-way imports, strict typing, one task runner. A new maintainer reads all the source in an hour. Test code is smaller than 1.5 times the source.             | Source lines (without the vendored tree) below 1,500; layer test; `make check`.                               |
+| P12 | **Honest docs**         | The README describes the current behaviour only, with no history, and every example in it is run by a test.                                                                   | `test_readme.py`; release notes hold the history.                                                             |
+
+P6 and the "one warning code" part of P8 are **new** compared with the previous review: the
+code does not fully respect P6 today (finding G1), and P8 cannot be checked without codes
+(finding G7).
 
 ---
 
 ## 2. Review of the current state
 
-Size today: `action.yaml` 245 lines, `README.md` 534 lines, `src/` 3,000
-lines in 20 modules, `scripts/run.sh` 159 lines, `tests/` 7,700 lines, 14
-workflows (1,700 lines, of which `ci-test-local.yaml` is 1,086), `.make/`
-488 lines, 11 inputs, 27 outputs.
+### 2.1 Measured state
 
-The code quality is good (strict typing, one-way layers, 100 % coverage,
-careful escaping). The problems are about **scope and surface**, not
-correctness: the action does much more than P1 asks for, and each extra
-feature carries its own validation, warnings, docs, tests and workflow jobs.
+| Measure                                  | Value                                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Source, without `_vendor/`               | 2,210 lines in 17 modules (`requirements.py` 408, `metadata.py` 225, `cli.py` 220, `github.py` 179)           |
+| Vendored `packaging`                     | 11,700 lines shipped; 13 modules and 6,800 lines are loaded at run time                                        |
+| Tests                                    | 6,440 lines, 2.9 times the source (`test_cli.py` 1,217, `test_requirements.py` 1,020, `test_metadata.py` 714)  |
+| Workflows                                | 11 files, 942 lines (`ci-test-local.yaml` 309, plus its generated copy `nightly-test-stable.yaml` 95)         |
+| Interface                                | 5 inputs, 13 outputs, 10 warnings, `schema_version` 2                                                           |
+| README                                   | 266 lines, tables generated, no history                                                                        |
+| Run time (macOS, Python 3.14, `-I -B`)   | 100 ms per run; 68 ms with bytecode; 23 ms for `python -c pass`. 30 ms of it is the imports of `cli`.         |
+| Functions that take `pyproject_path`     | 25 signatures in 10 modules, only to build messages                                                            |
 
-### 2.1 Findings
+The previous round worked: the interface is small, the layers hold, the checks are strict.
+What is left is **internal duplication** and **a few contract gaps**, not scope.
 
-| ID  | Finding                                                                                                                                                                                                                                                                                                                                                                | Property                                                                                           |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| F1  | **Install step on the hot path.** If `packaging` is missing (it was on the machine of this review) the action creates a venv and runs `pip` or `uv`: seconds, network access, a failure mode, and 159 lines of shell with `PYTHONSAFEPATH`, `trap`, `mktemp`, three installer modes. The Python work itself takes about 80 ms.                                         | P3, P4                                                                                             |
-| F2  | **Windows is unsupported** only because of the venv layout (`Scripts/` vs `bin/`) and the `python3` name. It is a side effect of F1, not a real constraint.                                                                                                                                                                                                            | P3                                                                                                 |
-| F3  | **27 outputs, 11 inputs.** Ten outputs are plain pass-throughs that no matrix or release step needs (`readme`, `license`, `license-files`, `authors`, `urls`, `keywords`, `classifiers`, `scripts`, `build-backend`, `build-requires`). Each has a type check, docs, tests, a summary row and a workflow job.                                                          | P1, P8                                                                                             |
-| F4  | **Three outputs for one question** ("what does the file require for package X?"): `project-dependencies`, `dependency-specifiers`, `dependency-requirements`. They share one index but have different shapes, null/empty conventions and warnings.                                                                                                                     | P8                                                                                                 |
-| F5  | **Three inputs for one concept.** `fail-on-missing`, `fail-on-dynamic-version` and `strict` all mean "turn a warning into a failure", with different scopes. `step-summary` is a 3-valued input with a 130-line table renderer, for information already in the log and in the annotations.                                                                             | P7, P8                                                                                             |
-| F6  | **Dynamic-version resolution** (`resolve-dynamic-version`, 253 lines) re-implements parts of setuptools and hatch (`file`, `attr`, `path`, `pattern`), including path-containment checks, a size limit and an acknowledged ReDoS risk. It covers a minority of dynamic projects (the common ones use `setuptools-scm` or `hatch-vcs`, which it cannot read).           | P1, P2                                                                                             |
-| F7  | **Marker-blind "first match wins"** for `dependency-specifiers`, plus a conflict-warning engine (same marker, different specifiers, across places). It is hard to explain (the README needs three sections) and the answer is arbitrary when markers differ.                                                                                                           | P5, P8                                                                                             |
-| F8  | **`normalized-name` / `normalized-version` are documented for file names, which is wrong.** Wheel and sdist file names use `_` in the name (`my_package-1.0-py3-none-any.whl`), not the PEP 503 form with `-`. A user following the README builds a wrong path.                                                                                                        | P11                                                                                                |
-| F9  | **The core takes `argparse.Namespace`** (`build_report(args, options)`), and `Options                                                                                                                                                                                                                                                                                  | None` is parsed twice. The CLI leaks into the logic; the logic cannot be called with plain values. | P10 |
-| F10 | **Duplicated documentation of the same facts** in `action.yaml` (descriptions), `README.md` (tables, 534 lines), the `cli.py` docstring (100 lines), `types.py`, `format_outputs` and `output/summary.py`. `test_contract.py` keeps them aligned by checking, which is a symptom of F10 rather than a cure.                                                            | P9                                                                                                 |
-| F11 | **History inside the docs.** The failure list says "It used to end with a Python traceback", "It used to be ignored silently", "(it used to fail with `Invalid statement`)". The README also says `@v0.1` and "needs a release later than `v0.2`". That is release-note content, and it confuses readers.                                                              | P11                                                                                                |
-| F12 | **Integration workflows break the action's own rule.** `ci-test-local.yaml` (1,086 lines, 95 `assert_equal`) interpolates `${{ steps.x.outputs.y }}` directly into `run:` in 97 places, although `CLAUDE.md` and the README say to pass values through `env:`. It is also duplicated by hand in `nightly-test-stable.yaml` ("keep identical except the `uses:` line"). | P2, P9                                                                                             |
-| F13 | **Tooling overlap.** Two task runners (`Makefile` + `.make/` and `invoke` + `tasks.py`, the latter on a pre-release `invoke-tasklib>=0.1.0a0`), two type checkers (`ty` and `pyright`), `import-linter` and `hypothesis` installed only on Python >= 3.14, `docformatter` (which produces the odd split docstring summaries), `xdoctest`.                              | P10                                                                                                |
-| F14 | **The repo is built as a Python distribution for no reason.** `pyproject.toml` has a `hatchling` build system, `hatch-requirements-txt` and a wheel target, but the project is never published (`version = "0.0.0"`). The only purpose is to read `scripts/requirements.txt`.                                                                                          | P10                                                                                                |
-| F15 | **Bots that the platform already provides.** `bot-cancel-stale-queued-runs.yaml` (59 lines) does what `concurrency: { cancel-in-progress: true }` does, and no CI workflow uses `concurrency`. `ci.yaml` fans out into `ci-lint`, `ci-test`, `ci-type-check`, `ci-verify-workflows`, `lib-get-test-matrix`, `ci-test-local` through reusable workflows.                | P10                                                                                                |
-| F16 | **Size-limit machinery** (`oversized_outputs`, 900 KB warning) exists because `json` repeats every other output, so a big `classifiers` list doubles. With F3 fixed the problem disappears.                                                                                                                                                                            | P8                                                                                                 |
-| F17 | **`python-candidates` default is a hard-coded list** (`3.11` to `3.15`) in code, `action.yaml` and the README (three copies). It goes stale every October.                                                                                                                                                                                                             | P9                                                                                                 |
+### 2.2 Findings
 
-### 2.2 What is good and must be kept
+| ID  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                        | Property   |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| G1  | **The requirement tables are read and validated on every run, even when `dependencies` is `[]`.** Verified: `[project] dependencies = [1]` with `dependencies: '[]'` fails with `[project].dependencies must contain only strings`. A broken `include-group` also raises the depth and expansion limits. `report.py` calls `index_dependencies` unconditionally. This contradicts the README ("only what the action outputs is read") and wastes time. | P6, P4     |
+| G2  | **Three modules each read `[project]`, `dynamic` and `optional-dependencies` from the raw dict.** `metadata.py`, `pyproject.py` and `requirements.py` all call `get_table` on the same keys, and `_dynamic_dependency_fields` re-checks the types of `dynamic` defensively because the validation lives elsewhere. `flatten_group` is full of `cast`. The raw `dict[str, Any]` travels through the whole core.                                  | P11        |
+| G3  | **`pyproject_path` is threaded through 25 signatures** only to put the file name in the text of errors and warnings, although the annotation (`::error file=...`) already carries the file. Every function has a default `"pyproject.toml"` that hides a forgotten argument.                                                                                                                                                                  | P11, P7    |
+| G4  | **The dependency index is two-pass and string-keyed.** `index_dependencies` builds one index for all places and one per place under keys such as `"numpy@extra:x"`; `_lookup_key` re-normalises the entry to rebuild the key; entries are bare tuples `(specifier, marker, scope)`; a `functools.cache` exists because each string is parsed twice. The same information is a flat list of records with a `source`.                              | P11        |
+| G5  | **The command line is an argparse layer for a program with one caller.** The action already passes its inputs as environment variables, then `run.sh` turns them into one flag, two options and three positional JSON strings, and `cli.py` (220 lines, with an `_ArgumentParser` subclass for annotated usage errors, and 1,217 lines of tests) turns them back into `Inputs`. `--github-output` is a mode switch that could be `$GITHUB_OUTPUT`. | P11, P9    |
+| G6  | **The Markdown job summary repeats the annotations.** GitHub already lists every `::warning` and `::error` on the run page. `output/summary.py` (102 lines, a numeric-character-reference escaper, 90 lines of tests, the `GITHUB_STEP_SUMMARY` handling in `main`) produces a second copy of the same list and a second place where escaping can go wrong.                                                                                  | P11, P2    |
+| G7  | **Warnings are free text.** The README table is keyed by "Message contains" fragments (`' not found`), the tests match substrings, and a workflow that reads `fromJSON(...json).warnings` can only do the same. Two rows (`dynamic dependencies` and `dynamic optional-dependencies`) are one case. A reworded message silently breaks the docs.                                                                                               | P8, P10    |
+| G8  | **The error format is not uniform, and the README promises one.** The README says `<file>: <field> <problem>`. The code produces `pyproject.toml not found at: x`, `x is not valid TOML`, `x is missing required key [project].name`, `x: [project].version is not a valid ...`, and input errors with no file at all (`strict must be 'true' or 'false'`). The file name is also in the text and in the annotation.                              | P7, P12    |
+| G9  | **Moving tags.** The README pins `@v0.3`, a tag that `release.yaml` moves at every patch release, so the code a caller runs can change without an edit on their side, and the release workflow needs a force-push step. The pin should be the exact, immutable tag (`@v0.3.0`).                                                                                                                                                                              | P12, P11   |
+| G10 | **Tests are 2.9 times the source.** Most of the weight is one test per message and per argparse path (`test_cli.py` 1,217 lines for a 220-line module). The golden cases already assert whole outputs; the error paths could be one table-driven test per module.                                                                                                                                                                              | P11        |
+| G11 | **The workflows still carry indirection that the platform replaces.** `bot-cancel-stale-queued-runs.yaml` (59 lines, hourly) does what `concurrency` does and no workflow uses `concurrency`. `lib-get-test-matrix.yaml` and a shared config action are used to build a matrix of two Pythons and three systems. `ci.yaml` and `nightly.yaml` both run on a schedule, ten minutes apart.                                                       | P11        |
+| G12 | **`python-candidates` goes stale every October** and nothing warns. It is one list in `inputs.py` (good), but the only reminder is a README checklist line. A new Python minor is missing from `python-versions` until a release.                                                                                                                                                                                                                | P5, P12    |
+| G13 | **Property tests run on one Python version.** `hypothesis` is installed only for `python_version >= '3.14'`, so on 3.11 to 3.13 the property tests skip, although the action supports 3.11. The `pyproject.toml` does not say why.                                                                                                                                                                                                              | P11        |
 
-- Inputs go through `env:`; outputs are written with a random delimiter; annotations and summaries are escaped (P2).
-- `MetadataError` plus a single `main` that turns it into an exit code and an annotation (P6).
-- PEP 503 / PEP 685 / PEP 440 handling through `packaging`, not regexes.
-- Layered package, strict pyright, 100 % coverage gate, property tests on the parsers.
-- Unknown input fails; booleans are exactly `true` / `false`.
+### 2.3 Considered and left unchanged
+
+| Topic                               | Why it stays                                                                                                                                                                                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vendoring all of `packaging`        | 11,700 lines are shipped but only 6,800 are loaded, and the cost is 30 ms. Pruning modules makes `make vendor-packaging` a patch-and-check job and a future import of `packaging.tags` break. A pristine copy updates in one command. P4 is met.                          |
+| `-B` (no bytecode)                  | It costs about 30 ms per run (measured) and keeps `__pycache__` out of the workspace and of a cached action directory. A job runs the action once. Not worth a cache.                                                                                                     |
+| First match wins, markers ignored   | Evaluating markers needs the target Python and platform. The scoped entries (`@project`, `@extra:x`, `@group:x`) and `dependency_requirements` (all matches, with `marker` and `source`) already answer "which one". No change.                                           |
+| The 13 outputs and the 5 inputs     | Each answers P1. `json` carries the rest. No output is added or removed in the target.                                                                                                                                                                                      |
+| Python 3.11 as the minimum          | `tomllib` is the reason; the oldest runner images still ship it.                                                                                                                                                                                                          |
+
+### 2.4 What is good and must be kept
+
+- Inputs through `env:`, random output delimiters, escaped annotations (P2).
+- `MetadataError` as the only user-facing failure, turned into an exit code by one `main` (P7).
+- The golden cases: `test-data/<case>/` with `inputs.json` and `expected.json`, run by pytest and by the real action (P5, P10).
+- The generated README tables and the README examples that are fixtures (P10, P12).
+- One-way layers enforced by `tests/test_layers.py`, strict pyright, a 100 % coverage gate.
+- Failing on a malformed field **that is read**, with the field named.
 
 ---
 
-## 3. Target interface
+## 3. Target behaviour
 
-### 3.1 Inputs (5, down from 11)
+### 3.1 Inputs: unchanged
 
-| Input               | Default                   | Meaning                                                                                                                                             |
-| ------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pyproject-path`    | `pyproject.toml`          | File to read.                                                                                                                                       |
-| `extra-values`      | `[]`                      | JSON array of strings put before the extras (for example `[""]` for a "no extra" job).                                                              |
-| `dependencies`      | `[]`                      | JSON array of package names to look up, optionally scoped (`numpy`, `numpy@project`, `numpy@extra:fast`, `pytest@group:dev`). Same syntax as today. |
-| `python-candidates` | maintained list (see 3.4) | JSON array of `major.minor` strings to filter with `requires-python`.                                                                               |
-| `strict`            | `false`                   | `true` fails the step when there is any warning. This is the only switch for "fail instead of warn".                                                |
+`pyproject-path`, `extra-values`, `dependencies`, `python-candidates`, `strict`, with the
+same names, defaults and syntax. Booleans stay exactly `true` or `false`.
 
-**Removed inputs and what replaces them**
+### 3.2 Outputs: unchanged names, one changed shape
 
-| Removed                   | Replacement                                                                                                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fail-on-missing`         | A requested dependency that is not found is a **warning** (`dependency X not found`) and `null` in the output. `strict: true` makes it a failure.                 |
-| `fail-on-dynamic-version` | A dynamic version is a **warning**. `strict: true` makes it a failure. A release job uses `strict: true`.                                                         |
-| `resolve-dynamic-version` | Removed with the feature (see 3.5).                                                                                                                               |
-| `step-summary`            | The job summary is always written when there is a warning or an error (today's `auto`), and only then. It is a short list, not a table of every output. No input. |
-| `installer`               | Removed: nothing is installed (see 4.1).                                                                                                                          |
-| `python-executable`       | Removed. The action uses `python3` or, if absent, `python` from `PATH`; use `actions/setup-python` to choose a version, as every other action does.               |
+The 13 outputs keep their names and values. Only the `warnings` array of `json` changes:
 
-Booleans stay strict: exactly `true` or `false` (case and surrounding spaces
-ignored), anything else fails.
+```json
+"warnings": [
+  { "code": "dependency-not-found", "message": "dependency 'numpy' not found" }
+],
+"schema_version": 3
+```
 
-### 3.2 Outputs (13 including `json`, down from 27)
+`message` no longer starts with the file name (the annotation carries it, see 3.5).
+`schema_version` becomes `3` because an item type changes.
 
-Scalars are plain strings. Arrays and objects are compact JSON strings, ready
-for `fromJSON`. All keys are listed in `action.yaml` and nowhere else by hand.
+### 3.3 Warnings: one code each (fixes G7)
 
-| Output                  | Value                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `name`                  | `[project].name`, as written.                                                                                       |
-| `normalized-name`       | PEP 503 form (`my-package`): for index URLs and `pip install`.                                                      |
-| `file-name`             | Name as used in wheel and sdist file names (`my_package`). **New**, fixes F8.                                       |
-| `version`               | `[project].version`, as written (empty when dynamic, with a warning).                                               |
-| `normalized-version`    | PEP 440 canonical form: for file names and tags.                                                                    |
-| `requires-python`       | `[project].requires-python`, as written (empty if absent).                                                          |
-| `python-versions`       | JSON array: the candidates allowed by `requires-python`, in candidate order.                                        |
-| `python-min`            | Lowest of `python-versions` (numeric order), empty if none.                                                         |
-| `python-max`            | Highest of `python-versions`, empty if none.                                                                        |
-| `extras`                | JSON array: `extra-values`, then the extras sorted by normalized name, no duplicates (PEP 685).                     |
-| `groups`                | JSON array: dependency groups sorted by normalized name.                                                            |
-| `dependency-specifiers` | JSON object: each requested entry to its specifier (`""` if none, `null` if not found).                             |
-| `json`                  | The whole result (all the above plus `dependency_requirements`, `warnings`, `schema_version`), as real JSON values. |
+Nine codes, down from ten rows, with the two "dynamic" rows merged. The code is the stable
+identifier; the message is for humans and may be reworded.
 
-`json` is the structured escape hatch; the 12 others are the individual outputs.
+| Code                      | When                                                                                         | Effect                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `static-and-dynamic`      | A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621).          | The static value is used.                                 |
+| `dynamic-version`         | `version` is in `dynamic` and not set.                                                       | `version` and `normalized-version` are empty.             |
+| `invalid-requires-python` | `requires-python` is not a valid specifier.                                                  | `python-versions` is empty.                               |
+| `no-python-version`       | No candidate is allowed by `requires-python`.                                                | `python-versions` is empty.                               |
+| `invalid-requirement`     | A requirement string cannot be parsed (only when `dependencies` is not empty).               | It is skipped.                                            |
+| `include-group-cycle`     | The `include-group` entries include each other in a loop (only when `dependencies` is not empty). | The loop is not followed.                            |
+| `unknown-include-group`   | An `include-group` names a group that does not exist (only when `dependencies` is not empty). | It is skipped.                                            |
+| `dynamic-dependencies`    | `dependencies` or `optional-dependencies` is dynamic and not set (only when `dependencies` is not empty). | No requirement is found in it.              |
+| `dependency-not-found`    | A requested package is not in the place(s) searched.                                         | Its specifier is `null`.                                  |
 
-**Removed outputs**
+The README table is **generated** from the code that defines the codes (a tuple of
+`(code, when, effect)` in `warnings.py`), so the docs cannot drift; a golden case exists for
+each code. The `::warning` annotation gets `title=<code>`, which GitHub shows as the
+heading of the annotation.
 
-| Removed                                                                                                                                         | Why / where to get it                                                                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `description`, `readme`, `license`, `license-files`, `authors`, `urls`, `keywords`, `classifiers`, `scripts`, `build-backend`, `build-requires` | Pass-through of fields that never drive a matrix or a release (F3). A workflow that needs one reads it with `tomllib` in one line. Not read, so not validated and no SPDX check. |
-| `project-dependencies`                                                                                                                          | `dependencies: '["numpy"]'` answers the same question for the packages the workflow cares about. Listing all the project dependencies is the job of `pip`.                       |
-| `python-matrix`                                                                                                                                 | `{"python-version": python-versions}` is one expression: `matrix: python-version: ${{ fromJSON(...python-versions) }}`.                                                          |
-| `dependency-requirements` (as its own output)                                                                                                   | Kept **inside `json`** (`fromJSON(...json).dependency_requirements`) for the marker use case; it is no longer a top-level output (F4).                                           |
+### 3.4 Dependency lookup: read nothing unless asked (fixes G1)
 
-Net effect: the questions the action answers are exactly P1's: _what is it
-(name/version), what do I test (extras, groups, Python versions), what do I
-install (specifiers)_.
+- `dependencies: []` skips the requirement tables entirely: no read, no validation, no
+  limits, no warnings. This is the default, so most runs get cheaper and more tolerant.
+- When entries are given, the semantics are the ones documented today: unscoped entry,
+  first match in the order `[project].dependencies`, extras (file order), groups (file
+  order, `include-group` expanded); scoped entry (`@project`, `@extra:<n>`,
+  `@group:<n>`) looks in one place. Names are compared per PEP 503.
+- A malformed requirement table fails the step **only** in that case, with the field named.
 
-### 3.3 Dependency lookup (simplified semantics)
+### 3.5 Errors and the file name (fixes G3, G8)
 
-- Search order is unchanged and documented in one sentence: `[project].dependencies`, each extra (file order), each group (file order, `include-group` expanded).
-- An unscoped name returns the **first** requirement found. Markers are never evaluated (unchanged).
-- A scoped name (`@project`, `@extra:<n>`, `@group:<n>`) looks in that place only. Unchanged syntax, since it is the practical answer to "first match is arbitrary".
-- **Removed:** the cross-place "different specifiers" conflict warning (F7). If a package is declared in two places with different specifiers, the unscoped answer is the first one, the scoped answers are explicit, and `dependency_requirements` in `json` lists all of them with their source. Warning on every legitimate difference (a runtime range plus a dev pin) is noise.
-- **Added:** each item of `dependency_requirements` gets a `source` (`project`, `extra:<n>`, `group:<n>`), so a workflow can tell the entries apart without guessing from the order.
-- **Kept:** `Ignoring invalid requirement` (warning), `include-group` cycle and unknown group (warnings), the nesting and expansion limits (errors), dynamic `dependencies` / `optional-dependencies` (warning).
-- A missing package is a warning (see 3.1), so `strict` is the single policy switch.
+One format: `<field>: <problem>`, where the field is an input name (`strict`,
+`dependencies`) or a TOML path (`[project].version`, `[dependency-groups].dev`).
+File-level problems use the input that names the file:
 
-### 3.4 Python versions
+```
+pyproject-path: no such file
+pyproject-path: not valid TOML: Invalid value (at line 3, column 5)
+pyproject-path: not valid UTF-8: ...
+[project].name: missing
+[project].version: not a valid PEP 440 version: '1.x'
+strict: must be 'true' or 'false', got: 'yes'
+```
 
-- Algorithm unchanged (a minor is allowed if some release of it satisfies the specifier; numeric ordering for min and max).
-- The default candidate list is defined **once**, in `python_versions.py`. `action.yaml` documents "the supported CPython versions, see the README" without repeating the list, and the README prints it from the code (generated block, 5.4). Updating it is a release-checklist item every October.
-- `python-versions` empty (invalid or unsatisfiable `requires-python`) stays a warning.
+The text never contains the file name. `main` knows the path, so the annotation and the
+plain stderr line add it once: `::error file=<path>::<message>`, or `<path>: <message>`
+when the run is local. Warnings follow the same rule.
 
-### 3.5 Dynamic version
+### 3.6 Reporting channels (fixes G6)
 
-- `resolve-dynamic-version` and `dynamic_version.py` are **deleted** (F6).
-- Behaviour: `version` and `normalized-version` are empty, with the warning `[project].version is dynamic`. `strict: true` fails.
-- Justification: the feature re-implements two build backends, needs a path-safety layer and a ReDoS caveat, and does not cover the common cases. A workflow with a dynamic version should ask the backend (`python -m build`, `hatch version`, `uvx hatch version`, `python -m setuptools_scm`).
-- Fallback if this turns out to hurt users: re-add **only** `tool.setuptools.dynamic.version.file` and `tool.hatch.version.path` with the default pattern, behind no input (always on, a warning if not found). That is under 60 lines. Do not re-add `attr` (needs `ast` and module search) or user regular expressions.
+- **Annotations** (`::warning`, `::error`) with `file` and `title=<code>`: the one place
+  where a human reads warnings and errors on GitHub.
+- **The one-line `📦` log line**: kept, it is the quickest way to read the result in a log.
+- **The job summary is removed.** `GITHUB_STEP_SUMMARY` is no longer written. GitHub shows
+  the annotations on the run page.
+- **`warnings` in `json`**: for workflows that react to a code.
 
-### 3.6 Error and warning policy (P6, P7)
+### 3.7 Python versions, dynamic version, extras: unchanged
 
-- **Validate only what is read.** A malformed `authors` is not the action's concern any more. The remaining checks are: `[project]` is a table, `name` valid (PEP 508 name), `version` valid (PEP 440) unless dynamic, `requires-python` is a string, `dynamic` is an array of strings, the extras / groups / dependency tables have the right shape.
-- Every message has the form `<field>: <problem>` and is emitted as `::error file=<path>::...` (or a warning annotation). The README lists the **rule**, not each message (F11).
-- `strict` failure lists every warning in one error.
-- Warnings in the target: field both static and listed in `dynamic`, dynamic version, `requires-python` invalid or unsatisfiable by the candidates, invalid requirement ignored, `include-group` cycle, unknown included group, dynamic dependencies, requested dependency not found. Eight, down from twelve.
+Same algorithm (a minor is allowed if some release of it satisfies the specifier; numeric
+order for min and max), same empty values, same extras and groups ordering (PEP 685 and
+PEP 503 normalised, first spelling kept).
 
-### 3.7 Versioning
+### 3.8 Keeping `python-candidates` current (fixes G12)
 
-- Breaking release `v1.0.0` with a moving `v1` tag, created by a release workflow (see 8). `v0.1` / `v0.2` stay available.
-- `schema_version` of the `json` output becomes `2` (keys removed, `source` added). From then on it changes only on a rename, a removal or a type change.
+The default list stays in one place (`python_versions.py`, moved from `inputs.py` because
+it is data about Python versions). `packaging-update.yaml` becomes `maintenance.yaml` and
+gains a weekly step that reads the supported CPython minors from
+`https://endoflife.date/api/python.json`, and opens an issue when the newest one is not in
+the default list. It needs the network, so it lives in CI only (P3 is about the action).
 
 ---
 
 ## 4. Target architecture
 
-### 4.1 No install step: vendor `packaging`
-
-The only third-party dependency is `packaging` (requirement parsing, specifiers, versions, name canonicalization). Everything else is standard library (`tomllib`, `json`, `re`).
-
-**Decision: vendor a pinned copy of `packaging` inside the package.**
+### 4.1 Execution flow
 
 ```
-src/extract_pyproject_metadata/_vendor/packaging/   (pure Python, Apache-2.0 OR BSD-2-Clause, licences included)
+action.yaml  --env INPUT_*-->  scripts/run.sh  --exec-->  python -I -B scripts/extract_metadata.py
+                                                           cli.main(os.environ)
+                                                             parse_inputs      -> Inputs
+                                                             build_report      -> Report        (pure but for reading the file)
+                                                             write_outputs / print JSON
 ```
 
-Consequences:
+- **The command line is the environment (fixes G5).** `main(environ)` reads
+  `INPUT_PYPROJECT_PATH`, `INPUT_EXTRA_VALUES`, `INPUT_DEPENDENCIES`,
+  `INPUT_PYTHON_CANDIDATES` and `INPUT_STRICT` (the naming that GitHub uses for the inputs
+  of its own actions), and the already existing `GITHUB_OUTPUT`.
+  - `GITHUB_OUTPUT` set: write the outputs, print the annotations and the log line.
+  - `GITHUB_OUTPUT` not set (a local run): print the `json` to stdout and the errors as
+    plain text on stderr.
+  - No argparse, no flags, no positional JSON, no `_ArgumentParser`, no `--help`. A local
+    run is `INPUT_PYPROJECT_PATH=path python -m extract_pyproject_metadata`. The module
+    docstring says so.
+- `run.sh` drops `"$@"` and stays at about 20 lines (find the interpreter, `exec`).
+- `action.yaml` keeps one step, `shell: bash`, five `env:` entries (now named `INPUT_*`)
+  and the command `bash "$GITHUB_ACTION_PATH/scripts/run.sh"`.
 
-- `scripts/run.sh` shrinks from 159 lines to about 15: find `python3` or `python`, check the version, `exec python -I -B extract_metadata.py "$@"`. `-I` removes the current directory, the user site and `PYTHON*` variables from the path, which replaces `PYTHONSAFEPATH` and the shadowing comments. The launcher inserts `src/` into `sys.path` itself (as today).
-- No network, no venv, no `pip`, no `uv`, no `installer` input, no `trap`, no temp directory, no `packaging>=23,<27` version window to test (P3, P4, P5): the behaviour no longer depends on whichever `packaging` the runner has. Today the output can differ between `packaging` 23 and 26 (for example the SPDX check only runs from 24.2).
-- Windows works: nothing depends on `bin/` vs `Scripts/` (F2). The CI matrix adds `windows-latest`.
-- `scripts/requirements.txt`, `hatch-requirements-txt`, the build system and the wheel target are deleted (F14).
-- Cost: the vendored tree (about 300 KB) is excluded from ruff, pyright and coverage, and must be updated by hand. Provide `make vendor-packaging VERSION=x.y` (download the wheel, unpack the `packaging/` directory, update `_vendor/README.md` with the version and the hash) and a monthly scheduled workflow that opens an issue when a newer `packaging` exists. `packaging` has a small API surface and a good security record; this is a low-frequency task.
+### 4.2 Modules
 
-**Fallback (if vendoring is rejected):** keep a venv install but drop `uv`/`auto`/`installer` and `python-executable`, keep the "use the installed `packaging` if >= 23" check, and accept network on the cold path. This keeps F1 and F2 but removes most of the shell. It is the second-best option.
-
-### 4.2 Package layout
-
-Fewer, flatter modules. Imports still go one way, from the bottom of this list to the top; a module never imports from one above it. The `dependencies/` and `output/` sub-packages disappear because each concern fits in one module of a few hundred lines.
+Imports go one way, from the bottom of the list to the top. `tests/test_layers.py` keeps
+the rank of each module.
 
 ```
 src/extract_pyproject_metadata/
-  __init__.py          docstring (map of the modules) + MetadataError
-  __main__.py          python -m extract_pyproject_metadata
-  errors.py            MetadataError
-  types.py             Report (TypedDict), Inputs (frozen dataclass)
-  checks.py            type checks of values read from the file
-  inputs.py            parse the action inputs (JSON arrays, booleans) -> Inputs
-  pyproject.py         load_pyproject + read name, version, requires-python, extras, groups, dynamic
-  requirements.py      parse, index and look up requirements (scopes, include-group, limits)
-  python_versions.py   candidates, compatible versions, min, max
-  report.py            build_report(inputs: Inputs) -> Report   (wires the above, applies strict)
-  output.py            GITHUB_OUTPUT writer, annotations, escaping, log line, job summary
-  cli.py               argparse, main
-  _vendor/packaging/
+  errors.py            MetadataError(field, problem)             ~15
+  warnings.py          Warning(code, message), the code table    ~50     (new; the README table comes from it)
+  types.py             Inputs, Lookup, Project, Requirement, Report      ~70
+  checks.py            type checks of values read from the file  ~60
+  inputs.py            parse_inputs(Mapping) -> Inputs           ~130
+  pyproject.py         load_pyproject, read_project -> Project   ~170    (name, version, requires-python, dynamic, extras, groups)
+  requirements.py      collect + look up requirements            ~200
+  python_versions.py   candidates, compatible, min, max          ~100    (+ the default candidates)
+  github.py            outputs table, GITHUB_OUTPUT, annotations, log line, escaping   ~150
+  report.py            build_report(Inputs) -> Report, strict     ~60
+  cli.py               main(environ)                              ~60
+  __init__.py, __main__.py
+  _vendor/packaging/   (unchanged)
 ```
 
-About 12 modules and 1,000 to 1,200 lines (from 20 modules and 3,000 lines). Deleted: `license.py`, `fields.py` (the useful 40 lines move to `pyproject.py`), `dynamic_version.py`, `dependencies/groups.py` + `lookup.py` merged into `requirements.py`, `output/summary.py` (replaced by a list in `output.py`).
+About 1,150 lines in 13 modules (from 2,210 in 17), none above 200. Deleted:
+`metadata.py` (merged into `pyproject.py`), `output/summary.py`, the `output/` package
+(`escaping.py` and `github.py` merge into one flat `github.py`; it still imports only
+`types`, `errors` and `warnings`), the argparse half of `cli.py`.
 
-Rules that change:
+### 4.3 One validated project, no raw dict in the core (fixes G2)
 
-- **The core never sees `argparse`.** `inputs.parse_inputs(raw: Mapping[str, str]) -> Inputs` is the single place that validates input strings; `build_report(inputs)` takes the dataclass (F9). `cli.py` maps the command line to `Inputs`. The action can pass the inputs as `--option value` flags (clearer than the current positional JSON strings), and tests call `build_report(Inputs(...))` with plain values.
-- **`output.py` depends only on `types` and `errors`** (kept; enforced by `pyright` plus a single test that parses imports, see 7.2).
-- A public name is listed in `__all__`; a verb prefix for functions; module docstring and `from __future__ import annotations` everywhere. Unchanged.
-- The `cli.py` docstring is reduced to the usage (10 to 15 lines); the full contract lives in `action.yaml` and the README (P9).
-- `json` is `json.dumps(report)` plus nothing else. Individual outputs are derived from `Report` by one table in `output.py` whose keys are checked against `action.yaml` by a test.
+`pyproject.py` reads the document **once** into a typed value and the rest of the core
+never sees `dict[str, Any]` except `requirements.py`, which is the only reader of the
+dependency tables:
 
-### 4.3 Execution flow
+```python
+@dataclass(frozen=True)
+class Project:
+    name: str                     # as written, validated (PEP 508)
+    version: str | None           # None when dynamic
+    requires_python: str
+    dynamic: frozenset[str]
+    extras: list[str]             # names only, PEP 685 normalised, sorted
+    groups: list[str]
 
-```
-action.yaml  --env-->  scripts/run.sh  --exec-->  python -I -B scripts/extract_metadata.py
-                                                   cli.main(argv)
-                                                     parse_inputs -> Inputs
-                                                     build_report(Inputs) -> Report      (pure, no I/O except reading the file)
-                                                     output.write(Report)                (GITHUB_OUTPUT, annotations, log line, summary)
-```
-
-Pure core, I/O at the edge. `build_report` is the only function a library user or a test needs.
-
-### 4.4 `action.yaml`
-
-- One step, `shell: bash`, five `env:` entries, one command. No logic. Unchanged in spirit; shorter.
-- Windows runs the same step (`shell: bash` is Git Bash there).
-- Descriptions are one sentence each; the detail is in the README, which is generated from this file (5.4).
-
----
-
-## 5. Documentation target (P9, P11)
-
-1. **README of about 150 lines**: what it is, a 10-line usage example, three recipes (extras matrix, Python matrix, release with `strict`), the generated inputs / outputs tables, the dependency scopes in one table, the warnings list, and a short "Development" section pointing at `CONTRIBUTING`-style commands.
-2. **No history.** "It used to ..." goes to GitHub release notes. The failure-mode list becomes: _"Invalid input fails the step with `<field>: <problem>` and an annotation on the file. The inputs are validated before the file is read."_ plus the few cases that need a sentence (Python < 3.11, missing file, invalid TOML, strict).
-3. **Examples are runnable.** Every YAML and TOML block in the README is a fixture under `test-data/` or `tests/`, and a test checks that the README block equals the fixture (replaces most of `test_contract.py`).
-4. **Generated tables.** `scripts/generate_docs.py` (a dev-only script that reads `action.yaml` with `PyYAML`) rewrites the blocks between `<!-- inputs:start -->` / `<!-- inputs:end -->` and the same for outputs and the default candidates. `make docs` writes, CI fails on a diff. The action itself still has no runtime dependency.
-5. Fix F8: the README says `normalized-name` is for index URLs and `file-name` is for wheel and sdist file names.
-6. `CLAUDE.md` is updated with the new architecture, the vendored dependency and the single task runner. It keeps the same sections and shrinks accordingly.
-
----
-
-## 6. Repository and tooling target (P10)
-
-| Area                 | Today                                                                                         | Target                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task runner          | `Makefile` + `.make/` (shared, synced by a bot) **and** `invoke` + `tasks.py` + `invoke.yaml` | **One: the `Makefile`.** It already covers the non-Python files and is shared with other repos. Add `make check` (ruff, format check, pyright, tests), `make test`, `make fix`, `make docs`, `make vendor-packaging`. Drop `invoke`, `invoke-tasklib` (pre-release) and `tasks.py`. _(Owner decision: if the `coola` convention of `invoke` must stay, keep invoke and drop the Python part of `.make/` instead. Either way, one.)_ |
-| Type checker         | `pyright` strict **and** `ty`                                                                 | **`pyright` strict** on `src` and `scripts` (it is the one `CLAUDE.md` requires). Drop `ty`.                                                                                                                                                                                                                                                                                                                                        |
-| Layer checks         | `import-linter` (Python >= 3.14 only), 2 contracts                                            | Drop. With 12 flat modules a 20-line test (parse the imports of each module with `ast`, assert the rank order from a dict) enforces the same rule on every Python version, with no dependency.                                                                                                                                                                                                                                      |
-| Docstring formatting | `docformatter` (re-wraps summaries oddly)                                                     | Drop; `ruff format` plus the `D` rules are enough.                                                                                                                                                                                                                                                                                                                                                                                  |
-| Doctests             | `xdoctest` in the dev group                                                                   | Drop unless doctests exist; examples live in tests.                                                                                                                                                                                                                                                                                                                                                                                 |
-| Property tests       | `hypothesis`, Python >= 3.14 only                                                             | Keep, but run on **all** supported Pythons (find out why it is gated; if it is a wheel problem on free-threaded builds, gate by `sys._is_gil_enabled`, not by version).                                                                                                                                                                                                                                                             |
-| Build system         | `hatchling`, `hatch-requirements-txt`, wheel target                                           | None. `pyproject.toml` holds tool configuration and the `dev` group. Keep a minimal `[project]` (name, `requires-python`, `dependencies = []`) with `[tool.uv] package = false` so `uv sync --group dev` works.                                                                                                                                                                                                                     |
-| Runtime requirements | `scripts/requirements.txt` read by hatch                                                      | None (vendored).                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Dev dependencies     | 16 entries                                                                                    | `pytest`, `pytest-cov`, `pytest-timeout`, `hypothesis`, `ruff`, `pyright`, `pre-commit`, `codespell`, `pyyaml` (docs generation). 9 entries.                                                                                                                                                                                                                                                                                        |
-| Pre-commit           | ruff, docformatter, shfmt, shellcheck, codespell, ty, import-linter                           | ruff (lint + format), shfmt, shellcheck, codespell, prettier / yamllint for YAML and Markdown (already in `.make`). CI runs `pre-commit run -a` so local and CI use the same definition.                                                                                                                                                                                                                                            |
-| Fixtures             | 17 files in `test-data/`                                                                      | One directory per case with `pyproject.toml` **and** `expected.json` (the expected `json` output). Used by unit, integration and workflow tests (see 7.3).                                                                                                                                                                                                                                                                          |
-
----
-
-## 7. Test strategy target
-
-### 7.1 Principles
-
-- Keep the existing rules (mirror the package, one behaviour per test, `pytest.raises(match=...)`, whole-output asserts, no network, no sleeps, 100 % coverage of `src` excluding `_vendor`).
-- **Delete tests with the code they cover** (about 40 % of the 7,700 lines go with the removed outputs, inputs and dynamic-version feature). Do not keep tests for removed behaviour.
-- Add a test for every bug fixed and **check that it fails without the fix**, as `CLAUDE.md` says.
-
-### 7.2 Layout
-
-```
-tests/unit/            one module per module of src (12)
-tests/integration/     test_cli_process.py (new process, stdout / stderr / exit codes),
-                       test_run_sh.py (python3/python lookup, version check, -I isolation),
-                       test_action_contract.py (action.yaml <-> output table <-> README blocks <-> fixtures),
-                       test_golden.py (every test-data/<case> produces its expected.json)
-tests/properties/      parsers: normalization, ordering, escaping round trips
-tests/test_layers.py   rank-order check of the imports (replaces import-linter)
+def read_project(data: dict[str, Any]) -> tuple[Project, list[Warning]]: ...
 ```
 
-### 7.3 Golden fixtures
+`normalized_name`, `file_name` and `normalized_version` are derived in `report.py` from the
+`Project`, not stored. `dynamic` is validated here and passed on, so
+`_dynamic_dependency_fields` disappears.
 
-- Each `test-data/<case>/` has `pyproject.toml`, optional `inputs.json` (the action inputs for that case) and `expected.json` (the `json` output).
-- The golden test runs `main` for every case and compares the whole object. Adding a case is adding a directory; no new test code, no new workflow job.
-- The same directories drive the workflow job (7.4), so the unit tests and the real action are checked against the same expectations.
+### 4.4 Requirements as a flat list (fixes G4)
 
-### 7.4 Workflow-level test (wiring only)
+```python
+@dataclass(frozen=True)
+class Requirement:
+    name: str          # canonical (PEP 503)
+    specifier: str
+    marker: str        # "" if none
+    source: str        # "project", "extra:<n>", "group:<n>"
 
-- One job per OS (`ubuntu-latest`, `macos-latest`, `windows-latest`) with the lowest and the highest supported Python.
-- One matrix over the case directories; the step `uses: ./` with the case's `inputs.json` mapped by a small `fromJSON` expression, then **one** shell step:
+@dataclass(frozen=True)
+class Lookup:          # one entry of the `dependencies` input
+    text: str          # as written, the key of the result
+    name: str          # canonical
+    source: str | None # None: search everywhere
 
-```yaml
-- name: Compare the json output with the golden file
-  run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
-  env:
-    EXPECTED: test-data/${{ matrix.case }}/expected.json
-    ACTUAL: ${{ steps.action.outputs.json }}
+def collect_requirements(data) -> tuple[list[Requirement], list[Warning]]: ...
+def find(requirements, lookup) -> list[Requirement]:
+    return [r for r in requirements
+            if r.name == lookup.name and lookup.source in (None, r.source)]
 ```
 
-Values go through `env:` (fixes F12), there are no hand-written `assert_equal` per output, and the file shrinks from 1,086 lines to about 80.
+- `parse_dependencies` builds the `Lookup` list, so the `@` syntax is parsed once, in
+  `inputs.py`, and `_lookup_key`, the `"name@scope"` index keys and the per-place second
+  index disappear.
+- `dependency_specifiers[text]` is `find(...)[0].specifier`, or `None` with a
+  `dependency-not-found` warning; `dependency_requirements[text]` is the whole list as
+  dicts. Both come from the same `find`, so they cannot disagree.
+- `collect_requirements` is called **only** when `inputs.dependencies` is not empty (G1).
+  Parsing is once per requirement, so `functools.cache` goes.
+- `flatten_group` keeps the depth and expansion limits, the cycle and unknown-group
+  warnings, but becomes a small recursive generator over a typed `dict[str, list[...]]`
+  checked once at the top of `collect_requirements` (the casts go).
 
-- Wiring checks that the golden file cannot see stay as separate small steps: a failure case (`continue-on-error` + check of the outcome), `strict`, no `__pycache__` left in the workspace, no directory left in `$RUNNER_TEMP`.
-- `nightly-test-stable.yaml` is **generated** from `ci-test-local.yaml` by `make workflows` (change the `uses:` line and the name) and checked with `git diff --exit-code` in CI. `uses:` cannot be an expression, so a generated copy is the least bad option.
+### 4.5 `pyproject_path` leaves the core (fixes G3)
 
----
+`MetadataError` and `Warning` carry no path. `report.py` and the core functions take no
+`pyproject_path` argument; only `load_pyproject(path)` and `github.py` use it. This removes
+the parameter from 23 of the 25 signatures, and with it a class of untested defaults.
 
-## 8. CI and release target
+### 4.6 Rules that stay
 
-| Workflow         | Content                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yaml`        | One file with `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`. Jobs: `lint` (`pre-commit run -a`, `make docs` diff check, `make workflows` diff check), `types` (`pyright`), `unit` (matrix Python 3.11 to latest, Ubuntu; plus macOS and Windows on the lowest and highest), `action` (the golden workflow test, 7.4). |
-| `nightly.yaml`   | The generated stable-release copy of the action test, plus the check that a newer `packaging` has not been released (opens an issue).                                                                                                                                                                                                                                |
-| `release.yaml`   | On a `v*.*.*` tag: run the checks, create the GitHub release with notes, move the `v<major>` tag.                                                                                                                                                                                                                                                                    |
-| `dependabot.yml` | `github-actions` and `pip` (dev group), weekly, grouped.                                                                                                                                                                                                                                                                                                             |
-
-Removed: `bot-cancel-stale-queued-runs` (replaced by `concurrency`), `lib-get-test-matrix`, `ci-lint`, `ci-test`, `ci-type-check`, `ci-verify-workflows` as separate reusable workflows (folded into jobs of `ci.yaml`; a workflow file per job adds indirection without reuse). To check before deleting: `bot-pin-action`, `bot-format-files` and `bot-sync-shared-makefile`. Keep the one that keeps the shared `.make/` in sync (it serves other repositories), and drop the others if `pre-commit.ci` or Dependabot already does their job. Third-party actions stay pinned to a commit SHA with the ratchet comment.
-
-Release checklist (in `CONTRIBUTING`-style section of the README): update the default `python-candidates` (October), check `packaging` for a newer release, run `make check`, tag.
-
----
-
-## 9. What is deliberately not in the target
-
-- Evaluating environment markers (needs the target Python and platform; a workflow can pick from `dependency_requirements`).
-- Running a build backend or project code, in any form.
-- Reading other tools' tables (`tool.*`), `gui-scripts`, `entry-points`.
-- A cache, a daemon, or any state between steps.
-- Validating the whole of PEP 621. Fields that are not read are not checked.
-- Publishing the package to PyPI.
+Module docstring and `from __future__ import annotations` everywhere; a public name is in
+`__all__` and checked by `test_package.py`; verb prefixes (`read_`, `parse_`, `format_`);
+type hints and docstrings on every function; a collaborator that a test replaces is an
+argument with a default (the delimiter factory); `MetadataError` is the only user-facing
+exception.
 
 ---
 
-## 10. Migration plan
+## 5. Test target
 
-One branch and one PR per step, in this order (each leaves `main` green; breaking steps are marked **B**).
-
-| Step | Branch                                   | Change                                                                                                                                                                       | Breaking               |
-| ---- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| 1    | `refactor/inputs-dataclass`              | `Inputs` dataclass, `parse_inputs`, `build_report(inputs)`; the CLI maps to it. Core no longer imports `argparse`.                                                           |                        |
-| 2    | `chore/single-tooling`                   | Drop `ty`, `import-linter` (add the layer test), `docformatter`, `xdoctest`; choose one task runner; drop the build system. Update `CLAUDE.md` and the pre-commit file.      |                        |
-| 3    | `ci/concurrency-and-golden-tests`        | `concurrency`, fold the reusable workflows into `ci.yaml`, add `expected.json` fixtures and the golden test, rewrite the action test with `env:`, generate the nightly copy. |                        |
-| 4    | `feat/vendor-packaging`                  | Vendor `packaging`, shrink `run.sh`, delete `requirements.txt`, `installer`, `python-executable`; add Windows to the matrix.                                                 | **B** (inputs removed) |
-| 5    | `feat/single-strict-switch`              | Remove `fail-on-missing`, `fail-on-dynamic-version`, `step-summary`; missing dependency becomes a warning; summary is warnings and errors only.                              | **B**                  |
-| 6    | `feat/remove-passthrough-outputs`        | Remove the 11 pass-through outputs, `project-dependencies`, `python-matrix`, `license.py`, `fields.py` leftovers, the size-limit warning; add `file-name`.                   | **B**                  |
-| 7    | `feat/simplify-dependency-lookup`        | Remove the conflict warning, move `dependency-requirements` into `json` with `source`, merge the `dependencies/` modules.                                                    | **B**                  |
-| 8    | `feat/remove-dynamic-version-resolution` | Delete `dynamic_version.py`, the input and its tests and fixtures.                                                                                                           | **B**                  |
-| 9    | `docs/generated-readme`                  | New README (about 150 lines), `scripts/generate_docs.py`, `make docs`, CI diff check, `schema_version` 2.                                                                    |                        |
-| 10   | `chore/release-v1`                       | `release.yaml`, release notes listing every breaking change with its replacement (tables 3.1 and 3.2 are the notes), tag `v1.0.0` and `v1`.                                  | **B**                  |
-
-Steps 4 to 8 can be squashed into a single `v1` branch if no intermediate release is wanted. Steps 1 to 3 are worth doing even if the rest is rejected: they are pure maintainability gains.
+- Keep the layout (`tests/unit` mirrors the package, `integration`, `properties`,
+  `test_layers.py`) and every rule of `CLAUDE.md`.
+- **Delete with the code:** the argparse tests (about 1,000 of the 1,217 lines of
+  `test_cli.py`, replaced by about 150 lines on `main(environ)`), `test_summary.py`, the
+  `_lookup_key` and per-scope index tests, the "file name in the message" assertions.
+- **Table-driven errors.** One parametrised test per module lists `(toml, field, problem)`
+  for every error, instead of one function per message. Warnings are asserted by **code**,
+  and the message only in the golden files.
+- **One golden case per warning code** (nine) and per error class that the process tests
+  need; adding behaviour is adding a directory.
+- New tests for the changed contract: a broken `[project].dependencies` with
+  `dependencies: []` passes (G1; check that it fails on `e66a1f2`); the error format
+  `<field>: <problem>` for every `MetadataError` (a test walks the raising sites through
+  the table above); the `title=` of annotations; `GITHUB_OUTPUT` unset prints JSON.
+- **Property tests on all Pythons (G13).** Remove the `python_version >= '3.14'` marker of
+  `hypothesis` (it supports 3.11) and run the property tests in the CI matrix. If a
+  concrete reason for the marker turns up, write it next to it.
+- Target: about 3,300 lines (from 6,440), and the coverage gate stays at 100 %.
 
 ---
 
-## 11. Expected result
+## 6. CI, release and tooling target
 
-| Measure                | Today                                                                  | Target                                          |
-| ---------------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
-| Inputs / outputs       | 11 / 27                                                                | 5 / 13 (including `json`)                       |
-| Warnings               | 12                                                                     | 8                                               |
-| Source modules / lines | 20 / about 3,000                                                       | about 12 / about 1,100 (plus the vendored tree) |
-| `run.sh`               | 159 lines, venv, pip or uv                                             | about 15 lines, nothing installed               |
-| Cold path of a run     | interpreter plus (when needed) venv and a network install              | interpreter plus parsing, about 80 ms, offline  |
-| Supported runners      | Linux, macOS                                                           | Linux, macOS, Windows                           |
-| Tests                  | 7,700 lines                                                            | about 3,500 lines, golden files for the wiring  |
-| Workflows              | 14 files, 1,730 lines                                                  | 4 files, about 350 lines                        |
-| README                 | 534 lines, hand-written tables, history                                | about 150 lines, generated tables, no history   |
-| Dev tools              | ruff, pyright, ty, import-linter, docformatter, xdoctest, invoke, make | ruff, pyright, make                             |
+### 6.1 Workflows (fixes G11)
 
-## 12. Decisions
+| File                  | Target                                                                                                                                                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yaml`             | `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`. The matrix is written in the file: systems `[ubuntu-latest, macos-latest, windows-latest]`, Pythons `["3.11", "3.14"]` (oldest and newest, kept in step with the default candidates by a comment and the maintenance check). No `schedule`. |
+| `nightly.yaml`        | The only scheduled workflow: calls `ci.yaml` (to catch changes of the runner images and of the dependencies) and the generated stable copy.                                                                                    |
+| `ci-test-local.yaml`  | Unchanged in design (golden matrix plus wiring jobs).                                                                                                                                                                            |
+| `nightly-test-stable.yaml` | Generated; `STABLE_REF` is the exact tag of the latest release (`v0.3.0`), edited at each release as today.                                                                                                                                                         |
+| `release.yaml`        | On `vX.Y.Z`: run `ci.yaml`, create the release from `release-notes/vX.Y.Z.md`. No moving tag: the "move the minor tag" step is deleted.                                                                                                                         |
+| `maintenance.yaml`    | Renamed from `packaging-update.yaml`: new `packaging` release, and the new-Python check of 3.8.                                                                                                                                  |
+| Bots                  | Delete `bot-cancel-stale-queued-runs.yaml` and `lib-get-test-matrix.yaml`. Keep `bot-sync-shared-makefile.yaml` (it serves other repositories), `bot-pin-action.yaml` and `bot-format-files.yaml` while no other mechanism pins or formats. |
 
-Taken by the owner on 2026-11-10, all as recommended:
+Net: 11 files and 942 lines become 9 files and about 780 lines. Third-party actions stay
+pinned to a commit SHA.
 
-1. **Vendor `packaging`.** The venv install and its fallback are dropped.
-2. **Drop the pass-through outputs and dynamic-version resolution.** They are not kept as `json`-only fields.
-3. **The `Makefile` is the single task runner.** `invoke`, `invoke-tasklib` and `tasks.py` are removed.
-4. **One `strict` switch** replaces `fail-on-missing` and `fail-on-dynamic-version`.
+### 6.2 Tooling
+
+Already minimal (`make`, `ruff`, `pyright`, `pytest`, `pre-commit`, `codespell`, `pyyaml`).
+Two changes: `hypothesis` loses its version marker (G13); `scripts/generate_docs.py` also
+writes the warnings table from `warnings.py` (3.3). `.make/` is not edited.
+
+### 6.3 Versioning (fixes G9)
+
+Release the target as **`v0.3.0`**: the steps of 8 land before the tag is pushed, and
+`release-notes/v0.3.0.md` is extended with their breaking changes and replacements. Callers
+pin the exact tag, `@v0.3.0` (README, recipes and `tests/examples/*.yaml`). `release.yaml`
+creates the release and moves nothing, so a tag never changes after it is published. A
+later breaking change is a new minor (`v0.4.0`) while the action is `0.x`.
+
+---
+
+## 7. Deliberately not in the target
+
+- Evaluating environment markers; running a build backend or project code; reading
+  `tool.*` tables, `gui-scripts` or `entry-points`; validating the whole of PEP 621.
+- Resolving a dynamic version (the backend is the right tool).
+- A cache or any state between steps; a job summary; new outputs.
+- Pruning the vendored `packaging` (2.3).
+- Publishing to PyPI.
+
+---
+
+## 8. Migration plan
+
+One branch and one pull request per step, in this order. Each leaves `main` green. **B**
+marks a change of behaviour that the release notes must list.
+
+| Step | Branch                                  | Change                                                                                                                                                                                | Breaking |
+| ---- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| 1    | `bugfix/lazy-requirement-tables`        | Skip the requirement tables when `dependencies` is empty (G1). Test: a broken `dependencies` with `[]` passes. Update the README sentence on what is read.                           | B (more tolerant) |
+| 2    | `refactor/project-dataclass`            | `Project`, `read_project`; merge `metadata.py` into `pyproject.py`; `dynamic` validated once (G2).                                                                                    |          |
+| 3    | `refactor/flat-requirements`            | `Requirement`, `Lookup`, `collect_requirements`, `find`; drop the two-pass index, `_lookup_key` and the cache (G4).                                                                  |          |
+| 4    | `refactor/drop-pyproject-path-argument` | `MetadataError` and warnings without the path; `main` adds it; one error format `<field>: <problem>` (G3, G8). Update the README failure list and the golden error cases.            | B (messages) |
+| 5    | `feat/warning-codes`                    | `warnings.py`, `Warning(code, message)`, `title=<code>`, `schema_version` 3, README table generated, one golden case per code (G7). Merge the two dynamic-dependency warnings.       | B (`json`) |
+| 6    | `refactor/env-only-cli`                 | `main(environ)` with `INPUT_*` and `GITHUB_OUTPUT`; delete argparse, `--github-output`, `run.sh` argument passing; rewrite `test_cli.py` (G5, G10).                                   | B (internal; local runs) |
+| 7    | `refactor/remove-job-summary`           | Delete `output/summary.py`, the summary handling in `main` and its tests; flatten `output/` into `github.py` (G6).                                                                   | B (job summary) |
+| 8    | `ci/concurrency-and-matrix`             | `concurrency`, inline matrix, one scheduled workflow, delete the cancel bot and `lib-get-test-matrix`, ungate `hypothesis` (G11, G13).                                               |          |
+| 9    | `ci/maintenance-python-check`           | Rename the workflow, add the new-Python check, move the default candidates to `python_versions.py` (G12).                                                                             |          |
+| 10   | `chore/release-v0.3.0`                  | Extend `release-notes/v0.3.0.md`, README and examples pin `@v0.3.0`, `release.yaml` no longer moves a tag, `STABLE_REF = v0.3.0` (G9). The tag is pushed by the owner.            |          |
+
+Steps 1 and 8 to 9 are worth doing even if the rest is rejected. Steps 2 to 4 only change
+the inside. Steps 5 to 7 change what a caller can see and are breaking, and go into `v0.3.0`.
+
+---
+
+## 9. Expected result
+
+| Measure                         | Today (`e66a1f2`)                      | Target                                              |
+| ------------------------------- | -------------------------------------- | --------------------------------------------------- |
+| Inputs / outputs                | 5 / 13                                 | 5 / 13 (unchanged names)                            |
+| Warnings                        | 10 free-text rows                      | 9 coded warnings, generated table                   |
+| Source, without `_vendor/`      | 2,210 lines, 17 modules                | about 1,150 lines, 13 modules, none above 200       |
+| Functions with `pyproject_path` | 25                                     | 2                                                   |
+| Entry point                     | argparse, 1 flag, 2 options, 3 strings | environment (`INPUT_*`, `GITHUB_OUTPUT`)            |
+| Tests                           | 6,440 lines (2.9 times the source)     | about 3,300 lines (2.9 times, then below 3)         |
+| Workflows                       | 11 files, 942 lines                    | 9 files, about 780 lines                            |
+| Run with `dependencies: []`     | reads and validates all requirement tables | reads none                                      |
+| Run time                        | about 100 ms                           | about 90 ms (fewer imports, no argparse)            |
+| Caller pin                      | `@v0.3`, a tag that moves              | `@v0.3.0`, an immutable tag                         |
+
+---
+
+## 10. Decisions to take
+
+Each has a recommendation; the migration plan assumes they are accepted.
+
+1. **Environment-only entry point** (step 6) instead of keeping the flags. *Recommended:*
+   yes. The only caller is the action, which already uses `env:`. Cost: a local run uses
+   `INPUT_PYPROJECT_PATH=... python -m ...` instead of a positional argument.
+2. **Remove the job summary** (step 7). *Recommended:* yes. The annotations already appear
+   on the run page. Cost: a caller who read the summary sees the same list in the
+   annotations.
+3. **Structured warnings** (step 5). *Recommended:* yes. Cost: `schema_version` 3 and a
+   changed `warnings` item; nobody can depend on the message text today, since it is not
+   documented as stable.
+4. **Ship everything in `v0.3.0` and pin the exact tag** (step 10). *Decided by the owner:*
+   no `v1`, no moving `v0.3` tag; the pin is `@v0.3.0`.
+5. **Network check for new Python versions in CI** (step 9). *Recommended:* yes, as an
+   issue opener only. Alternative: keep the README reminder.
