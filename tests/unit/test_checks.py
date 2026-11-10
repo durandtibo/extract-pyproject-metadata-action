@@ -10,6 +10,7 @@ from extract_pyproject_metadata.checks import (
     check_string_array,
     get_table,
     is_package_name,
+    is_table,
 )
 from extract_pyproject_metadata.errors import MetadataError
 
@@ -78,3 +79,13 @@ def test_is_package_name(name: str) -> None:
 @pytest.mark.parametrize("name", ["", "my pkg", "-a", "a-", "_a", "a.", "a/b", "a\n", "@a"])
 def test_is_not_package_name(name: str) -> None:
     assert not is_package_name(name)
+
+
+@pytest.mark.parametrize("value", [{}, {"a": 1}])
+def test_is_table(value: object) -> None:
+    assert is_table(value)
+
+
+@pytest.mark.parametrize("value", [[], "a", 1, None, ({},)])
+def test_is_not_table(value: object) -> None:
+    assert not is_table(value)

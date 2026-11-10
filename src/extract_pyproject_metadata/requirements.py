@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from dataclasses import dataclass, field
+from typing import Any
 
 from extract_pyproject_metadata._vendor.packaging import requirements as pep508
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
-from extract_pyproject_metadata.checks import check_array, check_string_array, get_table
+from extract_pyproject_metadata.checks import check_array, check_string_array, get_table, is_table
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import PROJECT_SCOPE
 from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
@@ -18,6 +19,7 @@ __all__ = [
     "flatten_group",
     "lookup_requirements",
     "lookup_specifiers",
+    "read_groups",
 ]
 
 # Limits that turn a pathological dependency-groups table into an error instead of a Python
@@ -44,93 +46,148 @@ def _cycle_warning(cycle: tuple[str, ...]) -> ReportWarning:
     )
 
 
-def flatten_group(  # noqa: C901 (one pass over the include-group tree)
-    groups: dict[str, Any],
-    name: str,
-    seen: tuple[str, ...] = (),
-    budget: list[int] | None = None,
-) -> tuple[list[str], list[ReportWarning]]:
+def read_groups(table: dict[str, Any]) -> dict[str, list[tuple[str, object]]]:
+    """Group the entries of ``[dependency-groups]`` by normalized name.
+
+    Args:
+        table: The ``[dependency-groups]`` table.
+
+    Returns:
+        A dict that maps each normalized group name (PEP 503) to the ``(name, value)`` pairs of
+        every spelling of it, as written in the file. The keys are in the order of the first
+        spelling of each group. The values are not checked here: ``_Expansion`` checks them
+        when the group is expanded.
+    """
+    groups: dict[str, list[tuple[str, object]]] = {}
+    for name, value in table.items():
+        groups.setdefault(canonicalize_name(name), []).append((name, value))
+    return groups
+
+
+@dataclass
+class _Expansion:
+    """The expansion of the ``include-group`` entries of one group.
+
+    Attributes:
+        groups: The table read by ``read_groups``.
+        warnings: The warnings of the expansion, in the order they are found, without
+            duplicates (the keys of a dict, which keeps the insertion order).
+        budget: The number of expansions left, shared by the included groups.
+    """
+
+    groups: dict[str, list[tuple[str, object]]]
+    warnings: dict[ReportWarning, None] = field(default_factory=dict[ReportWarning, None])
+    budget: int = _MAX_GROUP_EXPANSIONS
+
+    def expand(self, name: str, path: tuple[str, ...] = ()) -> list[str]:
+        """Return the requirement strings of a group, ``include-group``
+        expanded.
+
+        An ``include-group`` that leads back to a group being expanded is not followed again,
+        with a warning (once per cycle). An ``include-group`` that names no group is skipped,
+        with a warning.
+
+        Args:
+            name: The group to expand, as written.
+            path: The (normalized) groups being expanded, outermost first.
+
+        Returns:
+            The requirement strings; the warnings are in ``warnings``.
+
+        Raises:
+            MetadataError: If the ``include-group`` entries are nested deeper than
+                ``_MAX_INCLUDE_DEPTH`` or expand more than ``_MAX_GROUP_EXPANSIONS`` times in
+                total, if a group is not an array, an ``include-group`` value is not a string,
+                or an entry is neither a string nor a table whose only key is
+                ``include-group`` (for example a typo such as ``include_group``).
+        """
+        key = canonicalize_name(name)
+        if key in path:
+            self.warnings[_cycle_warning(path[path.index(key) :])] = None
+            return []
+        self._enter(name, path)
+        out: list[str] = []
+        for spelling, value in self.groups.get(key, []):
+            label = f"[dependency-groups].{spelling}"
+            for entry in check_array(value, label):
+                if isinstance(entry, str):
+                    out.append(entry)
+                elif is_table(entry) and set(entry) == {"include-group"}:
+                    out.extend(self._include(label, entry["include-group"], (*path, key)))
+                else:
+                    msg = (
+                        f"{label}: entries must be strings or "
+                        f"{{'include-group': <name>}} tables, got: {entry!r}"
+                    )
+                    raise MetadataError(msg)
+        return out
+
+    def _enter(self, name: str, path: tuple[str, ...]) -> None:
+        """Count the expansion of a group, and check the limits.
+
+        Raises:
+            MetadataError: If ``path`` is already ``_MAX_INCLUDE_DEPTH`` groups deep or the
+                budget is spent.
+        """
+        if len(path) >= _MAX_INCLUDE_DEPTH:
+            msg = (
+                "[dependency-groups]: include-group entries are nested more than "
+                f"{_MAX_INCLUDE_DEPTH} levels deep, at group {name!r}"
+            )
+            raise MetadataError(msg)
+        self.budget -= 1
+        if self.budget < 0:
+            msg = (
+                "[dependency-groups]: include-group entries expand more than "
+                f"{_MAX_GROUP_EXPANSIONS} groups in total, at group {name!r}: a group is "
+                "included several times by several groups"
+            )
+            raise MetadataError(msg)
+
+    def _include(self, label: str, included: object, path: tuple[str, ...]) -> list[str]:
+        """Expand the group of an ``{"include-group": ...}`` entry.
+
+        Args:
+            label: The group that holds the entry, such as ``[dependency-groups].dev``.
+            included: The value of ``include-group``.
+            path: The (normalized) groups being expanded, outermost first.
+
+        Returns:
+            The requirement strings of the included group.
+
+        Raises:
+            MetadataError: If ``included`` is not a string, or the expansion fails.
+        """
+        if not isinstance(included, str):
+            msg = f"{label}: include-group must be a string, got: {included!r}"
+            raise MetadataError(msg)
+        if canonicalize_name(included) not in self.groups:
+            self.warnings[
+                ReportWarning(
+                    "unknown-include-group",
+                    f"{label}: include-group {included!r} does not match any group",
+                )
+            ] = None
+        return self.expand(included, path)
+
+
+def flatten_group(groups: dict[str, Any], name: str) -> tuple[list[str], list[ReportWarning]]:
     """Return requirement strings of a dependency group, expanding
     include-group.
-
-    An ``include-group`` that leads back to a group being expanded is not
-    followed again, with a warning (once per cycle). An ``include-group`` that
-    names no group is skipped, with a warning.
 
     Args:
         groups: The ``[dependency-groups]`` table.
         name: The group to expand.
-        seen: The (normalized) groups being expanded, outermost first.
-        budget: A one-item list with the number of expansions left, shared by the recursive
-            calls. ``_MAX_GROUP_EXPANSIONS`` when it is not given.
 
     Returns:
         A tuple ``(requirements, warnings)``, without duplicate warnings.
 
     Raises:
-        MetadataError: If the ``include-group`` entries are nested deeper than
-            ``_MAX_INCLUDE_DEPTH`` or expand more than ``_MAX_GROUP_EXPANSIONS``
-            times in total, if a group is not an array, an ``include-group`` value
-            is not a string, or an entry is neither a string nor a table whose
-            only key is ``include-group`` (for example a typo such as
-            ``include_group``).
+        MetadataError: See ``_Expansion.expand``.
     """
-    key = canonicalize_name(name)
-    if key in seen:
-        return [], [_cycle_warning(seen[seen.index(key) :])]
-    if len(seen) >= _MAX_INCLUDE_DEPTH:
-        msg = (
-            "[dependency-groups]: include-group entries are nested more than "
-            f"{_MAX_INCLUDE_DEPTH} levels deep, at group {name!r}"
-        )
-        raise MetadataError(msg)
-    if budget is None:
-        budget = [_MAX_GROUP_EXPANSIONS]
-    budget[0] -= 1
-    if budget[0] < 0:
-        msg = (
-            "[dependency-groups]: include-group entries expand more than "
-            f"{_MAX_GROUP_EXPANSIONS} groups in total, at group {name!r}: a group is included "
-            "several times by several groups"
-        )
-        raise MetadataError(msg)
-    out: list[str] = []
-    warnings: list[ReportWarning] = []
-    for gname, entries in groups.items():
-        if canonicalize_name(gname) != key:
-            continue
-        label = f"[dependency-groups].{gname}"
-        for entry in check_array(entries, label):
-            if isinstance(entry, str):
-                out.append(entry)
-            elif isinstance(entry, dict) and set(cast("dict[str, Any]", entry)) == {
-                "include-group"
-            }:
-                included: object = cast("dict[str, Any]", entry)["include-group"]
-                if not isinstance(included, str):
-                    msg = f"{label}: include-group must be a string, got: {included!r}"
-                    raise MetadataError(msg)
-                if not any(
-                    canonicalize_name(group) == canonicalize_name(included) for group in groups
-                ):
-                    warnings.append(
-                        ReportWarning(
-                            "unknown-include-group",
-                            f"{label}: include-group {included!r} does not match any group",
-                        )
-                    )
-                included_reqs, included_warnings = flatten_group(
-                    groups, included, (*seen, key), budget
-                )
-                out.extend(included_reqs)
-                warnings.extend(included_warnings)
-            else:
-                msg = (
-                    f"{label}: entries must be strings or "
-                    f"{{'include-group': <name>}} tables, got: {entry!r}"
-                )
-                raise MetadataError(msg)
-    return out, list(dict.fromkeys(warnings))
+    expansion = _Expansion(read_groups(groups))
+    requirements = expansion.expand(name)
+    return requirements, list(expansion.warnings)
 
 
 def _dynamic_warning(field: str) -> ReportWarning:
@@ -186,16 +243,13 @@ def _gather(
         for field in ("dependencies", "optional-dependencies")
         if field in dynamic and field not in project
     ]
-    # flatten_group reads every spelling of a group name (PEP 503), so each group is expanded
+    # read_groups merges the spellings of a group name (PEP 503), so each group is expanded
     # once, from the first spelling: expanding each spelling would repeat its requirements.
-    first_spellings: dict[str, str] = {}
-    for group in groups:
-        first_spellings.setdefault(canonicalize_name(group), group)
-    for gname in first_spellings.values():
-        group_reqs, group_warnings = flatten_group(groups, gname)
-        scope = f"group:{canonicalize_name(gname)}"
-        reqs.extend((scope, raw) for raw in group_reqs)
-        warnings.extend(group_warnings)
+    table = read_groups(groups)
+    for key, spellings in table.items():
+        expansion = _Expansion(table)
+        reqs.extend((f"group:{key}", raw) for raw in expansion.expand(spellings[0][0]))
+        warnings.extend(expansion.warnings)
     return reqs, warnings
 
 

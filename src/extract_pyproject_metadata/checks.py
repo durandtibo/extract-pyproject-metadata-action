@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import re
-from typing import Any, cast
+from typing import Any, TypeGuard, cast
 
 from extract_pyproject_metadata.errors import MetadataError
 
-__all__ = ["check_array", "check_str", "check_string_array", "get_table", "is_package_name"]
+__all__ = [
+    "check_array",
+    "check_str",
+    "check_string_array",
+    "get_table",
+    "is_package_name",
+    "is_table",
+]
 
 # A package name per PEP 508: letters, digits, "-", "_" and "." that start and end with a
 # letter or a digit. Always used with ``fullmatch``.
@@ -94,3 +101,16 @@ def get_table(container: dict[str, Any], key: str, label: str) -> dict[str, Any]
         msg = f"{label}: must be a table, got: {value!r}"
         raise MetadataError(msg)
     return cast("dict[str, Any]", value)
+
+
+def is_table(value: object) -> TypeGuard[dict[str, Any]]:
+    """Tell whether ``value`` is a table (a TOML table is a dict with
+    string keys).
+
+    Args:
+        value: The value read from the file.
+
+    Returns:
+        ``True`` if ``value`` is a dict, which then has the type ``dict[str, Any]``.
+    """
+    return isinstance(value, dict)
