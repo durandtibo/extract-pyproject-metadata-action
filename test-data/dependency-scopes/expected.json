@@ -65,6 +65,9 @@
     ],
     "numpy@group:dev": []
   },
-  "warnings": [],
+  "warnings": [
+    "test-data/dependency-scopes/pyproject.toml: dependency 'grp-pkg@project' not found",
+    "test-data/dependency-scopes/pyproject.toml: dependency 'numpy@group:dev' not found"
+  ],
   "schema_version": 1
 }

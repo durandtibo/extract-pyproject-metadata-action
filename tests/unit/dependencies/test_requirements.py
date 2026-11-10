@@ -10,11 +10,11 @@ from extract_pyproject_metadata._vendor.packaging.requirements import (
     Requirement,
 )
 from extract_pyproject_metadata.dependencies.requirements import (
+    _dynamic_dependency_fields,
     _index_requirements,
     _scoped_requirements,
     candidate_requirements,
     conflict_warnings,
-    dynamic_dependency_fields,
     extract_project_dependencies,
     index_dependencies,
 )
@@ -184,7 +184,7 @@ def test_conflict_warnings(matches: list[tuple[str, str | None]], expected: list
     ],
 )
 def test_dynamic_dependency_fields(data: dict, expected: list[str]) -> None:
-    assert dynamic_dependency_fields(data) == expected
+    assert _dynamic_dependency_fields(data) == expected
 
 
 def test_parse_requirement_valid() -> None:

@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import TypedDict
 
-__all__ = ["Inputs", "Metadata", "Report", "StepSummary"]
-
-# The values of the ``step-summary`` input: always, never, or only when there are warnings
-# (or when the run fails).
-StepSummary = Literal["true", "false", "auto"]
+__all__ = ["Inputs", "Metadata", "Report"]
 
 
 @dataclass(frozen=True)
@@ -20,10 +16,7 @@ class Inputs:
     extra_values: list[str]
     dependencies: list[str]
     python_candidates: list[str]
-    fail_on_missing: bool
-    fail_on_dynamic_version: bool
     strict: bool
-    step_summary: StepSummary
     resolve_dynamic_version: bool
 
 

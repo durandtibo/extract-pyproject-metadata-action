@@ -69,12 +69,7 @@ def run_script(
         (["--python-candidates", '["3"]', "{path}", "[]"], "python-candidates"),
         (["--python-candidates", '["x.y"]', "{path}", "[]"], "python-candidates"),
         # booleans
-        (["--fail-on-missing", "", "{path}", "[]"], "fail-on-missing"),
-        (["--fail-on-missing", "yes", "{path}", "[]"], "fail-on-missing"),
-        (["--fail-on-missing", "truee", "{path}", "[]"], "fail-on-missing"),
-        (["--fail-on-dynamic-version", "1", "{path}", "[]"], "fail-on-dynamic-version"),
         (["--strict", "0", "{path}", "[]"], "strict"),
-        (["--step-summary", "on", "{path}", "[]"], "step-summary"),
         # the file
         (["", "[]"], "not found"),
         (["{path}.missing", "[]"], "not found"),

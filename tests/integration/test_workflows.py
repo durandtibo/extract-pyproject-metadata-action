@@ -88,7 +88,8 @@ def test_the_local_workflow_passes_every_input_of_the_action() -> None:
     golden = LOCAL_PATH.read_text(encoding="utf-8")
     golden = golden[golden.index("\n  golden:") : golden.index("\n  wiring:")]
 
-    assert [name for name in names if f"          {name}: " not in golden] == []
+    passed = re.findall(r"(?m)^          ([a-z-]+): \$\{\{", golden)
+    assert sorted(passed) == sorted(names)
     assert sorted(DEFAULT_INPUTS) == sorted(names)
 
 

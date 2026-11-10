@@ -51,7 +51,10 @@ def test_build_report(tmp_path: Path) -> None:
             "dup": [{"specifier": ">=1", "marker": ""}, {"specifier": ">=2", "marker": ""}],
             "missing": [],
         },
-        "warnings": [f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"],
+        "warnings": [
+            f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
+            f"{path}: dependency 'missing' not found",
+        ],
         "schema_version": 1,
     }
 
@@ -59,19 +62,12 @@ def test_build_report(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("argv", "match"),
     [
-        (
-            ["--fail-on-missing", "maybe", "{path}", "[]"],
-            r"fail-on-missing must be 'true' or 'false'",
-        ),
-        (
-            ["--fail-on-dynamic-version", "maybe", "{path}", "[]"],
-            r"fail-on-dynamic-version must be",
-        ),
+        (["--strict", "maybe", "{path}", "[]"], r"strict must be 'true' or 'false'"),
         (
             ["--python-candidates", "[3]", "{path}", "[]"],
             r"python-candidates must be a JSON array of strings",
         ),
-        (["--fail-on-missing", "true", "{path}", "[]", '["missing"]'], r"dependencies not found"),
+        (["--strict", "true", "{path}", "[]", '["missing"]'], r"dependency 'missing' not found"),
         (["{path}", "nope"], r"extra-values is not valid JSON"),
         (["{path}", "[]", "nope"], r"dependencies is not valid JSON"),
         (["missing.toml", "[]"], r"pyproject\.toml not found at: missing\.toml"),

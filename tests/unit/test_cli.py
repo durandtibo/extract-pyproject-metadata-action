@@ -13,12 +13,9 @@ import extract_pyproject_metadata.dependencies.requirements as dependencies_requ
 import extract_pyproject_metadata.report as report_module
 from extract_pyproject_metadata.cli import main, parse_cli_inputs
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import parse_inputs, parse_step_summary
+from extract_pyproject_metadata.inputs import parse_inputs
 from extract_pyproject_metadata.output.github import (
     format_error,
-)
-from extract_pyproject_metadata.output.summary import (
-    resolve_step_summary,
 )
 from extract_pyproject_metadata.pyproject import load_pyproject
 from extract_pyproject_metadata.types import Report
@@ -79,9 +76,11 @@ def test_main_returns_one_when_the_job_summary_cannot_be_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n'
+    )  # a warning, so the summary is written
 
-    exit_code = main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"])
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
 
     assert exit_code == 1
     assert "cannot write the job summary" in capsys.readouterr().err
@@ -93,7 +92,7 @@ def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
     path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
 
-    exit_code = main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"])
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
 
     assert exit_code == 1
     err = capsys.readouterr().err
@@ -452,6 +451,7 @@ def test_main_github_output_writes_outputs_and_annotations(
     }
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
+        f"::warning file={path}::{path}: dependency 'missing' not found\n"
         "📦 name=p version=1 requires-python= "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
         'groups=["base","dev","other"] '
@@ -498,27 +498,10 @@ def test_main_invalid_strict_returns_one(
     assert "strict must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    ("value", "environ", "expected"),
-    [
-        ("false", {}, None),
-        ("false", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, None),
-        ("true", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
-        (" TRUE ", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
-        ("auto", {"GITHUB_STEP_SUMMARY": "/tmp/s.md"}, "/tmp/s.md"),
-        ("auto", {}, None),
-        ("auto", {"GITHUB_STEP_SUMMARY": ""}, None),
-    ],
-)
-def test_resolve_step_summary(value: str, environ: dict[str, str], expected: str | None) -> None:
-    assert resolve_step_summary(parse_step_summary(value, "step-summary"), environ) == expected
-
-
 def test_parse_cli_inputs_maps_every_option() -> None:
     args = parse_args(
-        "--fail-on-missing", "true", "--strict", "true", "--step-summary", "auto",
-        "--python-candidates", '["3.12"]', "--resolve-dynamic-version", "true",
-        "--fail-on-dynamic-version", "true", "p.toml", '["a"]', '["numpy"]',
+        "--strict", "true", "--python-candidates", '["3.12"]',
+        "--resolve-dynamic-version", "true", "p.toml", '["a"]', '["numpy"]',
     )  # fmt: skip
 
     assert parse_cli_inputs(args) == parse_inputs(
@@ -527,10 +510,7 @@ def test_parse_cli_inputs_maps_every_option() -> None:
             "extra-values": '["a"]',
             "dependencies": '["numpy"]',
             "python-candidates": '["3.12"]',
-            "fail-on-missing": "true",
-            "fail-on-dynamic-version": "true",
             "strict": "true",
-            "step-summary": "auto",
             "resolve-dynamic-version": "true",
         }
     )
@@ -541,7 +521,7 @@ def test_parse_cli_inputs_invalid_value() -> None:
         parse_cli_inputs(parse_args("--strict", "maybe", "p.toml", "[]"))
 
 
-def test_main_step_summary_writes_the_job_summary(
+def test_main_summary_lists_the_warnings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     summary = tmp_path / "summary.md"
@@ -553,31 +533,27 @@ def test_main_step_summary_writes_the_job_summary(
             "extract_metadata.py",
             "--github-output",
             str(tmp_path / "out"),
-            "--step-summary",
-            "true",
             str(path),
             "[]",
-            '["dup"]',
+            '["missing"]',
         ]
     )
 
     assert exit_code == 0
     text = summary.read_text(encoding="utf-8")
-    assert text.startswith("### 📦 Project metadata\n")
-    assert "| `name` | <code>p</code> |" in text
-    assert "#### ⚠️ Warnings" in text
-    assert "<code>dup has different specifiers" in text
+    assert text.startswith("### ⚠️ Project metadata\n\n- <code>")
+    assert "dependency &#39;missing&#39; not found</code>\n" in text
     capsys.readouterr()
 
 
-def test_main_step_summary_reports_an_error(
+def test_main_summary_reports_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
 
-    exit_code = main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"])
+    exit_code = main(["extract_metadata.py", str(path), "[]"])
 
     assert exit_code == 1
     text = summary.read_text(encoding="utf-8")
@@ -587,93 +563,56 @@ def test_main_step_summary_reports_an_error(
     assert "missing required key" in capsys.readouterr().err
 
 
-def test_main_step_summary_lists_the_warnings_of_a_strict_failure(
+def test_main_summary_lists_the_warnings_of_a_strict_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    exit_code = main(
-        ["extract_metadata.py", "--step-summary", "true", "--strict", "true", str(path), "[]"]
-    )
+    exit_code = main(["extract_metadata.py", "--strict", "true", str(path), "[]"])
 
     assert exit_code == 1
     text = summary.read_text(encoding="utf-8")
+    assert text.startswith("### ❌ Project metadata\n")
     assert "there are 1 warning&#40;s&#41;&#58;</code>\n- <code>" in text
     assert "<code>&#45;" not in text
     assert "[project].version is dynamic" not in text  # escaped, not raw
 
 
-def test_main_step_summary_off_writes_nothing_on_error(
+def test_main_summary_writes_nothing_without_warnings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert not summary.exists()
-
-
-def test_main_step_summary_misconfiguration_writes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"]) == 1
-
-
-def test_main_step_summary_is_off_by_default(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, DEPS_TOML)
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert not summary.exists()
 
 
-def test_main_step_summary_without_json_output_mode(
+def test_main_summary_writes_nothing_outside_a_workflow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, DEPS_TOML)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    assert main(["extract_metadata.py", "--step-summary", "true", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["name"] == "p"
-    assert summary.read_text(encoding="utf-8").startswith("### 📦 Project metadata\n")
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "a"
 
 
 @pytest.mark.parametrize(
-    ("step_summary", "has_variable", "message"),
-    [
-        ("maybe", True, "step-summary must be 'true', 'false' or 'auto'"),
-        ("true", False, "GITHUB_STEP_SUMMARY is not set"),
-    ],
+    "option", ["--step-summary", "--fail-on-missing", "--fail-on-dynamic-version"]
 )
-def test_main_step_summary_errors_return_one(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    step_summary: str,
-    has_variable: bool,
-    message: str,
+def test_main_removed_options_are_usage_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], option: str
 ) -> None:
-    if has_variable:
-        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
-    else:
-        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
-    path = write_pyproject(tmp_path, DEPS_TOML)
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    exit_code = main(["extract_metadata.py", "--step-summary", step_summary, str(path), "[]"])
-
-    assert exit_code == 1
-    assert message in capsys.readouterr().err
-    assert not (tmp_path / "summary.md").exists()
+    assert main(["extract_metadata.py", option, "true", str(path), "[]"]) == 2
+    assert (
+        "unrecognized arguments" in capsys.readouterr().err or "usage:" in capsys.readouterr().err
+    )
 
 
 @pytest.mark.parametrize(
@@ -968,7 +907,7 @@ def test_main_json_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     assert json.loads(capsys.readouterr().out)["groups"] == ["Dev", "docs", "test"]
 
 
-def test_main_fail_on_missing_true_fails_for_a_missing_dependency(
+def test_main_missing_dependency_is_a_warning(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
@@ -979,7 +918,32 @@ def test_main_fail_on_missing_true_fails_for_a_missing_dependency(
             "extract_metadata.py",
             "--github-output",
             str(output),
-            "--fail-on-missing",
+            str(path),
+            "[]",
+            '["nospec", "missing"]',
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert parse_github_output(output.read_text(encoding="utf-8"))["dependency-specifiers"] == (
+        '{"nospec":"","missing":null}'
+    )
+    assert f"::warning file={path}::{path}: dependency 'missing' not found" in captured.out
+
+
+def test_main_strict_fails_for_a_missing_dependency(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_pyproject(tmp_path, DEPS_TOML)
+    output = tmp_path / "github_output"
+
+    exit_code = main(
+        [
+            "extract_metadata.py",
+            "--github-output",
+            str(output),
+            "--strict",
             "true",
             str(path),
             "[]",
@@ -990,85 +954,42 @@ def test_main_fail_on_missing_true_fails_for_a_missing_dependency(
 
     assert exit_code == 1
     assert captured.err == (
-        f"::error file={path}::{path}: dependencies not found in [project].dependencies, "
-        "[project.optional-dependencies] or [dependency-groups]: ['missing', 'other']\n"
+        f"::error file={path}::strict is 'true' and there are 2 warning(s):"
+        f"%0A- {path}: dependency 'missing' not found"
+        f"%0A- {path}: dependency 'other' not found\n"
     )
     assert captured.out == ""
     assert not output.exists()
 
 
-def test_main_fail_on_missing_true_passes_when_all_are_found(
+def test_main_no_warning_when_all_the_dependencies_are_found(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    exit_code = main(
-        ["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["nospec", "dup"]']
-    )
+    exit_code = main(["extract_metadata.py", "--strict", "true", str(path), "[]", '["nospec"]'])
 
     assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {
-        "nospec": "",
-        "dup": ">=1",
-    }
+    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {"nospec": ""}
 
 
-@pytest.mark.parametrize(
-    "argv_tail", [[], ["--fail-on-missing", "false"], ["--fail-on-missing", "FALSE"]]
-)
-def test_main_fail_on_missing_false_keeps_null(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv_tail: list[str]
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    exit_code = main(["extract_metadata.py", *argv_tail, str(path), "[]", '["missing"]'])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {"missing": None}
-
-
-def test_main_fail_on_missing_true_without_dependencies_passes(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    assert main(["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {}
-
-
-@pytest.mark.parametrize("value", ["", "yes", "1"])
-def test_main_fail_on_missing_invalid_value_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], value: str
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    exit_code = main(["extract_metadata.py", "--fail-on-missing", value, str(path), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert f"fail-on-missing must be 'true' or 'false', got: {value!r}" in captured.err
-    assert captured.out == ""
-
-
-def test_main_fail_on_missing_requires_a_value(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["extract_metadata.py", "--fail-on-missing"]) == 2
-    assert "usage:" in capsys.readouterr().err
-
-
-def test_main_fail_on_missing_points_out_dynamic_dependencies(
+def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "a"\nversion = "1"\ndynamic = ["dependencies"]\n'
     )
 
-    exit_code = main(
-        ["extract_metadata.py", "--fail-on-missing", "true", str(path), "[]", '["numpy"]']
-    )
-    captured = capsys.readouterr()
+    exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
 
-    assert exit_code == 1
-    assert captured.err.endswith("; [project].dependencies is dynamic and cannot be read\n")
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["warnings"] == [
+        (
+            f"{path}: [project].dependencies is dynamic, it cannot be read, so no requirement is "
+            "found in it"
+        ),
+        f"{path}: dependency 'numpy' not found",
+    ]
 
 
 def test_main_github_output_python_matrix(tmp_path: Path) -> None:
@@ -1452,25 +1373,15 @@ def test_main_dependency_requirements_with_a_scope(
     }
 
 
-def test_main_fail_on_missing_names_the_entry_with_a_scope(
+def test_main_missing_dependency_names_the_entry_with_a_scope(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
-    assert (
-        main(
-            [
-                "extract_metadata.py",
-                "--fail-on-missing",
-                "true",
-                str(path),
-                "[]",
-                '["tqdm", "tqdm@extra:fast"]',
-            ]
-        )
-        == 1
-    )
-    assert "['tqdm@extra:fast']" in capsys.readouterr().err
+    assert main(["extract_metadata.py", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 0
+    assert json.loads(capsys.readouterr().out)["warnings"] == [
+        f"{path}: dependency 'tqdm@extra:fast' not found"
+    ]
 
 
 def test_main_returns_one_for_an_invalid_dependency_scope(
@@ -1553,37 +1464,19 @@ def test_main_github_output_project_dependencies(tmp_path: Path) -> None:
     )
 
 
-def test_main_fail_on_dynamic_version(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_dynamic_version_is_a_warning_and_strict_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
 
-    exit_code = main(["extract_metadata.py", "--fail-on-dynamic-version", "true", str(path), "[]"])
+    assert main(["extract_metadata.py", str(path), "[]"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert (report["version"], len(report["warnings"])) == ("", 1)
+
+    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
     captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "[project].version is dynamic, so it cannot be read" in captured.err
+    assert "[project].version is dynamic" in captured.err
     assert captured.out == ""
-
-
-def test_main_fail_on_dynamic_version_false_keeps_the_warning(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    exit_code = main(["extract_metadata.py", "--fail-on-dynamic-version", "false", str(path), "[]"])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["version"] == ""
-
-
-def test_main_invalid_fail_on_dynamic_version_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    exit_code = main(["extract_metadata.py", "--fail-on-dynamic-version", "maybe", str(path), "[]"])
-
-    assert exit_code == 1
-    assert "fail-on-dynamic-version must be 'true' or 'false'" in capsys.readouterr().err
 
 
 def test_main_github_output_multiline_requires_python_cannot_inject_commands(
@@ -1626,63 +1519,3 @@ def test_main_dependency_requirements_in_json(
         ],
         "missing": [],
     }
-
-
-def test_main_step_summary_auto_writes_the_job_summary_when_there_are_warnings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 0
-    text = summary.read_text(encoding="utf-8")
-    assert text.startswith("### 📦 Project metadata\n")
-    assert "#### ⚠️ Warnings" in text
-
-
-def test_main_step_summary_auto_writes_nothing_without_warnings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 0
-    assert not summary.exists()
-
-
-def test_main_step_summary_auto_lists_the_warnings_of_a_strict_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    exit_code = main(
-        ["extract_metadata.py", "--step-summary", "auto", "--strict", "true", str(path), "[]"]
-    )
-
-    assert exit_code == 1
-    assert summary.read_text(encoding="utf-8").startswith("### ❌ Project metadata\n")
-
-
-def test_main_step_summary_auto_reports_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
-
-    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 1
-    assert summary.read_text(encoding="utf-8").startswith("### ❌ Project metadata\n")
-
-
-def test_main_step_summary_auto_outside_a_workflow_writes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    assert main(["extract_metadata.py", "--step-summary", "auto", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["name"] == "a"

@@ -9,9 +9,7 @@ Python versions that ``requires-python`` allows, and lists the requirements of
 ``[project].dependencies`` and of the packages that it is asked to look up.
 
 Usage:
-    extract_metadata.py [--github-output FILE] [--fail-on-missing true|false]
-        [--fail-on-dynamic-version true|false] [--resolve-dynamic-version true|false]
-        [--step-summary true|false|auto]
+    extract_metadata.py [--github-output FILE] [--resolve-dynamic-version true|false]
         [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
@@ -56,33 +54,22 @@ the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout
 because GitHub only parses workflow commands there.
 
-With ``--step-summary true``, also appends a Markdown table of the outputs
-and the list of warnings to the file named by the ``GITHUB_STEP_SUMMARY``
-environment variable (the job summary of GitHub), whichever the other options.
-When the run fails, the error message is appended instead (unless
-``--step-summary`` or ``GITHUB_STEP_SUMMARY`` is itself the problem).
-With ``--step-summary auto`` (the default of the action), the table is only
-appended when there are warnings, the error message is appended when the run
-fails, and nothing is written when ``GITHUB_STEP_SUMMARY`` is not set. The
-default of the script is ``false``.
+When there are warnings, or when the run fails, it also appends them (or the error
+message) as a short Markdown list to the file named by the ``GITHUB_STEP_SUMMARY``
+environment variable (the job summary of GitHub), if it is set. Nothing is written
+otherwise.
 
 With ``--strict true``, any warning is an error instead: the outputs are not
-written and the message lists the warnings.
-
-With ``--fail-on-missing true``, a requested dependency that is not found
-is an error instead of a ``null`` specifier.
-
-With ``--fail-on-dynamic-version true``, a ``version`` that is listed in
-``[project].dynamic`` (so that the version output would be empty) is an error
-instead of a warning.
+written and the message lists the warnings. A requested dependency that is not
+found (a ``null`` specifier) and a dynamic ``version`` are warnings.
 
 With ``--resolve-dynamic-version true``, a ``version`` that is listed in
 ``[project].dynamic`` is looked for in the file that the build backend reads it
 from, without running any code of the project: ``[tool.setuptools.dynamic].version``
 (``file``, or ``attr`` for a ``__version__ = "..."`` literal) and ``[tool.hatch.version]``
 (``path`` and ``pattern``). A version that is found is used as a static one (so it
-is not a warning, nor an error with ``--fail-on-dynamic-version``); otherwise the
-reason is a warning, followed by the usual handling of a dynamic version.
+is not a warning); otherwise the reason is a warning, followed by the usual
+handling of a dynamic version.
 
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
 "major.minor" strings) that ``[project].requires-python`` allows, and
@@ -101,10 +88,8 @@ is missing the required "name"/"version" keys, a dependency table
 [dependency-groups]) has the wrong type, [build-system] has a ``build-backend``
 that is not a string or ``requires`` that is not an array of strings, an input is not valid JSON of the
 expected shape, a Python candidate is not a "major.minor" string,
-``--fail-on-dynamic-version true`` is given and the version is dynamic,
-``--strict true`` is given and there is a warning, a requested dependency has a scope that
-is not ``project``, ``extra:<name>`` or ``group:<name>``, or ``--fail-on-missing true``
-is given and a requested dependency is not found.
+``--strict true`` is given and there is a warning, or a requested dependency has a scope
+that is not ``project``, ``extra:<name>`` or ``group:<name>``.
 
 A wrong command line (which the action never builds) prints the usage and the
 problem on stderr and exits with the code 2, as ``argparse`` does; with
@@ -129,12 +114,11 @@ from extract_pyproject_metadata.output.escaping import (
 from extract_pyproject_metadata.output.github import (
     emit_github_output,
     format_error,
-    format_outputs,
 )
 from extract_pyproject_metadata.output.summary import (
     format_error_summary,
-    format_step_summary,
-    resolve_step_summary,
+    format_warning_summary,
+    resolve_summary_path,
     write_step_summary,
 )
 from extract_pyproject_metadata.report import build_report
@@ -181,18 +165,6 @@ def _build_parser(prog: str) -> _ArgumentParser:
         help="append the action outputs to FILE and print workflow commands instead of JSON",
     )
     parser.add_argument(
-        "--fail-on-missing",
-        metavar="BOOL",
-        default="false",
-        help="'true' to fail when a requested dependency is not found (default: false)",
-    )
-    parser.add_argument(
-        "--fail-on-dynamic-version",
-        metavar="BOOL",
-        default="false",
-        help="'true' to fail when the version is dynamic, instead of a warning (default: false)",
-    )
-    parser.add_argument(
         "--resolve-dynamic-version",
         metavar="BOOL",
         default="false",
@@ -203,15 +175,6 @@ def _build_parser(prog: str) -> _ArgumentParser:
         metavar="BOOL",
         default="false",
         help="'true' to fail when there is a warning (default: false)",
-    )
-    parser.add_argument(
-        "--step-summary",
-        metavar="BOOL",
-        default="false",
-        help=(
-            "'true' to also write the outputs to the job summary, GITHUB_STEP_SUMMARY; "
-            "'auto' to write it only when there are warnings or an error (default: false)"
-        ),
     )
     parser.add_argument(
         "--python-candidates",
@@ -248,10 +211,7 @@ def parse_cli_inputs(args: argparse.Namespace) -> Inputs:
             "extra-values": args.extra_values,
             "dependencies": args.dependencies,
             "python-candidates": args.python_candidates,
-            "fail-on-missing": args.fail_on_missing,
-            "fail-on-dynamic-version": args.fail_on_dynamic_version,
             "strict": args.strict,
-            "step-summary": args.step_summary,
             "resolve-dynamic-version": args.resolve_dynamic_version,
         }
     )
@@ -271,15 +231,15 @@ def main(argv: list[str]) -> int:
     summary_path: str | None = None
     try:
         inputs = parse_cli_inputs(args)
-        summary_path = resolve_step_summary(inputs.step_summary, os.environ)
+        summary_path = resolve_summary_path(os.environ)
         report = build_report(inputs)
         if args.github_output is None:
             # Like the action outputs, keep non-ASCII characters as they are.
             print(json.dumps(report, ensure_ascii=False))
         else:
             emit_github_output(report, args.pyproject_path, args.github_output)
-        if summary_path is not None and (inputs.step_summary == "true" or report["warnings"]):
-            write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
+        if summary_path is not None and report["warnings"]:
+            write_step_summary(summary_path, format_warning_summary(report["warnings"]))
     except MetadataError as exc:
         annotate = args.github_output is not None
         print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)

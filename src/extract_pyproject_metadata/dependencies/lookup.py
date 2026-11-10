@@ -3,20 +3,15 @@ pyproject.toml."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.dependencies.requirements import (
     conflict_warnings,
     index_dependencies,
 )
-from extract_pyproject_metadata.errors import MetadataError
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 __all__ = [
-    "check_no_missing_dependency",
     "extract_dependency_requirements",
     "extract_dependency_specifiers",
     "requirements_from_index",
@@ -107,6 +102,7 @@ def specifiers_from_index(
         matches = found.get(_lookup_key(dep))
         if not matches:
             result[dep] = None
+            warnings.append(f"{pyproject_path}: dependency {dep!r} not found")
             continue
         specifier = matches[0][0]
         warnings.extend(conflict_warnings(dep, matches, specifier, pyproject_path))
@@ -169,31 +165,3 @@ def requirements_from_index(
         ]
         for dep in dependencies
     }
-
-
-def check_no_missing_dependency(
-    specifiers: dict[str, str | None],
-    pyproject_path: str,
-    dynamic_fields: Sequence[str] = (),
-) -> None:
-    """Raise if a requested dependency was not found.
-
-    Args:
-        specifiers: The mapping returned by ``extract_dependency_specifiers``.
-        pyproject_path: Path of the file, used in the error message.
-        dynamic_fields: The dependency fields that are dynamic, as returned by
-            ``dynamic_dependency_fields``. The error message points them out,
-            because a package may be missing only because it cannot be read.
-
-    Raises:
-        MetadataError: If a package maps to ``None``.
-    """
-    missing = [name for name, specifier in specifiers.items() if specifier is None]
-    if missing:
-        msg = (
-            f"{pyproject_path}: dependencies not found in [project].dependencies, "
-            f"[project.optional-dependencies] or [dependency-groups]: {missing}"
-        )
-        for field in dynamic_fields:
-            msg += f"; [project].{field} is dynamic and cannot be read"
-        raise MetadataError(msg)

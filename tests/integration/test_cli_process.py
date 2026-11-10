@@ -181,35 +181,38 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
             "numpy": [{"specifier": ">=1.20", "marker": ""}],
             "pandas": [],
         },
-        "warnings": [],
+        "warnings": [f"{path}: dependency 'pandas' not found"],
         "schema_version": 1,
     }
 
 
-def test_cli_end_to_end_fail_on_missing(tmp_path: Path) -> None:
+def test_cli_end_to_end_missing_dependency_is_a_warning(tmp_path: Path) -> None:
+    path = write_pyproject(
+        tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n'
+    )
+    command = [sys.executable, str(SCRIPT_PATH), "--", str(path), "[]", '["numpy", "pandas"]']
+
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+
+    report = json.loads(result.stdout)
+    assert report["dependency_specifiers"] == {"numpy": ">=1.20", "pandas": None}
+    assert report["warnings"] == [f"{path}: dependency 'pandas' not found"]
+
+
+def test_cli_end_to_end_strict_fails_on_a_missing_dependency(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n'
     )
 
     result = subprocess.run(
-        [
-            sys.executable,
-            str(SCRIPT_PATH),
-            "--fail-on-missing",
-            "true",
-            "--",
-            str(path),
-            "[]",
-            '["numpy", "pandas"]',
-        ],
+        [sys.executable, str(SCRIPT_PATH), "--strict", "true", "--", str(path), "[]", '["pandas"]'],
         capture_output=True,
         text=True,
         check=False,
     )
 
     assert result.returncode == 1
-    assert "dependencies not found" in result.stderr
-    assert "['pandas']" in result.stderr
+    assert "dependency 'pandas' not found" in result.stderr
     assert result.stdout == ""
 
 
@@ -296,8 +299,6 @@ def test_cli_resolves_a_dynamic_version_from_a_file(tmp_path: Path) -> None:
             sys.executable,
             str(SCRIPT_PATH),
             "--resolve-dynamic-version",
-            "true",
-            "--fail-on-dynamic-version",
             "true",
             "--strict",
             "true",
