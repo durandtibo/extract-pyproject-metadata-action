@@ -113,6 +113,7 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 ## Inputs
 
 <!-- inputs:start -->
+
 | Name                | Description                                                                                                                                                                                                                                                                                                    | Default               |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | `pyproject-path`    | Path to pyproject.toml                                                                                                                                                                                                                                                                                         | `pyproject.toml`      |
@@ -120,6 +121,7 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 | `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", "extra:<name>" or "group:<name>" is looked up there only (e.g. '["pytest@group:dev"]'). | `[]`                  |
 | `python-candidates` | JSON array of "major.minor" Python versions to choose from for the python-versions output (e.g. '["3.11","3.12"]'); empty for the supported CPython versions, listed in the README                                                                                                                             | (see the description) |
 | `strict`            | Set to "true" to fail when there is any warning (a dynamic version, a dependency that is not found, ...), instead of only reporting it ("true" or "false")                                                                                                                                                     | `false`               |
+
 <!-- inputs:end -->
 
 `strict` is a boolean input: the value must be `true` or `false`, the case and the
@@ -128,12 +130,14 @@ candidates is yours to maintain, as the action does not know which versions exis
 default it is:
 
 <!-- candidates:start -->
+
 `["3.11","3.12","3.13","3.14","3.15"]`
 <!-- candidates:end -->
 
 ## Outputs
 
 <!-- outputs:start -->
+
 | Name                    | Description                                                                                                                                                                                                                                                                                                             |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                  | Project name, as declared in [project].name                                                                                                                                                                                                                                                                             |
@@ -149,6 +153,7 @@ default it is:
 | `groups`                | JSON array of dependency group names, from [dependency-groups]                                                                                                                                                                                                                                                          |
 | `dependency-specifiers` | JSON object mapping each requested package to its specifier (null if not found, empty string if it has no specifier)                                                                                                                                                                                                    |
 | `json`                  | JSON object with all the other outputs, the dependency_requirements (all the requirements of each requested package, with their environment markers) and the warnings, in one value (the names use "_" instead of "-"; the arrays and objects are values, not strings), to pass the whole result to another step or job |
+
 <!-- outputs:end -->
 
 Scalars are plain strings; arrays and objects are compact JSON strings for `fromJSON`.
@@ -201,18 +206,18 @@ A warning reports suspicious input that the action can still work with. It is a
 `warnings` array of `json`, and **fails the step with `strict: "true"`**, whose error lists
 them all.
 
-| Message contains                                                | When                                                                                                                     |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `is set and also listed in [project].dynamic`                   | A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621): the static value is used.            |
-| `[project].version is dynamic, the version output is empty`     | `version` is in `dynamic` and not set: `version` and `normalized-version` are empty.                                     |
-| `[project].requires-python is not a valid version specifier`    | `requires-python` cannot be parsed: `python-versions` is empty.                                                          |
-| `no python-candidates version satisfies`                        | No version of `python-candidates` is allowed by `requires-python`: `python-versions` is empty.                           |
-| `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                   |
-| `has an include-group cycle`                                    | The `include-group` entries of `[dependency-groups]` include each other in a loop (when `dependencies` is not empty).    |
-| `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                 |
-| `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so no requirement is found in it.             |
-| `[project].optional-dependencies is dynamic, it cannot be read` | The same for `optional-dependencies` (only when `dependencies` is not empty).                                            |
-| `' not found`                                                   | `dependency '<entry>' not found`: a package of `dependencies` is not in the place(s) searched, its specifier is `null`.  |
+| Message contains                                                | When                                                                                                                    |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `is set and also listed in [project].dynamic`                   | A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621): the static value is used.           |
+| `[project].version is dynamic, the version output is empty`     | `version` is in `dynamic` and not set: `version` and `normalized-version` are empty.                                    |
+| `[project].requires-python is not a valid version specifier`    | `requires-python` cannot be parsed: `python-versions` is empty.                                                         |
+| `no python-candidates version satisfies`                        | No version of `python-candidates` is allowed by `requires-python`: `python-versions` is empty.                          |
+| `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                  |
+| `has an include-group cycle`                                    | The `include-group` entries of `[dependency-groups]` include each other in a loop (when `dependencies` is not empty).   |
+| `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                |
+| `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so no requirement is found in it.            |
+| `[project].optional-dependencies is dynamic, it cannot be read` | The same for `optional-dependencies` (only when `dependencies` is not empty).                                           |
+| `' not found`                                                   | `dependency '<entry>' not found`: a package of `dependencies` is not in the place(s) searched, its specifier is `null`. |
 
 ## Failures
 
