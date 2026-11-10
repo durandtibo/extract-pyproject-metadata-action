@@ -69,8 +69,8 @@ def compatible_python_versions(
         # GitHub rejects a matrix vector without values, far from the cause.
         warning = (
             f"{pyproject_path}: no python-candidates version satisfies [project].requires-python "
-            f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
-            "matrix built from them is rejected by GitHub"
+            f"({requires_python!r}): python-versions is empty, and a job "
+            "matrix built from it is rejected by GitHub"
         )
         return versions, [warning]
     return versions, []

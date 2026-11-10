@@ -103,7 +103,7 @@ def test_write_github_output_picks_another_delimiter_when_the_key_contains_it(
 
 
 def hostile_pyproject(tmp_path: Path) -> Path:
-    """Write a pyproject.toml whose free-text fields are all hostile."""
+    """Write a pyproject.toml whose free-text values are all hostile."""
     hostile = "x\n::error::forged\r\n::add-mask::secret\n::set-output name=a::b"
     quoted = json.dumps(hostile)
     path = tmp_path / "pyproject.toml"
@@ -111,14 +111,9 @@ def hostile_pyproject(tmp_path: Path) -> Path:
         "[project]\n"
         'name = "a"\n'
         'version = "1"\n'
-        f"description = {quoted}\n"
-        f"license = {json.dumps('MIT' + hostile)}\n"
-        f"keywords = [{quoted}]\n"
-        f"classifiers = [{quoted}]\n"
         f"requires-python = {json.dumps('>=3.11' + hostile)}\n"
-        f"authors = [{{name = {quoted}, email = {quoted}}}]\n"
-        f"[project.urls]\n{quoted} = {quoted}\n"
-        f"[project.scripts]\ncmd = {quoted}\n",
+        f"[project.optional-dependencies]\n{quoted} = []\n"
+        f"[dependency-groups]\n{quoted} = []\n",
         encoding="utf-8",
     )
     return path
@@ -164,7 +159,7 @@ def test_the_output_file_of_a_hostile_pyproject_reads_back_unchanged(
     capsys.readouterr()
     expected = format_outputs(build_report(_inputs(path)))
     assert parse_github_output(output.read_bytes().decode("utf-8")) == expected
-    assert expected["description"].startswith("x\n::error::forged\r\n")
+    assert expected["requires-python"].startswith(">=3.11x\n::error::forged\r\n")
 
 
 def _inputs(path: Path) -> Inputs:

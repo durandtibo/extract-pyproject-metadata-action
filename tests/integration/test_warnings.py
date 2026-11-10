@@ -34,10 +34,6 @@ CASES = [
         PROJECT + 'dynamic = ["version"]\n',
     ),
     Case(
-        "is not a valid SPDX license expression",
-        PROJECT + 'version = "1"\nlicense = "MIT License"\n',
-    ),
-    Case(
         "[project].requires-python is not a valid version specifier",
         PROJECT + 'version = "1"\nrequires-python = "3"\n',
     ),
@@ -48,10 +44,12 @@ CASES = [
     Case(
         "Ignoring invalid requirement",
         PROJECT + 'version = "1"\ndependencies = ["numpy>="]\n',
+        '["numpy"]',
     ),
     Case(
         "has different specifiers",
         PROJECT + 'version = "1"\ndependencies = ["numpy>=1", "numpy>=2"]\n',
+        '["numpy"]',
     ),
     Case(
         "has an include-group cycle",
@@ -68,15 +66,12 @@ CASES = [
     Case(
         "[project].dependencies is dynamic, it cannot be read",
         PROJECT + 'version = "1"\ndynamic = ["dependencies"]\n',
+        '["numpy"]',
     ),
     Case(
         "[project].optional-dependencies is dynamic, it cannot be read",
         PROJECT + 'version = "1"\ndynamic = ["optional-dependencies"]\n',
         '["numpy"]',
-    ),
-    Case(
-        "are close to the size limit of a GitHub step output",
-        PROJECT + 'version = "1"\nkeywords = ["' + "x" * 900_000 + '"]\n',
     ),
     Case(
         "' not found",

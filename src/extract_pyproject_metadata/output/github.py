@@ -26,7 +26,6 @@ __all__ = [
     "format_outputs",
     "format_summary",
     "new_delimiter",
-    "oversized_outputs",
     "write_github_output",
 ]
 
@@ -55,54 +54,18 @@ def format_outputs(metadata: Report) -> dict[str, str]:
     return {
         "name": metadata["name"],
         "normalized-name": metadata["normalized_name"],
+        "file-name": metadata["file_name"],
         "version": metadata["version"],
         "normalized-version": metadata["normalized_version"],
-        "description": metadata["description"],
-        "readme": metadata["readme"],
-        "license": metadata["license"],
-        "license-files": _compact_json(metadata["license_files"]),
-        "authors": _compact_json(metadata["authors"]),
-        "urls": _compact_json(metadata["urls"]),
-        "keywords": _compact_json(metadata["keywords"]),
-        "classifiers": _compact_json(metadata["classifiers"]),
-        "scripts": _compact_json(metadata["scripts"]),
         "requires-python": metadata["requires_python"],
-        "extras": _compact_json(metadata["extras"]),
-        "groups": _compact_json(metadata["groups"]),
-        "build-backend": metadata["build_backend"],
-        "build-requires": _compact_json(metadata["build_requires"]),
         "python-versions": _compact_json(metadata["python_versions"]),
         "python-min": metadata["python_min"],
         "python-max": metadata["python_max"],
-        "python-matrix": _compact_json({"python-version": metadata["python_versions"]}),
-        "project-dependencies": _compact_json(metadata["project_dependencies"]),
+        "extras": _compact_json(metadata["extras"]),
+        "groups": _compact_json(metadata["groups"]),
         "dependency-specifiers": _compact_json(metadata["dependency_specifiers"]),
-        "dependency-requirements": _compact_json(metadata["dependency_requirements"]),
         "json": _compact_json(metadata),
     }
-
-
-# GitHub rejects a step output of 1 MiB or more; warn a little before, since the ``json`` output
-# grows with the warnings.
-_OUTPUT_SIZE_WARNING_BYTES = 900_000
-
-
-def oversized_outputs(outputs: dict[str, str]) -> list[str]:
-    """Return the names of the outputs that are close to the size limit
-    of a GitHub step output.
-
-    Args:
-        outputs: The action outputs, as returned by ``format_outputs``.
-
-    Returns:
-        The names of the outputs whose UTF-8 size is ``_OUTPUT_SIZE_WARNING_BYTES``
-        or more, in the order of ``outputs``.
-    """
-    return [
-        name
-        for name, value in outputs.items()
-        if len(value.encode("utf-8")) >= _OUTPUT_SIZE_WARNING_BYTES
-    ]
 
 
 def new_delimiter() -> str:
@@ -111,8 +74,7 @@ def new_delimiter() -> str:
     return f"ghadelimiter_{uuid.uuid4()}"
 
 
-# The outputs shown in the summary line, in order (normalized-name is derived from name, and
-# description may be long).
+# The outputs shown in the summary line, in order (the others are derived from these).
 _SUMMARY_FIELDS = (
     "name",
     "version",
@@ -122,7 +84,6 @@ _SUMMARY_FIELDS = (
     "python-max",
     "extras",
     "groups",
-    "project-dependencies",
     "dependency-specifiers",
 )
 

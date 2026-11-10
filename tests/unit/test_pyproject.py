@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.pyproject import load_pyproject
+from extract_pyproject_metadata.pyproject import load_pyproject, read_extra_names, read_group_names
 from tests.helpers import write_pyproject
 
 
@@ -72,3 +72,26 @@ def test_load_pyproject_unreadable_file(tmp_path: Path, monkeypatch: pytest.Monk
 
     with pytest.raises(MetadataError, match=r"pyproject.toml cannot be read: .*Permission denied"):
         load_pyproject(str(path))
+
+
+def test_extra_names_without_optional_dependencies() -> None:
+    assert read_extra_names({}, ["all"], "p.toml") == ["all"]
+
+
+def test_extra_names_optional_dependencies_must_be_a_table() -> None:
+    with pytest.raises(
+        MetadataError, match=r"^p.toml: \[project\].optional-dependencies must be a table"
+    ):
+        read_extra_names({"optional-dependencies": []}, [], "p.toml")
+
+
+def test_extra_names() -> None:
+    project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
+
+    assert read_extra_names(project, ["", "b"], "p.toml") == ["", "b", "A_x"]
+
+
+def test_group_names_are_sorted_and_deduplicated() -> None:
+    data = {"dependency-groups": {"Dev": [], "test": [], "dev": [], "docs": []}}
+
+    assert read_group_names(data, "p.toml") == ["Dev", "docs", "test"]

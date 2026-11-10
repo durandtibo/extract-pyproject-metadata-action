@@ -100,8 +100,8 @@ def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> 
         [
             (
                 "p.toml: no python-candidates version satisfies [project].requires-python "
-                f"({requires_python!r}): python-versions and python-matrix are empty, and a job "
-                "matrix built from them is rejected by GitHub"
+                f"({requires_python!r}): python-versions is empty, and a job "
+                "matrix built from it is rejected by GitHub"
             )
         ],
     )

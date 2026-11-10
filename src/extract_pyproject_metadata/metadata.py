@@ -11,16 +11,7 @@ from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion,
 from extract_pyproject_metadata.checks import check_str, check_string_array, get_table
 from extract_pyproject_metadata.dynamic_version import read_dynamic_version
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.fields import (
-    read_authors,
-    read_build_system,
-    read_extra_names,
-    read_group_names,
-    read_readme_path,
-    read_string_table,
-    read_urls,
-)
-from extract_pyproject_metadata.license import license_warnings, read_license_text
+from extract_pyproject_metadata.pyproject import read_extra_names, read_group_names
 from extract_pyproject_metadata.types import Metadata
 
 __all__ = ["extract_metadata"]
@@ -36,8 +27,8 @@ def extract_metadata(
     pyproject_path: str = "pyproject.toml",
     resolve_dynamic_version: bool = False,
 ) -> tuple[Metadata, list[str]]:
-    """Read name, version, and sorted extras from a parsed
-    pyproject.toml.
+    """Read the name, version, requires-python, extras and groups from a
+    parsed pyproject.toml.
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
@@ -54,51 +45,30 @@ def extract_metadata(
     Returns:
         A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
         messages (for example when the version is dynamic, or when a field is
-        both set and listed in ``dynamic``). ``metadata`` is a
-        ``Metadata`` dict with keys ``name``, ``normalized_name`` (the name per PEP 503),
-        ``version``, ``normalized_version``, ``description``, ``readme``, ``license``, ``license_files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires_python``, ``extras``, ``groups``, ``build_backend`` and ``build_requires``. ``version`` is
-        an empty string when ``[project].version`` is declared in
-        ``[project].dynamic`` and has no static value (so is ``normalized_version``,
-        the version in the canonical form of PEP 440, such as ``1.0rc1`` for ``1.0-RC1``). ``requires_python``
-        is ``[project].requires-python`` as written, or an empty string if it is
-        not declared. ``description`` is ``[project].description`` as written,
-        or an empty string if it is not declared. ``readme`` is the path of the readme
-        file (a string ``[project].readme``, or the ``file`` of a table), or an empty
-        string if there is none or the readme is inline (``text``). ``license`` is the
-        SPDX expression of ``[project].license`` (a warning if it is not a valid one, when
-        ``packaging`` can check it) or the ``text`` of its table, or an empty
-        string if there is none or the license is a ``file``. ``license_files`` is the array of
-        ``[project].license-files`` (the patterns as written), empty if there is none. ``authors`` is the list of
-        the authors of ``[project].authors`` (``name`` and ``email`` only), empty if
-        there is none. ``urls`` maps the labels of ``[project.urls]`` to their URLs, in
-        the order of the file, and is empty if there is none. ``keywords`` and
-        ``classifiers`` are the arrays of ``[project].keywords`` and
-        ``[project].classifiers`` as written (empty if there is none), and ``scripts`` maps
-        the names of ``[project.scripts]`` to their entry points, like ``urls``. ``extras`` lists the ``extra_values`` first, then the
-        extras sorted by normalized name. Names are compared per PEP 685 (like
-        package names), so spellings of the same extra are duplicates: the
-        first one is kept. ``groups`` lists the names of ``[dependency-groups]``
-        the same way (sorted by normalized name, without duplicates), and is
-        empty if there is no such table. ``build_backend`` is ``[build-system].build-backend``
-        (empty if there is none) and ``build_requires`` is ``[build-system].requires``
-        as written (empty if there is none).
+        both set and listed in ``dynamic``). ``metadata`` is a ``Metadata`` dict:
+
+        - ``name`` as written, ``normalized_name`` (PEP 503, ``my-package``) and
+          ``file_name`` (the name as it is written in the file names of wheels and sdists,
+          ``my_package``);
+        - ``version`` as written and ``normalized_version`` (the canonical form of PEP 440,
+          such as ``1.0rc1`` for ``1.0-RC1``), both empty when ``[project].version`` is
+          dynamic and has no static value;
+        - ``requires_python``: ``[project].requires-python`` as written (empty if it is not
+          declared);
+        - ``extras``: the ``extra_values`` first, then the extras sorted by normalized name,
+          compared per PEP 685 (spellings of the same extra are duplicates: the first one is
+          kept);
+        - ``groups``: the names of ``[dependency-groups]`` the same way (sorted by normalized
+          name, without duplicates), empty if there is no such table.
 
     Raises:
         MetadataError: If ``[project]`` is not a table, is missing ``name`` (also
             when ``name`` is listed in ``dynamic``, which PEP 621 forbids) or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
             is not an array of strings, a ``name`` that is not a non-empty string or not a
-            valid PEP 508 name, a
-            ``version`` that is not a string or not a valid PEP 440 version, a
-            ``description`` or ``requires-python`` that is not a string, a ``readme`` that
-            is neither a string nor a table with a string ``file``, a ``license`` that
-            is neither a string nor a table with a string ``text`` and ``file``, a
-            ``license-files`` that is not an array of strings, an
-            ``authors`` that is not an array of tables with string ``name`` and ``email``, a ``urls`` or ``scripts`` that is not a table of strings, a
-            ``keywords`` or ``classifiers`` that is not an array of strings, an
-            ``optional-dependencies``, ``dependency-groups`` or ``build-system`` that is not a
-            table, a ``build-backend`` that is not a string, a ``requires`` that is not an
-            array of strings.
+            valid PEP 508 name, a ``version`` that is not a string or not a valid PEP 440
+            version, a ``requires-python`` that is not a string, or an
+            ``optional-dependencies`` or ``dependency-groups`` that is not a table.
     """
     project = get_table(data, "project", "[project]", pyproject_path)
     dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
@@ -110,45 +80,19 @@ def extract_metadata(
     warnings.extend(version_warnings)
     name = _valid_name(raw_name, pyproject_path)
     version, normalized_version = _valid_version(raw_version, is_known, pyproject_path)
-
-    description = check_str(project.get("description", ""), "[project].description", pyproject_path)
-
-    readme = read_readme_path(project.get("readme", ""), pyproject_path)
-    license_ = read_license_text(project.get("license", ""), pyproject_path)
-    warnings.extend(license_warnings(project.get("license", ""), pyproject_path))
-    authors = read_authors(project.get("authors", []), pyproject_path)
-    urls = read_urls(project, pyproject_path)
-    scripts = read_string_table(project, "scripts", pyproject_path)
-    keywords = check_string_array(project.get("keywords", []), "[project].keywords", pyproject_path)
-    classifiers = check_string_array(
-        project.get("classifiers", []), "[project].classifiers", pyproject_path
-    )
-
     requires_python = check_str(
         project.get("requires-python", ""), "[project].requires-python", pyproject_path
     )
-    build_backend, build_requires = read_build_system(data, pyproject_path)
+    normalized_name = canonicalize_name(name)
     metadata = Metadata(
         name=name,
-        normalized_name=canonicalize_name(name),
+        normalized_name=normalized_name,
+        file_name=normalized_name.replace("-", "_"),
         version=version,
         normalized_version=normalized_version,
-        description=description,
-        readme=readme,
-        license=license_,
-        license_files=check_string_array(
-            project.get("license-files", []), "[project].license-files", pyproject_path
-        ),
-        authors=authors,
-        urls=urls,
-        keywords=keywords,
-        classifiers=classifiers,
-        scripts=scripts,
         requires_python=requires_python,
         extras=read_extra_names(project, extra_values, pyproject_path),
         groups=read_group_names(data, pyproject_path),
-        build_backend=build_backend,
-        build_requires=build_requires,
     )
     return metadata, warnings
 

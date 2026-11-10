@@ -2,11 +2,10 @@ r"""Extract project metadata and dependency specifiers from a
 pyproject.toml.
 
 The metadata is the project name and version (and their normalized forms), the
-description, readme, license, authors, URLs, ``requires-python``,
-optional-dependency extras and dependency groups, and the build backend and
-requirements of ``[build-system]``. The script also selects the
-Python versions that ``requires-python`` allows, and lists the requirements of
-``[project].dependencies`` and of the packages that it is asked to look up.
+name as it is written in the file names of wheels and sdists, ``requires-python``,
+and the optional-dependency extras and dependency groups. The script also selects
+the Python versions that ``requires-python`` allows, and looks up the dependencies that
+it is asked to.
 
 Usage:
     extract_metadata.py [--github-output FILE] [--resolve-dynamic-version true|false]
@@ -20,16 +19,11 @@ group only (``numpy@extra:fast``); the key of the result is the entry as written
 
 Without ``--github-output``, prints a single JSON object to stdout (non-ASCII
 characters are kept as they are, as in the action outputs):
-    {"name": ..., "normalized_name": ..., "version": ..., "normalized_version": ...,
-     "description": ..., "readme": ..., "license": ..., "license_files": [...],
-     "authors": [...], "urls": {...},
-     "keywords": [...], "classifiers": [...], "scripts": {...},
-     "requires_python": ...,
+    {"name": ..., "normalized_name": ..., "file_name": ...,
+     "version": ..., "normalized_version": ..., "requires_python": ...,
      "extras": [...], "groups": [...],
-     "build_backend": ..., "build_requires": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
-     "project_dependencies": {...}, "dependency_specifiers": {...},
-     "dependency_requirements": {...},
+     "dependency_specifiers": {...}, "dependency_requirements": {...},
      "warnings": [...], "schema_version": 1}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
@@ -41,14 +35,10 @@ reads the object can check it.
 
 With ``--github-output FILE`` (used by action.yaml), appends the action
 outputs to FILE (the format of ``$GITHUB_OUTPUT``, with a delimiter so that
-values may contain line breaks). They are ``name``, ``normalized-name``,
-``version``, ``normalized-version``, ``description``, ``readme``, ``license``,
-``license-files``, ``authors``, ``urls``, ``keywords``, ``classifiers``, ``scripts``, ``requires-python``, ``extras``, ``groups``,
-``build-backend``, ``build-requires``,
-``python-versions``, ``python-min``, ``python-max``, ``python-matrix``,
-``project-dependencies``, ``dependency-specifiers``,
-``dependency-requirements`` and ``json`` (the JSON object that is printed without
-the option, in compact form). It also prints to stdout one
+values may contain line breaks). They are ``name``, ``normalized-name``, ``file-name``,
+``version``, ``normalized-version``, ``requires-python``, ``python-versions``,
+``python-min``, ``python-max``, ``extras``, ``groups``, ``dependency-specifiers`` and
+``json`` (the JSON object that is printed without the option, in compact form). It also prints to stdout one
 ``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
 the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout
@@ -75,19 +65,14 @@ handling of a dynamic version.
 "major.minor" strings) that ``[project].requires-python`` allows, and
 ``python_min`` is the lowest of them and ``python_max`` the highest (each an
 empty string if there is none).
-The ``python-matrix`` output (not in the JSON) is
-``{"python-version": python_versions}``, an object that ``fromJSON`` can give
-to ``strategy.matrix`` as it is.
 
 Exits non-zero with a message on stderr (with ``--github-output FILE``, an
 ``::error file=<path>::`` workflow command, so that GitHub shows an error
 annotation on the file) if the file is missing, cannot be read, is not UTF-8 or
 is not valid TOML, the outputs or the job summary cannot be written, [project]
-is missing the required "name"/"version" keys, a dependency table
-([project].dependencies, [project.optional-dependencies] or
-[dependency-groups]) has the wrong type, [build-system] has a ``build-backend``
-that is not a string or ``requires`` that is not an array of strings, an input is not valid JSON of the
-expected shape, a Python candidate is not a "major.minor" string,
+is missing the required "name"/"version" keys, a field that is read ([project].name,
+version, requires-python, dependencies or optional-dependencies, or
+[dependency-groups]) has the wrong type, an input is not valid JSON of the expected shape, a Python candidate is not a "major.minor" string,
 ``--strict true`` is given and there is a warning, or a requested dependency has a scope
 that is not ``project``, ``extra:<name>`` or ``group:<name>``.
 

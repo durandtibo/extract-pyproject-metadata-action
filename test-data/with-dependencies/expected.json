@@ -1,17 +1,9 @@
 {
   "name": "deps-pkg",
   "normalized_name": "deps-pkg",
+  "file_name": "deps_pkg",
   "version": "0.3.0",
   "normalized_version": "0.3.0",
-  "description": "",
-  "readme": "",
-  "license": "",
-  "license_files": [],
-  "authors": [],
-  "urls": {},
-  "keywords": [],
-  "classifiers": [],
-  "scripts": {},
   "requires_python": "",
   "extras": [
     "numpy"
@@ -20,8 +12,6 @@
     "base",
     "dev"
   ],
-  "build_backend": "",
-  "build_requires": [],
   "python_versions": [
     "3.11",
     "3.12",
@@ -31,11 +21,6 @@
   ],
   "python_min": "3.11",
   "python_max": "3.15",
-  "project_dependencies": {
-    "invoke-tasklib": "<1.0.0,>=0.0.8",
-    "Foo_Bar": "==2.1",
-    "nospec": ""
-  },
   "dependency_specifiers": {},
   "dependency_requirements": {},
   "warnings": [],

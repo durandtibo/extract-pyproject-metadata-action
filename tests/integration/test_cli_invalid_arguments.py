@@ -130,13 +130,13 @@ def test_a_long_valid_array_is_accepted(tmp_path: Path, count: int) -> None:
 
 
 def test_non_ascii_values_round_trip(tmp_path: Path) -> None:
-    content = '[project]\nname = "cafe"\nversion = "1"\ndescription = "naïve ☕"\n'
+    content = '[project]\nname = "cafe"\nversion = "1"\nrequires-python = "naïve ☕"\n'
 
     result = run_script(tmp_path, ["{path}", '["é"]'], content)
 
     assert result.returncode == 0
     report = json.loads(result.stdout)
-    assert report["description"] == "naïve ☕"
+    assert report["requires_python"] == "naïve ☕"
     assert report["extras"] == ["é"]
 
 
