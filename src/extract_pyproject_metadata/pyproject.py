@@ -80,7 +80,8 @@ def read_project(
         when the version is dynamic, or when a field is both set and listed in ``dynamic``).
 
     Raises:
-        MetadataError: If ``[project]`` is not a table, is missing ``name`` (also
+        MetadataError: If ``[project]`` is not a table (the first error found is reported,
+            ``name`` before ``version``), is missing ``name`` (also
             when ``name`` is listed in ``dynamic``, which PEP 621 forbids) or
             ``version`` (unless the version is dynamic), has a ``dynamic`` that
             is not an array of strings, a ``name`` that is not a non-empty string or not a
@@ -90,12 +91,10 @@ def read_project(
     """
     project = get_table(data, "project", "[project]")
     dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic")
-    raw_name = _required_name(project, dynamic)
+    name = _read_name(project, dynamic)
     warnings = _static_and_dynamic_warnings(project, dynamic)
-    raw_version, is_known, version_warnings = _required_version(project, dynamic)
+    version, version_warnings = _read_version(project, dynamic)
     warnings.extend(version_warnings)
-    name = _valid_name(raw_name)
-    version = _valid_version(raw_version, is_known)
     requires_python = check_str(project.get("requires-python", ""), "[project].requires-python")
     return Project(
         name=name,
@@ -107,29 +106,40 @@ def read_project(
     ), warnings
 
 
-def _required_name(project: dict[str, Any], dynamic: list[str]) -> object:
-    """Return ``[project].name`` as written, which must be set.
+def _read_name(project: dict[str, Any], dynamic: list[str]) -> str:
+    """Return ``[project].name``, which must be set and valid.
 
     Args:
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
 
     Returns:
-        The value of ``name``, whatever its type (see ``_valid_name``).
+        The name, unchanged.
 
     Raises:
-        MetadataError: If ``name`` is not set, with a message that says so when
-            it is listed in ``dynamic`` (PEP 621 requires a static name).
+        MetadataError: If ``name`` is not set (with a message that says so when it is listed
+            in ``dynamic``: PEP 621 requires a static name), is not a non-empty string, or is
+            not a valid package name (PEP 508: letters, digits, ``-``, ``_`` and ``.``, starting
+            and ending with a letter or a digit).
     """
-    try:
-        return project["name"]
-    except KeyError as exc:
+    if "name" not in project:
         if "name" in dynamic:
             # PEP 621: the name cannot be dynamic, so the build backend cannot supply it.
             msg = "[project].name: listed in [project].dynamic, but PEP 621 requires a static name"
-            raise MetadataError(msg) from exc
-        msg = f"[project].{exc.args[0]}: missing"
-        raise MetadataError(msg) from exc
+        else:
+            msg = "[project].name: missing"
+        raise MetadataError(msg)
+    name = project["name"]
+    if not isinstance(name, str) or not name:
+        msg = f"[project].name: must be a non-empty string, got: {name!r}"
+        raise MetadataError(msg)
+    if not is_package_name(name):
+        msg = (
+            "[project].name: not a valid project name (letters, digits, "
+            f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
+        )
+        raise MetadataError(msg)
+    return name
 
 
 def _static_and_dynamic_warnings(
@@ -158,88 +168,40 @@ def _static_and_dynamic_warnings(
     ]
 
 
-def _required_version(
+def _read_version(
     project: dict[str, Any], dynamic: list[str]
-) -> tuple[object, bool, list[ReportWarning]]:
-    """Return ``[project].version`` as written, or an empty string if it
-    is dynamic.
+) -> tuple[str | None, list[ReportWarning]]:
+    """Return ``[project].version``, which must be a valid PEP 440 version
+    or dynamic.
 
     Args:
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
 
     Returns:
-        A tuple ``(version, is_known, warnings)``. ``version`` is the value of
-        ``version`` whatever its type (see ``_valid_version``), or ``""`` when the
-        build backend computes it (setuptools-scm, hatch-vcs, ...). ``is_known`` is
-        false in that last case, and ``warnings`` then says so.
+        A tuple ``(version, warnings)``. ``version`` is the version, unchanged, or ``None``
+        when the build backend computes it (setuptools-scm, hatch-vcs, ...): ``warnings`` then
+        has the ``dynamic-version`` warning, and is empty otherwise.
 
     Raises:
-        MetadataError: If ``version`` is neither set nor dynamic.
+        MetadataError: If ``version`` is neither set nor dynamic, is not a string, or is not a
+            valid PEP 440 version.
     """
-    if "version" in project:
-        return project["version"], True, []
-    if "version" not in dynamic:
-        msg = "[project].version: missing"
-        raise MetadataError(msg)
-    warnings = [
-        ReportWarning(
+    if "version" not in project:
+        if "version" not in dynamic:
+            msg = "[project].version: missing"
+            raise MetadataError(msg)
+        warning = ReportWarning(
             "dynamic-version", "[project].version is dynamic, the version output is empty"
         )
-    ]
-    return "", False, warnings
-
-
-def _valid_name(name: object) -> str:
-    """Return ``name`` if it is a valid project name (PEP 508).
-
-    Args:
-        name: The value of ``[project].name``.
-
-    Returns:
-        ``name``, unchanged.
-
-    Raises:
-        MetadataError: If ``name`` is not a non-empty string, or contains
-            other characters than letters, digits, ``-``, ``_`` and ``.``, or
-            does not start and end with a letter or a digit.
-    """
-    if not isinstance(name, str) or not name:
-        msg = f"[project].name: must be a non-empty string, got: {name!r}"
-        raise MetadataError(msg)
-    if not is_package_name(name):
-        msg = (
-            "[project].name: not a valid project name (letters, digits, "
-            f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
-        )
-        raise MetadataError(msg)
-    return name
-
-
-def _valid_version(version: object, is_static: bool) -> str | None:
-    """Return the version if it is static and valid (PEP 440).
-
-    Args:
-        version: The value of ``[project].version``, or ``""`` if it is dynamic.
-        is_static: Whether ``version`` is set in ``[project]`` (it is not
-            when it is dynamic).
-
-    Returns:
-        ``version``, unchanged, or None when the version is dynamic.
-
-    Raises:
-        MetadataError: If ``version`` is not a string, or a static version is
-            not a valid PEP 440 version.
-    """
-    version = check_str(version, "[project].version")
-    if not is_static:
-        return None
+        return None, [warning]
+    version = check_str(project["version"], "[project].version")
     try:
         Version(version)
     except InvalidVersion as exc:
         msg = f"[project].version: not a valid PEP 440 version: {version!r}"
         raise MetadataError(msg) from exc
-    return version
+    return version, []
 
 
 def read_extra_names(project: dict[str, Any], extra_values: list[str]) -> list[str]:
