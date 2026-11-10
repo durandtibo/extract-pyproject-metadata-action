@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import sys
 from typing import TYPE_CHECKING
 
 import pytest
+import yaml
 
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS
+from extract_pyproject_metadata.python_versions import (
+    DEFAULT_PYTHON_CANDIDATES,
+    highest_python_version,
+    lowest_python_version,
+)
 from tests.helpers import PACKAGE_PATH, ROOT_PATH
 
 if TYPE_CHECKING:
@@ -19,6 +26,7 @@ if TYPE_CHECKING:
 WORKFLOWS_PATH = ROOT_PATH / ".github" / "workflows"
 ACTION_PATH = ROOT_PATH / "action.yaml"
 LOCAL_PATH = WORKFLOWS_PATH / "ci-test-local.yaml"
+MAKEFILE_PATH = ROOT_PATH / "Makefile"
 
 
 def load_script(name: str) -> ModuleType:
@@ -105,6 +113,62 @@ def test_the_maintenance_workflow_reads_the_default_candidates_where_they_are_de
     )
     assert "DEFAULT_PYTHON_CANDIDATES = " in module
     assert not (WORKFLOWS_PATH / "packaging-update.yaml").exists()
+
+
+def load_workflow(name: str) -> dict:
+    """Parse a workflow of ``.github/workflows``."""
+    return yaml.safe_load((WORKFLOWS_PATH / name).read_text(encoding="utf-8"))
+
+
+def python_matrices(workflow: dict) -> list[list[str]]:
+    """The ``python-version`` matrix of every job of a workflow that has one."""
+    return [
+        job["strategy"]["matrix"]["python-version"]
+        for job in workflow["jobs"].values()
+        if "python-version" in job.get("strategy", {}).get("matrix", {})
+    ]
+
+
+def test_the_unit_matrix_is_every_default_candidate() -> None:
+    assert python_matrices(load_workflow("ci.yaml")) == [json.loads(DEFAULT_PYTHON_CANDIDATES)]
+
+
+@pytest.mark.parametrize("name", ["ci-test-local.yaml", "nightly-test-stable.yaml"])
+def test_the_action_matrices_are_the_oldest_and_the_newest_candidate(name: str) -> None:
+    candidates = json.loads(DEFAULT_PYTHON_CANDIDATES)
+    oldest_and_newest = [lowest_python_version(candidates), highest_python_version(candidates)]
+
+    matrices = python_matrices(load_workflow(name))
+
+    assert matrices
+    assert all(matrix == oldest_and_newest for matrix in matrices)
+
+
+def test_ci_runs_the_checks_through_make() -> None:
+    commands = [
+        step["run"]
+        for job in load_workflow("ci.yaml")["jobs"].values()
+        for step in job.get("steps", [])
+        if "run" in step
+    ]
+
+    for tool in ("pytest", "pyright", "ruff", "generate_docs", "generate_workflows"):
+        assert not [command for command in commands if tool in command.replace("make ", "")]
+    assert "make test PYTHON_RUN=" in commands
+    assert "make lint-python PYTHON_RUN=" in commands
+    assert "make docs-check PYTHON_RUN=" in commands
+    assert "make workflows-check" in commands
+    assert 'make types "PYTHON_RUN=.venv/bin/python -m"' in commands
+
+
+@pytest.mark.parametrize(
+    ("target", "script"),
+    [("docs-check", "generate_docs.py"), ("workflows-check", "generate_workflows.py")],
+)
+def test_the_check_targets_run_the_generator_with_check(target: str, script: str) -> None:
+    makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
+
+    assert re.search(rf"^{target}:.*\n\t.*{script} --check$", makefile, re.MULTILINE)
 
 
 def test_the_local_workflow_repeats_the_defaults_of_the_inputs() -> None:

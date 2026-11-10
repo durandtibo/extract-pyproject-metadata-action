@@ -33,6 +33,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install --group dev
 
+      # PYTHON_RUN= runs the tools of the dev group from PATH, without uv (see the Makefile).
+      - name: Lint the Python files
+        run: make lint-python PYTHON_RUN=
+
       # The hooks of .pre-commit-config.yaml; pyright runs in the `types` job.
       - name: Run pre-commit
         env:
@@ -40,10 +44,10 @@ jobs:
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Check that nightly-test-stable.yaml is generated from ci-test-local.yaml
-        run: python scripts/generate_workflows.py --check
+        run: make workflows-check
 
       - name: Check that the tables of README.md are generated from action.yaml
-        run: python scripts/generate_docs.py --check
+        run: make docs-check PYTHON_RUN=
 
   verify-workflows:
     runs-on: ubuntu-slim
@@ -75,8 +79,9 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install --group dev
 
+      # pyright reads the packages from .venv, so it runs with the interpreter of the venv.
       - name: Run pyright
-        run: .venv/bin/pyright
+        run: make types "PYTHON_RUN=.venv/bin/python -m"
 
   unit:
     runs-on: ${{ matrix.os }}
@@ -85,8 +90,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # Every supported Python version (3.11 is the oldest: tomllib)
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        # Every default python-candidate (3.11 is the oldest: tomllib); a test checks the list
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
@@ -102,7 +107,7 @@ jobs:
           pip install --group dev
 
       - name: Run unit tests
-        run: python -m pytest -v --cov --cov-report=term-missing
+        run: make test PYTHON_RUN=
 
   # Run the integration test of the local action
   action:

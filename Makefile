@@ -44,9 +44,17 @@ test: ## Run the tests with the coverage gate
 docs: ## Generate the tables of README.md from action.yaml
 	$(PYTHON_RUN) python scripts/generate_docs.py
 
+.PHONY: docs-check
+docs-check: ## Check that the tables of README.md are generated from action.yaml
+	$(PYTHON_RUN) python scripts/generate_docs.py --check
+
 .PHONY: workflows
 workflows: ## Generate nightly-test-stable.yaml from ci-test-local.yaml
 	python3 scripts/generate_workflows.py
+
+.PHONY: workflows-check
+workflows-check: ## Check that nightly-test-stable.yaml is generated from ci-test-local.yaml
+	python3 scripts/generate_workflows.py --check
 
 .PHONY: vendor-packaging
 vendor-packaging: ## Vendor a release of packaging: make vendor-packaging VERSION=x.y
