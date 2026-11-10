@@ -37,13 +37,13 @@ def test_build_report(tmp_path: Path) -> None:
         "python_max": "3.15",
         "dependency_specifiers": {"dup": ">=1", "missing": None},
         "dependency_requirements": {
-            "dup": [{"specifier": ">=1", "marker": ""}, {"specifier": ">=2", "marker": ""}],
+            "dup": [
+                {"specifier": ">=1", "marker": "", "source": "extra:a"},
+                {"specifier": ">=2", "marker": "", "source": "group:other"},
+            ],
             "missing": [],
         },
-        "warnings": [
-            f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
-            f"{path}: dependency 'missing' not found",
-        ],
+        "warnings": [f"{path}: dependency 'missing' not found"],
         "schema_version": 1,
     }
 
@@ -75,9 +75,9 @@ def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
 
     with pytest.raises(
         MetadataError,
-        match=r"^strict is 'true' and there are 1 warning\(s\):\n- dup has different specifiers in ",
+        match=r"^strict is 'true' and there are 1 warning\(s\):\n- .*: dependency 'missing' not found$",
     ):
-        build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["dup"]'))
+        build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["missing"]'))
 
 
 def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
@@ -106,6 +106,6 @@ def test_build_report_strict_without_warnings(tmp_path: Path) -> None:
 def test_build_report_not_strict_keeps_the_warnings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    report = build_report(parse_inputs_args("--strict", "false", str(path), "[]", '["dup"]'))
+    report = build_report(parse_inputs_args("--strict", "false", str(path), "[]", '["missing"]'))
 
     assert len(report["warnings"]) == 1

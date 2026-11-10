@@ -25,17 +25,20 @@
     "numpy": [
       {
         "specifier": ">=1.20",
-        "marker": "python_version < \"3.12\""
+        "marker": "python_version < \"3.12\"",
+        "source": "project"
       },
       {
         "specifier": ">=1.26",
-        "marker": "python_version >= \"3.12\""
+        "marker": "python_version >= \"3.12\"",
+        "source": "project"
       }
     ],
     "plain": [
       {
         "specifier": "",
-        "marker": ""
+        "marker": "",
+        "source": "project"
       }
     ],
     "missing": []

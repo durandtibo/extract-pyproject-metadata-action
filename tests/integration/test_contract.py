@@ -132,7 +132,9 @@ def test_readme_dependencies_section_names_entries_that_fail(entry: str) -> None
         parse_dependencies(json.dumps([entry]))
 
 
-def test_readme_dependencies_example_warns_for_the_plain_name_only(tmp_path: Path) -> None:
+def test_readme_dependencies_example_reads_the_first_requirement_for_the_plain_name(
+    tmp_path: Path,
+) -> None:
     path = write_pyproject(
         tmp_path,
         '[project]\nname = "a"\nversion = "1"\ndependencies = ["numpy>=1.20"]\n'
@@ -149,5 +151,5 @@ def test_readme_dependencies_example_warns_for_the_plain_name_only(tmp_path: Pat
         "numpy@extra:fast": ">=2",
         "numpy@group:dev": ">=1.26",
     }
-    assert [w.split(" in ")[0] for w in plain["warnings"]] == ["numpy has different specifiers"]
+    assert plain["warnings"] == []
     assert plain["dependency_specifiers"] == {"numpy": ">=1.20"}

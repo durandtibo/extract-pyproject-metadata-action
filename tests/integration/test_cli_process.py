@@ -143,7 +143,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         "python_max": "3.15",
         "dependency_specifiers": {"numpy": ">=1.20", "pandas": None},
         "dependency_requirements": {
-            "numpy": [{"specifier": ">=1.20", "marker": ""}],
+            "numpy": [{"specifier": ">=1.20", "marker": "", "source": "project"}],
             "pandas": [],
         },
         "warnings": [f"{path}: dependency 'pandas' not found"],

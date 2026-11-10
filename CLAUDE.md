@@ -22,7 +22,9 @@ module above it:
    `dynamic_version` (a dynamic version read statically from the file of the build
    backend), `metadata` (`extract_metadata`: name, version, `requires-python`, extras
    and groups). Only what the action outputs is read and validated.
-3. `dependencies/` (`groups`, `requirements`, `lookup`) and `python_versions`.
+3. `requirements` (the requirements of `[project].dependencies`, the extras and the
+   groups with `include-group`, and the lookup of the requested dependencies) and
+   `python_versions`.
 4. `output/` (`escaping`, `github`, `summary`): action outputs, workflow
    commands and job summary. It only depends on `types` and `errors`.
 5. `report` (`build_report`) wires 2 to 4 together; `cli` (argument parser and
@@ -111,7 +113,7 @@ module above it:
 
 - The tests mirror the package. `tests/unit/` has one module per module of
   `src/extract_pyproject_metadata/` (`tests/unit/test_metadata.py`,
-  `tests/unit/dependencies/test_lookup.py`, `tests/unit/output/test_github.py`,
+  `tests/unit/test_requirements.py`, `tests/unit/output/test_github.py`,
   ...). `tests/integration/` runs the command line in a new process
   (`test_cli_process.py`, `test_cli_invalid_arguments.py`, `test_limits.py`),
   `run.sh` (`test_run_sh.py`) and checks that `action.yaml` and `README.md`

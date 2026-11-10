@@ -47,11 +47,6 @@ CASES = [
         '["numpy"]',
     ),
     Case(
-        "has different specifiers",
-        PROJECT + 'version = "1"\ndependencies = ["numpy>=1", "numpy>=2"]\n',
-        '["numpy"]',
-    ),
-    Case(
         "has an include-group cycle",
         PROJECT
         + 'version = "1"\n[dependency-groups]\na = [{include-group = "b"}]\n'

@@ -9,10 +9,11 @@ The modules, from the bottom of the import graph to the top:
 
 - ``errors``, ``types``, ``checks``, ``inputs``: the error, the typed report, the type checks
   of the values read from the file and the parsing of the inputs.
-- ``pyproject``, ``license``, ``fields``, ``dynamic_version``, ``metadata``: reading the file
-  and its fields (``dynamic_version`` finds a dynamic version in the file of the build backend).
-- ``dependencies`` (``groups``, ``requirements``, ``lookup``): the dependencies.
-- ``python_versions``: the Python versions that ``requires-python`` allows.
+- ``pyproject``, ``dynamic_version``, ``metadata``: reading the file and its fields
+  (``dynamic_version`` finds a dynamic version in the file of the build backend).
+- ``requirements``, ``python_versions``: the requirements (``[project].dependencies``, the
+  extras and the groups) and their lookup, and the Python versions that ``requires-python``
+  allows.
 - ``output`` (``escaping``, ``github``, ``summary``): the action outputs, the workflow
   commands and the job summary.
 - ``report``: builds the report from the parts above.

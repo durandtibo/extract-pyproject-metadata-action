@@ -129,13 +129,13 @@ def test_new_delimiter_is_random_and_not_guessable() -> None:
 def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     output = tmp_path / "github_output"
     report = build_report(
-        parse_inputs_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["dup"]')
+        parse_inputs_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["missing"]')
     )
 
     emit_github_output(report, "my,file.toml", str(output))
 
     out_lines = capsys.readouterr().out.splitlines()
-    assert out_lines[0].startswith("::warning file=my%2Cfile.toml::dup has different specifiers")
+    assert out_lines[0].startswith("::warning file=my%2Cfile.toml::")
     assert out_lines[1].startswith("📦 name=p version=1 ")
     assert len(out_lines) == 2
     assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)

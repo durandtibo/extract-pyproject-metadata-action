@@ -32,20 +32,23 @@
     "grp-pkg@group:base": [
       {
         "specifier": ">=1.5",
-        "marker": ""
+        "marker": "",
+        "source": "group:base"
       }
     ],
     "grp-pkg@group:dev": [
       {
         "specifier": ">=1.5",
-        "marker": ""
+        "marker": "",
+        "source": "group:dev"
       }
     ],
     "grp-pkg@project": [],
     "numpy@extra:numpy": [
       {
         "specifier": "~=2.0",
-        "marker": ""
+        "marker": "",
+        "source": "extra:numpy"
       }
     ],
     "numpy@group:dev": []
