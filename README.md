@@ -215,7 +215,7 @@ them all.
 | `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                  |
 | `has an include-group cycle`                                    | The `include-group` entries of `[dependency-groups]` include each other in a loop (when `dependencies` is not empty).   |
 | `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                |
-| `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so no requirement is found in it.            |
+| `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: no requirement is found in it (only when `dependencies` is not empty).      |
 | `[project].optional-dependencies is dynamic, it cannot be read` | The same for `optional-dependencies` (only when `dependencies` is not empty).                                           |
 | `' not found`                                                   | `dependency '<entry>' not found`: a package of `dependencies` is not in the place(s) searched, its specifier is `null`. |
 
@@ -233,8 +233,12 @@ happens when:
   valid [PEP 508](https://peps.python.org/pep-0508/#names) name, or is in `dynamic`;
   `version` is missing (and not dynamic) or is not a valid
   [PEP 440](https://peps.python.org/pep-0440/) version; `requires-python` is not a
-  string; `dynamic`, the dependencies, the extras or the groups have the wrong type, an
-  `include-group` is nested more than 100 levels or expands more than 10,000 groups;
+  string; `dynamic`, `optional-dependencies` or `dependency-groups` is not a table or an
+  array of the right type;
+- a requirement table is invalid, **only when `dependencies` is not empty** (without a
+  lookup the requirements are not read): `[project].dependencies`, an extra or a group has
+  the wrong type, an `include-group` is nested more than 100 levels or expands more than
+  10,000 groups;
 - an input is invalid: `extra-values`, `dependencies` or `python-candidates` is not a JSON
   array of strings, a `dependencies` scope is not `project`, `extra:<name>` or
   `group:<name>`, a candidate is not `major.minor`, or `strict` is not a boolean;

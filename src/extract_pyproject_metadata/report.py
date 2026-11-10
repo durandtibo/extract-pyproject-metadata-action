@@ -44,14 +44,20 @@ def build_report(inputs: Inputs) -> Report:
     python_versions, python_warnings = compatible_python_versions(
         metadata["requires_python"], inputs.python_candidates, inputs.pyproject_path
     )
-    # The requirements of the file are read and parsed once, for both lookups.
-    found, index_warnings = index_dependencies(data, inputs.pyproject_path)
-    specifiers, specifier_warnings = specifiers_from_index(
-        found, index_warnings, inputs.dependencies, inputs.pyproject_path
-    )
-    requirements = requirements_from_index(found, inputs.dependencies)
+    # The requirement tables are read only for a lookup: without one, a broken table is not
+    # the business of the action.
+    specifiers: dict[str, str | None] = {}
+    requirements: dict[str, list[dict[str, str]]] = {}
+    lookup_warnings: list[str] = []
+    if inputs.dependencies:
+        # The requirements of the file are read and parsed once, for both lookups.
+        found, index_warnings = index_dependencies(data, inputs.pyproject_path)
+        specifiers, lookup_warnings = specifiers_from_index(
+            found, index_warnings, inputs.dependencies, inputs.pyproject_path
+        )
+        requirements = requirements_from_index(found, inputs.dependencies)
     warnings.extend(python_warnings)
-    warnings.extend(specifier_warnings)
+    warnings.extend(lookup_warnings)
     unique_warnings = list(dict.fromkeys(warnings))
     report = Report(
         **metadata,

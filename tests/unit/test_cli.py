@@ -1156,7 +1156,7 @@ def test_main_non_string_requirement_returns_one(
         tmp_path, '[project]\nname = "coola"\nversion = "1"\ndependencies = ["a", 1]\n'
     )
 
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
+    assert main(["extract_metadata.py", str(path), "[]", '["a"]']) == 1
     assert "[project].dependencies must contain only strings, got: 1" in capsys.readouterr().err
 
 

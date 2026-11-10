@@ -99,8 +99,6 @@ def test_a_directory_instead_of_a_file_fails_cleanly(tmp_path: Path) -> None:
         '[project]\nname = ""\nversion = "1"\n',
         '[project]\nname = 1\nversion = "1"\n',
         '[project]\nname = "a"\nversion = []\n',
-        '[project]\nname = "a"\nversion = "1"\ndependencies = "numpy"\n',
-        '[project]\nname = "a"\nversion = "1"\ndependencies = [1]\n',
         '[project]\nname = "a"\nversion = "1"\noptional-dependencies = []\n',
         "[project]\nname = 'a'\nversion = 'unterminated\n",
         "project = 1\n",
@@ -114,6 +112,28 @@ def test_a_malformed_pyproject_fails_cleanly(tmp_path: Path, content: str) -> No
     assert result.stdout == ""
     assert result.stderr.strip() != ""
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '[project]\nname = "a"\nversion = "1"\ndependencies = "numpy"\n',
+        '[project]\nname = "a"\nversion = "1"\ndependencies = [1]\n',
+        '[project]\nname = "a"\nversion = "1"\n[project.optional-dependencies]\nx = [1]\n',
+        '[project]\nname = "a"\nversion = "1"\n[dependency-groups]\ndev = [{include-group = 1}]\n',
+    ],
+)
+def test_a_malformed_requirement_table_fails_only_for_a_lookup(
+    tmp_path: Path, content: str
+) -> None:
+    without_lookup = run_script(tmp_path, ["{path}", "[]", "[]"], content)
+    with_lookup = run_script(tmp_path, ["{path}", "[]", '["numpy"]'], content)
+
+    assert without_lookup.returncode == 0
+    assert json.loads(without_lookup.stdout)["dependency_specifiers"] == {}
+    assert with_lookup.returncode == 1
+    assert with_lookup.stdout == ""
+    assert "Traceback" not in with_lookup.stderr
 
 
 # 5000 items stay below the 128 KiB limit of one argument on Linux (MAX_ARG_STRLEN).
