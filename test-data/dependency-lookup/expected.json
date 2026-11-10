@@ -81,7 +81,10 @@
     "missing": []
   },
   "warnings": [
-    "dependency 'missing' not found"
+    {
+      "code": "dependency-not-found",
+      "message": "dependency 'missing' not found"
+    }
   ],
-  "schema_version": 2
+  "schema_version": 3
 }

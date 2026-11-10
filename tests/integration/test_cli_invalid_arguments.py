@@ -175,7 +175,7 @@ def test_a_dependency_group_cycle_is_a_warning(tmp_path: Path) -> None:
     result = run_script(tmp_path, ["{path}", "[]", '["dev"]'], CYCLE)
 
     assert result.returncode == 0
-    assert "include-group cycle: dev -> dev" in json.loads(result.stdout)["warnings"][0]
+    assert "include-group cycle: dev -> dev" in json.loads(result.stdout)["warnings"][0]["message"]
 
 
 def test_a_dependency_group_cycle_fails_with_strict(tmp_path: Path) -> None:

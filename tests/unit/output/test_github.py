@@ -78,7 +78,7 @@ def test_format_outputs_json_is_the_whole_report_in_compact_form() -> None:
     assert result.startswith(
         '{"name":"coola","normalized_name":"coola","file_name":"coola","version":"1.2.3",'
     )
-    assert result.endswith('"warnings":[],"schema_version":2}')
+    assert result.endswith('"warnings":[],"schema_version":3}')
     assert json.loads(result) == METADATA
 
 
@@ -135,7 +135,9 @@ def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     emit_github_output(report, "my,file.toml", str(output))
 
     out_lines = capsys.readouterr().out.splitlines()
-    assert out_lines[0].startswith("::warning file=my%2Cfile.toml::")
+    assert out_lines[0].startswith(
+        "::warning file=my%2Cfile.toml,title=dependency-not-found::dependency 'missing' not found"
+    )
     assert out_lines[1].startswith("📦 name=p version=1 ")
     assert len(out_lines) == 2
     assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)
@@ -157,7 +159,7 @@ def test_format_outputs_normalized_version() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
-        schema_version=2,
+        schema_version=3,
     )
 
     outputs = format_outputs(report)

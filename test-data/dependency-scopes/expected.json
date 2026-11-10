@@ -54,8 +54,14 @@
     "numpy@group:dev": []
   },
   "warnings": [
-    "dependency 'grp-pkg@project' not found",
-    "dependency 'numpy@group:dev' not found"
+    {
+      "code": "dependency-not-found",
+      "message": "dependency 'grp-pkg@project' not found"
+    },
+    {
+      "code": "dependency-not-found",
+      "message": "dependency 'numpy@group:dev' not found"
+    }
   ],
-  "schema_version": 2
+  "schema_version": 3
 }

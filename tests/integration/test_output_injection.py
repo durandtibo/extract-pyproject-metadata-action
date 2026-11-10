@@ -181,7 +181,7 @@ def test_the_job_summary_of_a_hostile_pyproject_stays_a_list_of_warnings(tmp_pat
     path = hostile_pyproject(tmp_path)
     report = build_report(_inputs(path))
 
-    markdown = format_warning_summary(report["warnings"])
+    markdown = format_warning_summary([w["message"] for w in report["warnings"]])
 
     lines = markdown.splitlines()
     assert report["warnings"]
