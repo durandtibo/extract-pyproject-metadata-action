@@ -94,7 +94,30 @@ def test_ci_runs_every_night_through_the_nightly_workflow_only() -> None:
     assert "schedule:" not in ci
     assert "schedule:" in nightly
     assert "uses: ./.github/workflows/ci.yaml" in nightly
-    assert "nightly-test-stable" not in nightly
+    assert "uses: ./.github/workflows/nightly-test-stable.yaml" in nightly
+
+
+def test_the_stable_workflow_tests_the_pinned_published_action_only() -> None:
+    text = (WORKFLOWS_PATH / "nightly-test-stable.yaml").read_text(encoding="utf-8")
+
+    assert re.search(
+        r"uses: durandtibo/extract-pyproject-metadata-action@[0-9a-f]{40} # ratchet:\S+@v\d+\.\d+",
+        text,
+    )
+    assert "uses: ./" not in text
+
+
+def test_ci_only_calls_the_reusable_workflows() -> None:
+    jobs = load_workflow("ci.yaml")["jobs"]
+
+    assert all("uses" in job for job in jobs.values())
+    assert sorted(job["uses"] for job in jobs.values()) == [
+        "./.github/workflows/ci-lint.yaml",
+        "./.github/workflows/ci-test-local.yaml",
+        "./.github/workflows/ci-test.yaml",
+        "./.github/workflows/ci-type-checking.yaml",
+        "./.github/workflows/ci-verify-workflows.yaml",
+    ]
 
 
 def test_the_shared_matrix_workflow_is_gone() -> None:
@@ -127,7 +150,7 @@ def python_matrices(workflow: dict) -> list[list[str]]:
 
 
 def test_the_unit_matrix_is_every_default_candidate() -> None:
-    assert python_matrices(load_workflow("ci.yaml")) == [json.loads(DEFAULT_PYTHON_CANDIDATES)]
+    assert python_matrices(load_workflow("ci-test.yaml")) == [json.loads(DEFAULT_PYTHON_CANDIDATES)]
 
 
 def test_the_action_matrices_are_the_oldest_and_the_newest_candidate() -> None:
@@ -143,7 +166,8 @@ def test_the_action_matrices_are_the_oldest_and_the_newest_candidate() -> None:
 def test_ci_runs_the_checks_through_make() -> None:
     commands = [
         step["run"]
-        for job in load_workflow("ci.yaml")["jobs"].values()
+        for name in ("ci-lint.yaml", "ci-test.yaml", "ci-type-checking.yaml")
+        for job in load_workflow(name)["jobs"].values()
         for step in job.get("steps", [])
         if "run" in step
     ]

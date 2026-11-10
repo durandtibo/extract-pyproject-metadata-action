@@ -1,6 +1,7 @@
 name: Test Local Action
 
-# The integration test of the action (it can only run on GitHub). It checks the wiring: the
+# The integration test of the current code of the action, `uses: ./` (it can only run on GitHub;
+# nightly-test-stable.yaml tests the published version). It checks the wiring: the
 # inputs reach the action and the outputs come back. The logic is covered by tests/.
 #
 # - `smoke` runs the action on a few simple files, on the oldest and the newest Python.
@@ -9,6 +10,7 @@ name: Test Local Action
 
 on:
   workflow_call:
+  workflow_dispatch: # to trigger manually
 
 permissions:
   contents: read

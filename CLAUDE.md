@@ -199,8 +199,9 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   the other jobs check what the golden files cannot see (failures, `strict`,
   what the action leaves behind). Pass values through `env:`, never interpolate
   them in `run:` (a test checks it). Add a case or a job for every new input or
-  output. There is no workflow that tests a released version: a release is an
-  immutable tag (`vX.Y.Z`) that is never moved or re-tested through a copy of a workflow.
+  output. `nightly-test-stable.yaml` (called from `nightly.yaml`) tests the latest
+  published tag, pinned by SHA, with the inputs and outputs of that version; update the pin
+  after each release. A tag is never moved.
 
 ## Reporting
 
