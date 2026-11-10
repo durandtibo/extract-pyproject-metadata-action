@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 import extract_pyproject_metadata.cli as extract_metadata_module
-import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
 import extract_pyproject_metadata.report as report_module
+import extract_pyproject_metadata.requirements as dependencies_requirements_module
 from extract_pyproject_metadata.cli import main, parse_cli_inputs
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_inputs
@@ -259,13 +259,11 @@ def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
 ) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    exit_code = main(["extract_metadata.py", str(path), "[]", '["dup"]'])
+    exit_code = main(["extract_metadata.py", str(path), "[]", '["missing"]'])
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert json.loads(captured.out)["warnings"] == [
-        f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"
-    ]
+    assert json.loads(captured.out)["warnings"] == [f"{path}: dependency 'missing' not found"]
     assert captured.err == ""
 
 
@@ -308,7 +306,6 @@ def test_main_github_output_writes_outputs_and_annotations(
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
-        f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
         f"::warning file={path}::{path}: dependency 'missing' not found\n"
         "📦 name=p version=1 requires-python= "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
@@ -333,14 +330,14 @@ def test_main_strict_fails_without_writing_the_outputs(
             "true",
             str(path),
             "[]",
-            '["dup"]',
+            '["missing"]',
         ]
     )
     captured = capsys.readouterr()
 
     assert exit_code == 1
     assert captured.err.startswith(
-        f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- dup"
+        f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- {path}: dependency"
     )
     assert captured.out == ""
     assert not output.exists()
@@ -1059,7 +1056,7 @@ def test_main_warnings_are_in_the_order_of_the_sources(
 
     assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 0
     warnings = json.loads(capsys.readouterr().out)["warnings"]
-    assert len(warnings) == 4
+    assert len(warnings) == 3
     # The metadata, the Python versions, then the lookups.
     assert warnings[:2] == [
         f"{path}: [project].version is dynamic, the version output is empty",
@@ -1069,9 +1066,6 @@ def test_main_warnings_are_in_the_order_of_the_sources(
         ),
     ]
     assert warnings[2].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
-    assert (
-        warnings[3] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
-    )
 
 
 def test_main_dependency_requirements_with_a_scope(
@@ -1093,13 +1087,13 @@ def test_main_dependency_requirements_with_a_scope(
     report = json.loads(capsys.readouterr().out)
     assert report["dependency_requirements"] == {
         "numpy": [
-            {"specifier": ">=1.20", "marker": ""},
-            {"specifier": ">=2", "marker": ""},
-            {"specifier": "<2", "marker": ""},
-            {"specifier": ">=1.26", "marker": ""},
+            {"specifier": ">=1.20", "marker": "", "source": "project"},
+            {"specifier": ">=2", "marker": "", "source": "extra:fast"},
+            {"specifier": "<2", "marker": "", "source": "extra:slow"},
+            {"specifier": ">=1.26", "marker": "", "source": "group:dev"},
         ],
-        "numpy@extra:slow": [{"specifier": "<2", "marker": ""}],
-        "pytest@group:dev": [{"specifier": "", "marker": ""}],
+        "numpy@extra:slow": [{"specifier": "<2", "marker": "", "source": "extra:slow"}],
+        "pytest@group:dev": [{"specifier": "", "marker": "", "source": "group:dev"}],
     }
     assert report["dependency_specifiers"] == {
         "numpy": ">=1.20",
@@ -1218,8 +1212,8 @@ def test_main_dependency_requirements_in_json(
     assert main(["extract_metadata.py", str(path), "[]", '["numpy", "missing"]']) == 0
     assert json.loads(capsys.readouterr().out)["dependency_requirements"] == {
         "numpy": [
-            {"specifier": ">=1", "marker": 'python_version < "3.12"'},
-            {"specifier": ">=2", "marker": 'python_version >= "3.12"'},
+            {"specifier": ">=1", "marker": 'python_version < "3.12"', "source": "project"},
+            {"specifier": ">=2", "marker": 'python_version >= "3.12"', "source": "project"},
         ],
         "missing": [],
     }

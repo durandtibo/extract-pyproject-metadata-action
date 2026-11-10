@@ -29,7 +29,7 @@ RANKS = {
     "pyproject": 2,
     "dynamic_version": 2,
     "metadata": 3,
-    "dependencies": 4,
+    "requirements": 4,
     "python_versions": 4,
     "output": 4,
     "report": 5,

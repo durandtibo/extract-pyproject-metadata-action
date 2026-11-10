@@ -14,10 +14,14 @@ from extract_pyproject_metadata._vendor.packaging.requirements import (
     Requirement,
 )
 from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
-from extract_pyproject_metadata.dependencies.lookup import extract_dependency_specifiers
 from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.metadata import extract_metadata
 from extract_pyproject_metadata.pyproject import load_pyproject
+from extract_pyproject_metadata.requirements import (
+    index_dependencies,
+    requirements_from_index,
+    specifiers_from_index,
+)
 from extract_pyproject_metadata.types import Inputs, Metadata, Report
 
 ROOT_PATH = Path(__file__).resolve().parents[1]
@@ -38,6 +42,22 @@ def extract(path: Path, extra_values_json: str = "[]") -> Metadata:
         load_pyproject(str(path)), parse_string_array(extra_values_json, "extra-values"), str(path)
     )
     return metadata
+
+
+def extract_dependency_specifiers(
+    data: dict, dependencies: list[str], pyproject_path: str = "pyproject.toml"
+) -> tuple[dict[str, str | None], list[str]]:
+    """Look up the specifiers of ``dependencies`` in parsed data, with the warnings."""
+    found, index_warnings = index_dependencies(data, pyproject_path)
+    return specifiers_from_index(found, index_warnings, dependencies, pyproject_path)
+
+
+def extract_dependency_requirements(
+    data: dict, dependencies: list[str], pyproject_path: str = "pyproject.toml"
+) -> dict[str, list[dict[str, str]]]:
+    """List all the requirements of ``dependencies`` in parsed data."""
+    found, _ = index_dependencies(data, pyproject_path)
+    return requirements_from_index(found, dependencies)
 
 
 def specifiers(path: Path, dependencies_json: str) -> dict:

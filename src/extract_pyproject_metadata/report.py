@@ -2,13 +2,6 @@
 
 from __future__ import annotations
 
-from extract_pyproject_metadata.dependencies.lookup import (
-    requirements_from_index,
-    specifiers_from_index,
-)
-from extract_pyproject_metadata.dependencies.requirements import (
-    index_dependencies,
-)
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.metadata import extract_metadata
 from extract_pyproject_metadata.pyproject import load_pyproject
@@ -16,6 +9,11 @@ from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
     highest_python_version,
     lowest_python_version,
+)
+from extract_pyproject_metadata.requirements import (
+    index_dependencies,
+    requirements_from_index,
+    specifiers_from_index,
 )
 from extract_pyproject_metadata.types import Inputs, Report
 

@@ -34,41 +34,48 @@
     "invoke-tasklib": [
       {
         "specifier": "<1.0.0,>=0.0.8",
-        "marker": ""
+        "marker": "",
+        "source": "project"
       }
     ],
     "foo.bar": [
       {
         "specifier": "==2.1",
-        "marker": ""
+        "marker": "",
+        "source": "project"
       }
     ],
     "nospec": [
       {
         "specifier": "",
-        "marker": ""
+        "marker": "",
+        "source": "project"
       }
     ],
     "numpy": [
       {
         "specifier": "~=2.0",
-        "marker": ""
+        "marker": "",
+        "source": "extra:numpy"
       }
     ],
     "grp-pkg": [
       {
         "specifier": ">=1.5",
-        "marker": ""
+        "marker": "",
+        "source": "group:base"
       },
       {
         "specifier": ">=1.5",
-        "marker": ""
+        "marker": "",
+        "source": "group:dev"
       }
     ],
     "dev-pkg": [
       {
         "specifier": "<3",
-        "marker": ""
+        "marker": "",
+        "source": "group:dev"
       }
     ],
     "missing": []

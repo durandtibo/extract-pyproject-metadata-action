@@ -122,8 +122,8 @@ and any other value fails the step.
 | `python-max`              | The highest of the `python-versions`, compared as numbers (`3.10` is higher than `3.9`), e.g. `3.11` for `>=3.10,<3.12`. Empty if `python-versions` is empty. Use it for the jobs that need the newest supported Python (for example a type checker or a latest-Python job).                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `extras`                  | JSON array of extra names, sorted by normalized name, with `extra-values` prepended. Duplicates are removed (the first occurrence is kept); names are compared per PEP 685, so `Foo_Bar` and `foo-bar` are the same extra.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `groups`                  | JSON array of the group names of `[dependency-groups]` (PEP 735), sorted by normalized name, without duplicates. `[]` if there is none.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `dependency-specifiers`   | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found (or a failure, with `fail-on-missing`), `""` if the requirement has no specifier. A warning is emitted if different specifiers are found for requirements with the same environment marker, if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, if an `include-group` names a group that does not exist, or if `dependencies` or `optional-dependencies` is listed in `[project].dynamic` without a static value (the build backend computes it, so the action cannot read it and finds nothing in it). |
-| `json`                    | The whole result in one value: a JSON object with the keys of the script output (the names of the other outputs with `_` instead of `-`: `normalized_name`, `python_versions`, ...), the `warnings` (an array of messages) and the `schema_version` (see [Development](#development)). Unlike the other outputs, arrays and objects are values, not strings, so `fromJSON(steps.metadata.outputs.json).extras` is the array of extras. Pass it to another job with one job output, or to a script. The step summary table leaves it out, as does the `📦` log line. `python-matrix` is not in it.                                                                                       |
+| `dependency-specifiers`   | JSON object mapping each requested package to its specifier (e.g. `{"invoke-tasklib": ">=0.0.8,<1.0.0"}`). `null` if not found (with a warning), `""` if the requirement has no specifier. A warning is emitted if a requirement string in the file is invalid and ignored, if `include-group` entries form a cycle, if an `include-group` names a group that does not exist, or if `dependencies` or `optional-dependencies` is listed in `[project].dynamic` without a static value (the build backend computes it, so the action cannot read it and finds nothing in it). |
+| `json`                    | The whole result in one value: a JSON object with the keys of the script output (the names of the other outputs with `_` instead of `-`: `normalized_name`, `python_versions`, ...), the `warnings` (an array of messages) and the `schema_version` (see [Development](#development)). Unlike the other outputs, arrays and objects are values, not strings, so `fromJSON(steps.metadata.outputs.json).extras` is the array of extras. Pass it to another job with one job output, or to a script. The `📦` log line leaves it out. `python-matrix` is not in it.                                                                                       |
 
 Warnings are emitted as `::warning file=<pyproject-path>::<message>` workflow
 commands, so GitHub attaches them to the file that is read (`pyproject-path` is
@@ -277,13 +277,11 @@ Anything else after the `@` (`numpy@dev`, `numpy@extra:`) fails the step. The ke
 
 The same package is often declared in more than one place (a runtime range in
 `[project].dependencies`, a pin in a group). With the plain name, `dependency-specifiers`
-reports the **first** requirement of the search order above, and the action warns when
-the places disagree: all the requirements of the package that have the same environment
-marker (or none) are compared, whichever place they are in, and different specifiers
-give a warning (which `strict` turns into a failure). A scoped entry only looks at its own
-place, so it reads the requirement of that place without such a warning. To see every
-requirement of the package, in search order and with its marker, read
-`dependency_requirements` in the `json` output (`fromJSON(...json).dependency_requirements`).
+reports the **first** requirement of the search order above, without a warning, since the
+places legitimately differ. A scoped entry only looks at its own place. To see every
+requirement of the package, in search order, with its marker and the place that declares it
+(`source`: `project`, `extra:<name>` or `group:<name>`), read `dependency_requirements` in
+the `json` output (`fromJSON(...json).dependency_requirements`).
 
 ```toml
 [project]
@@ -300,8 +298,8 @@ With `dependencies: '["numpy", "numpy@extra:fast", "pytest@group:dev", "pytest@p
 `dependency-specifiers` is
 `{"numpy":">=1.20","numpy@extra:fast":">=2","pytest@group:dev":"","pytest@project":null}`:
 the keys of `dependency-specifiers` and `dependency_requirements` are the entries as
-written. The plain `numpy` also warns here, because the three places have different
-specifiers (`>=1.20`, `>=2`, `>=1.26`), while the scoped entries do not. A package that the place does not declare, or a place that does not exist, gives `null`
+written. The plain `numpy` is the first of the three requirements (`>=1.20`, `>=2`, `>=1.26`),
+the scoped entries are explicit. A package that the place does not declare, or a place that does not exist, gives `null`
 (and an empty array in `dependency_requirements`) with a warning (so `strict` fails the step).
 
 ## Environment markers
@@ -324,8 +322,7 @@ dependencies = [
 
 With `dependencies: '["numpy"]'`, `dependency-specifiers` is
 `{"numpy":">=1.20"}` on every runner, including a Python 3.12 one. Requirements
-with different markers are expected to differ, so they do not trigger a
-warning; two requirements with the same marker and different specifiers do. If
+with different markers are expected to differ. If
 a workflow needs the specifier that applies to a given Python version, read it
 from `dependency_requirements` in `json`, which lists all the requirements of a package
 with their markers (the workflow chooses the one that applies; the action still
@@ -357,7 +354,6 @@ warnings.
 | `[project].requires-python is not a valid version specifier`    | `requires-python` cannot be parsed: `python-versions` is empty.                                                                         |
 | `no python-candidates version satisfies`                        | No version of `python-candidates` is allowed by `requires-python`: `python-versions` is empty.                     |
 | `Ignoring invalid requirement`                                  | A requirement string of `[project].dependencies`, an extra or a group cannot be parsed: it is skipped.                                  |
-| `has different specifiers`                                      | A package has requirements with the same environment marker and different specifiers (see [Environment markers](#environment-markers)). |
 | `has an include-group cycle`                                    | The `include-group` entries of `[dependency-groups]` include each other in a loop (when `dependencies` is not empty).                   |
 | `does not match any group`                                      | An `include-group` names a group that does not exist (when `dependencies` is not empty).                                                |
 | `[project].dependencies is dynamic, it cannot be read`          | `dependencies` is in `dynamic` and not set: the build backend computes it, so the action finds no requirement in it.                    |
