@@ -99,11 +99,10 @@ jobs:
 | `pyproject-path`          | Path to `pyproject.toml`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | No       | `pyproject.toml`                       |
 | `extra-values`            | JSON array of additional values to prepend to the extras read from `pyproject.toml`, for callers that need a non-package value too (e.g. `[""]` for a "no extra" baseline, or `["all"]`).                                                                                                                                                                                                                                                                                                                                            | No       | `[]`                                   |
 | `dependencies`            | JSON array of package names whose version specifier is looked up in `[project].dependencies`, `[project.optional-dependencies]`, then `[dependency-groups]` (including `include-group`); first match wins (also between requirements with different environment markers), names compared per PEP 503. A name followed by `@project`, `@extra:<name>` or `@group:<name>` is looked up in `[project].dependencies`, that extra or that group only (see [Looking up a dependency in one place](#looking-up-a-dependency-in-one-place)). | No       | `[]`                                   |
-| `resolve-dynamic-version` | `true` to read a version listed in `[project].dynamic` from the file that the build backend reads it from, without running any code of the project (see [Dynamic version](#dynamic-version)). A version that is found is used as a static one.                                                                                                                                                                                                                                                                                       | No       | `false`                                |
 | `python-candidates`       | JSON array of `major.minor` Python versions to choose from for the `python-versions` output (e.g. `["3.11","3.12"]`). Each must be of the form `3.12`; duplicates are removed.                                                                                                                                                                                                                                                                                                                                                       | No       | `["3.11","3.12","3.13","3.14","3.15"]` |
 | `strict`                  | `true` to fail when there is any warning (listed in the error), instead of only reporting it, for example a dynamic `version` or a package of `dependencies` that is not found. Use it in release jobs that need a static version. Use it in CI to keep a `pyproject.toml` free of suspicious input.                                                                                                                                                                                                                                                                                                                                                                      | No       | `false`                                |
 
-`resolve-dynamic-version` and `strict` are boolean inputs: the
+`strict` is a boolean input: the
 value must be `true` or `false`, the case and the surrounding spaces are ignored,
 and any other value fails the step.
 
@@ -208,46 +207,12 @@ Python versions exist.
 
 ## Dynamic version
 
-When `version` is listed in `[project].dynamic`, the version output is empty (with a
-warning) because the build backend computes it. With `resolve-dynamic-version: "true"`,
-the action first looks for it in the file that the backend reads it from. It only
-**reads** that file: no code of the project is imported or run, and no build backend
-is started. Two declarations are understood:
-
-```toml
-[project]
-name = "pkg"
-dynamic = ["version"]
-
-# setuptools: the text of a file ...
-[tool.setuptools.dynamic]
-version = { file = "VERSION" }
-
-# ... or a string literal of a module (found with `ast`, never imported)
-# version = { attr = "pkg.__version__" }
-```
-
-```toml
-# hatch: the first match of a regular expression (default: `__version__ = "1.2.3"`
-# or `VERSION = "1.2.3"`), or of the `pattern` that has a `version` group
-[tool.hatch.version]
-path = "src/pkg/__about__.py"
-```
-
-- Files are looked up relative to the directory of the `pyproject.toml` and must stay
-  inside it; a file larger than 1 MiB is not read. For `attr`, the module is searched
-  in the `[tool.setuptools.package-dir]` directory, then in `src` and in the directory
-  itself (`pkg.py` or `pkg/__init__.py`); it must assign a string literal, not a tuple
-  or a call.
-- The version must be a valid [PEP 440](https://peps.python.org/pep-0440/) version.
-  It is then used like a static one: `version` is the text of the file and
-  `normalized-version` its canonical form, and there is no warning.
-- When it cannot be resolved (another backend, a version computed from git tags by
-  `setuptools-scm` or `hatch-vcs`, a missing file, a pattern that does not match), the
-  warning says why and the usual handling of a dynamic version applies: an empty
-  `version` (and a failure with `strict`).
-- `pattern` is a regular expression of the file: a pathological one can make the step
-  slow, as it can in the build. Use `strict` or a job `timeout-minutes` as usual.
+When `version` is listed in `[project].dynamic`, the `version` and `normalized-version`
+outputs are empty, with a warning, because the build backend computes the version
+(`setuptools-scm`, `hatch-vcs`, a file, ...). The action never reads it from the files of
+the backend. A release job that needs a version uses `strict: "true"` so that a dynamic
+version fails the step, and asks the backend for it (`python -m build`, `hatch version`,
+`python -m setuptools_scm`, ...).
 
 ## Looking up a dependency in one place
 
@@ -409,7 +374,6 @@ The action's step fails (non-zero exit) when:
 - `extra-values` is not valid JSON, or is not a JSON array of strings.
 - `dependencies` is not a JSON array of strings, or an entry has a scope other than `project`,
   `extra:<name>` and `group:<name>` (for example `numpy@dev`).
-- `resolve-dynamic-version` is not `true` or `false`.
 - `strict` is not `true` or `false`, or is `true` and there is a warning (the
   error lists them; no output is written).
 

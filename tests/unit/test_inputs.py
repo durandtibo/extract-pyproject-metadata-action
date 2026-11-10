@@ -26,7 +26,6 @@ def test_parse_inputs() -> None:
         "dependencies": '["numpy@project"]',
         "python-candidates": '["3.12", "3.12", "3.13"]',
         "strict": " TRUE",
-        "resolve-dynamic-version": "TRUE",
     }
 
     assert parse_inputs(raw) == Inputs(
@@ -35,7 +34,6 @@ def test_parse_inputs() -> None:
         dependencies=["numpy@project"],
         python_candidates=["3.12", "3.13"],
         strict=True,
-        resolve_dynamic_version=True,
     )
 
 
@@ -46,12 +44,11 @@ def test_parse_inputs_defaults() -> None:
         dependencies=[],
         python_candidates=["3.11", "3.12", "3.13", "3.14", "3.15"],
         strict=False,
-        resolve_dynamic_version=False,
     )
 
 
-@pytest.mark.parametrize("name", ["strict", "resolve-dynamic-version"])
-def test_parse_inputs_invalid_boolean(name: str) -> None:
+def test_parse_inputs_invalid_strict() -> None:
+    name = "strict"
     with pytest.raises(MetadataError, match=rf"{name} must be 'true' or 'false', got: 'maybe'"):
         parse_inputs({name: "maybe"})
 

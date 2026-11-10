@@ -37,7 +37,6 @@ DEFAULT_INPUTS = {
     "dependencies": "[]",
     "python-candidates": DEFAULT_PYTHON_CANDIDATES,
     "strict": "false",
-    "resolve-dynamic-version": "false",
 }
 
 # A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
@@ -167,7 +166,4 @@ def parse_inputs(raw: Mapping[str, str]) -> Inputs:
         dependencies=parse_dependencies(values["dependencies"]),
         python_candidates=parse_python_candidates(values["python-candidates"]),
         strict=parse_bool(values["strict"], "strict"),
-        resolve_dynamic_version=parse_bool(
-            values["resolve-dynamic-version"], "resolve-dynamic-version"
-        ),
     )

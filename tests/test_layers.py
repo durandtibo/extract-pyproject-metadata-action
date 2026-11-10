@@ -27,7 +27,6 @@ RANKS = {
     "inputs": 1,
     "checks": 1,
     "pyproject": 2,
-    "dynamic_version": 2,
     "metadata": 3,
     "requirements": 4,
     "python_versions": 4,

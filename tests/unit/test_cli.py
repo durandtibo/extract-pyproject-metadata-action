@@ -354,8 +354,7 @@ def test_main_invalid_strict_returns_one(
 
 def test_parse_cli_inputs_maps_every_option() -> None:
     args = parse_args(
-        "--strict", "true", "--python-candidates", '["3.12"]',
-        "--resolve-dynamic-version", "true", "p.toml", '["a"]', '["numpy"]',
+        "--strict", "true", "--python-candidates", '["3.12"]', "p.toml", '["a"]', '["numpy"]',
     )  # fmt: skip
 
     assert parse_cli_inputs(args) == parse_inputs(
@@ -365,7 +364,6 @@ def test_parse_cli_inputs_maps_every_option() -> None:
             "dependencies": '["numpy"]',
             "python-candidates": '["3.12"]',
             "strict": "true",
-            "resolve-dynamic-version": "true",
         }
     )
 

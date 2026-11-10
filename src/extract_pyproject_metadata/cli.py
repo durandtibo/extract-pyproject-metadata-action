@@ -8,8 +8,7 @@ the Python versions that ``requires-python`` allows, and looks up the dependenci
 it is asked to.
 
 Usage:
-    extract_metadata.py [--github-output FILE] [--resolve-dynamic-version true|false]
-        [--strict true|false]
+    extract_metadata.py [--github-output FILE] [--strict true|false]
         [--python-candidates JSON] [--] <pyproject-path> <extra-values-json>
         [<dependencies-json>]
 
@@ -52,14 +51,6 @@ otherwise.
 With ``--strict true``, any warning is an error instead: the outputs are not
 written and the message lists the warnings. A requested dependency that is not
 found (a ``null`` specifier) and a dynamic ``version`` are warnings.
-
-With ``--resolve-dynamic-version true``, a ``version`` that is listed in
-``[project].dynamic`` is looked for in the file that the build backend reads it
-from, without running any code of the project: ``[tool.setuptools.dynamic].version``
-(``file``, or ``attr`` for a ``__version__ = "..."`` literal) and ``[tool.hatch.version]``
-(``path`` and ``pattern``). A version that is found is used as a static one (so it
-is not a warning); otherwise the reason is a warning, followed by the usual
-handling of a dynamic version.
 
 ``python_versions`` lists the ``--python-candidates`` (a JSON array of
 "major.minor" strings) that ``[project].requires-python`` allows, and
@@ -150,12 +141,6 @@ def _build_parser(prog: str) -> _ArgumentParser:
         help="append the action outputs to FILE and print workflow commands instead of JSON",
     )
     parser.add_argument(
-        "--resolve-dynamic-version",
-        metavar="BOOL",
-        default="false",
-        help="'true' to read a dynamic version from the file of the build backend (default: false)",
-    )
-    parser.add_argument(
         "--strict",
         metavar="BOOL",
         default="false",
@@ -197,7 +182,6 @@ def parse_cli_inputs(args: argparse.Namespace) -> Inputs:
             "dependencies": args.dependencies,
             "python-candidates": args.python_candidates,
             "strict": args.strict,
-            "resolve-dynamic-version": args.resolve_dynamic_version,
         }
     )
 
