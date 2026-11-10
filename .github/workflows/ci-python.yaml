@@ -42,11 +42,11 @@ jobs:
       # The coverage gate runs on one cell only: the coverage does not depend on the OS or Python version.
       - name: Run the tests with coverage
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
-        run: make test PYTHON_RUN=
+        run: pytest -q --cov
 
       - name: Run the tests
         if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14') }}
-        run: make test-no-cov PYTHON_RUN=
+        run: pytest -q
 
   properties:
     permissions:

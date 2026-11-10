@@ -40,10 +40,6 @@ types: ## Check the types of the package and the script (pyright, strict)
 test: ## Run the tests with the coverage gate
 	$(PYTHON_RUN) pytest -q --cov
 
-.PHONY: test-no-cov
-test-no-cov: ## Run the tests without coverage
-	$(PYTHON_RUN) pytest -q
-
 .PHONY: test-properties
 test-properties: ## Run the property-based tests (needs the property group)
 	$(PYTHON_RUN) pytest -q tests/properties
