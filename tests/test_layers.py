@@ -1,7 +1,8 @@
 """Test that the modules of ``extract_pyproject_metadata`` import one way.
 
-A module may only import from a module of a lower rank (see the
-architecture in ``CLAUDE.md``), or from its own sub-package.
+A module may only import from a module of a lower rank, or from its own sub-package.
+``RANKS`` below is the source of the import graph; the architecture in ``CLAUDE.md``
+describes it.
 """
 
 from __future__ import annotations

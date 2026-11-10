@@ -15,18 +15,19 @@ fixtures used by the integration workflows.
 
 The package `src/extract_pyproject_metadata/` is split by concern. Imports go one
 way, from the bottom of this list to the top, and a module never imports from a
-module above it:
+module above it (`tests/test_layers.py` holds the ranks and is the source of the graph):
 
-1. `errors` (`MetadataError`), `types` (`Inputs`, `Project`, `Report`), `warning_codes`
-   (the codes of the warnings), `checks`
-   (type checks of the values read from the file), `inputs` (`parse_inputs`: the
-   single place that validates the input strings and builds `Inputs`).
-2. `pyproject` (read and parse the file; `read_project`: name, version,
-   `requires-python`, `dynamic`, extras and groups, as a `Project`). Only what the
-   action outputs is read and validated; `report` derives the normalized names.
+1. `errors` (`MetadataError`), `types` (`Inputs`, `Project`, `Report`): no import of the
+   package. Then `warning_codes` (the codes of the warnings), `checks` (type checks of the
+   values read from the file) and `python_versions` (the default `python-candidates` and the
+   compatible versions; it depends on `types` and the vendored `packaging` only).
+2. `inputs` (`parse_inputs`: the single place that validates the input strings and builds
+   `Inputs`; it imports `python_versions` for the default) and `pyproject` (read and parse the
+   file; `read_project`: name, version, `requires-python`, `dynamic`, extras and groups, as a
+   `Project`). Only what the action outputs is read and validated; `report` derives the
+   normalized names.
 3. `requirements` (the requirements of `[project].dependencies`, the extras and the
-   groups with `include-group`, and the lookup of the requested dependencies) and
-   `python_versions`.
+   groups with `include-group`, and the lookup of the requested dependencies).
 4. `github`: the action outputs (`$GITHUB_OUTPUT`), the workflow commands (annotations),
    the log line and their escaping. It only depends on `types` and `errors`.
 5. `report` (`build_report`) wires 2 to 4 together; `cli` (`main`: reads the
