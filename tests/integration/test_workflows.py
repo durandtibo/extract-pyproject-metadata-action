@@ -77,7 +77,9 @@ def test_the_local_workflow_repeats_the_defaults_of_the_inputs() -> None:
     for name, default in DEFAULT_INPUTS.items():
         if name == "pyproject-path":
             continue
-        assert f"fromJSON(steps.case.outputs.inputs)['{name}'] || '{default}'" in local
+        # The action takes its own default for an empty python-candidates.
+        shown = "" if name == "python-candidates" else default
+        assert f"fromJSON(steps.case.outputs.inputs)['{name}'] || '{shown}'" in local
         assert re.search(rf"(?m)^  {re.escape(name)}:$", action)
 
 

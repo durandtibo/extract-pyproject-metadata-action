@@ -38,8 +38,9 @@ inputs:
   python-candidates:
     description: >
       JSON array of "major.minor" Python versions to choose from for the
-      python-versions output (e.g. '["3.11","3.12"]')
-    default: '["3.11","3.12","3.13","3.14","3.15"]'
+      python-versions output (e.g. '["3.11","3.12"]'); empty for the supported
+      CPython versions, listed in the README
+    default: ""
 
   strict:
     description: >

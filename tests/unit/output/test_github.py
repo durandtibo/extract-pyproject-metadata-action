@@ -78,7 +78,7 @@ def test_format_outputs_json_is_the_whole_report_in_compact_form() -> None:
     assert result.startswith(
         '{"name":"coola","normalized_name":"coola","file_name":"coola","version":"1.2.3",'
     )
-    assert result.endswith('"warnings":[],"schema_version":1}')
+    assert result.endswith('"warnings":[],"schema_version":2}')
     assert json.loads(result) == METADATA
 
 
@@ -157,7 +157,7 @@ def test_format_outputs_normalized_version() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
-        schema_version=1,
+        schema_version=2,
     )
 
     outputs = format_outputs(report)
@@ -182,7 +182,7 @@ def test_readme_lists_the_outputs_of_the_log_line() -> None:
     readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
     listed = ", ".join(f"`{field}`" for field in output_github_module._SUMMARY_FIELDS)
 
-    assert f"The line shows {listed};" in readme
+    assert f"The line shows {listed}." in readme
 
 
 def test_log_line_leaves_out_only_derived_outputs() -> None:

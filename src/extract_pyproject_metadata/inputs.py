@@ -150,8 +150,8 @@ def parse_inputs(raw: Mapping[str, str]) -> Inputs:
     invalid one is reported.
 
     Args:
-        raw: The input strings by input name (``fail-on-missing``, ...). An input that is
-            missing takes its value in ``DEFAULT_INPUTS``.
+        raw: The input strings by input name (``strict``, ...). An input that is missing
+            takes its value in ``DEFAULT_INPUTS``; an empty ``python-candidates`` too.
 
     Returns:
         The parsed inputs.
@@ -160,6 +160,9 @@ def parse_inputs(raw: Mapping[str, str]) -> Inputs:
         MetadataError: If an input is invalid.
     """
     values = {**DEFAULT_INPUTS, **raw}
+    # The action passes an empty string when the caller does not set python-candidates, so that
+    # the list of the supported versions is defined here only.
+    values["python-candidates"] = values["python-candidates"] or DEFAULT_PYTHON_CANDIDATES
     return Inputs(
         pyproject_path=values["pyproject-path"],
         extra_values=parse_string_array(values["extra-values"], "extra-values"),

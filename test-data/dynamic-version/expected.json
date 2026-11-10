@@ -23,5 +23,5 @@
   "warnings": [
     "test-data/dynamic-version/pyproject.toml: [project].version is dynamic, the version output is empty"
   ],
-  "schema_version": 1
+  "schema_version": 2
 }

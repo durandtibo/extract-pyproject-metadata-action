@@ -170,4 +170,11 @@ def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
 def test_readme_default_of_python_candidates_matches_the_script() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
 
-    assert f"| `{DEFAULT_PYTHON_CANDIDATES}` |" in readme
+    assert (
+        f"<!-- candidates:start -->\n`{DEFAULT_PYTHON_CANDIDATES}`\n<!-- candidates:end -->"
+        in readme
+    )
+
+
+def test_parse_inputs_empty_python_candidates_is_the_default() -> None:
+    assert parse_inputs({"python-candidates": ""}) == parse_inputs({})

@@ -20,7 +20,7 @@ from extract_pyproject_metadata.types import Inputs, Report
 __all__ = ["SCHEMA_VERSION", "build_report"]
 
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def build_report(inputs: Inputs) -> Report:

@@ -15,5 +15,5 @@
   "warnings": [
     "test-data/python-candidates-none/pyproject.toml: no python-candidates version satisfies [project].requires-python ('>=3.10,<4'): python-versions is empty, and a job matrix built from it is rejected by GitHub"
   ],
-  "schema_version": 1
+  "schema_version": 2
 }

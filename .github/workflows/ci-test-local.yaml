@@ -148,7 +148,7 @@ jobs:
           pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
           extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
           dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
-          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '["3.11","3.12","3.13","3.14","3.15"]' }}
+          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '' }}
           strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
 
       - name: ✓ Compare the json output with the golden file

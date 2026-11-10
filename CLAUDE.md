@@ -83,7 +83,12 @@ module above it:
   output of the action).
 - When a PR conflicts with `main`, merge `origin/main` into the branch (do not
   rebase and force-push).
-- Update `README.md` when inputs, outputs or failure modes change.
+- Update `README.md` when inputs, outputs or failure modes change. The tables of inputs and
+  outputs and the default `python-candidates` are generated from `action.yaml` and the code:
+  run `make docs` (CI fails on a diff). Every YAML and TOML block of the README is a fixture
+  (`tests/examples/*.yaml`, `test-data/readme-example/`) that a test compares with the
+  README; the README tells the current behaviour only, no history. Release notes go to the
+  GitHub release.
 
 ## Action (`action.yaml`)
 

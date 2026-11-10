@@ -48,6 +48,9 @@ jobs:
       - name: Check that nightly-test-stable.yaml is generated from ci-test-local.yaml
         run: python scripts/generate_workflows.py --check
 
+      - name: Check that the tables of README.md are generated from action.yaml
+        run: python scripts/generate_docs.py --check
+
   verify-workflows:
     runs-on: ubuntu-slim
     timeout-minutes: 5
