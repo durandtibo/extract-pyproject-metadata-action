@@ -26,6 +26,7 @@ jobs:
       - name: Compare the vendored version with the latest release
         id: compare
         run: |
+          # shellcheck disable=SC2016  # the backticks of the README are literal
           vendored="$(sed -n 's/^- `packaging` \([^,]*\),.*/\1/p' src/extract_pyproject_metadata/_vendor/README.md)"
           latest="$(curl -fsS https://pypi.org/pypi/packaging/json | jq -r .info.version)"
           echo "vendored=$vendored" >> "$GITHUB_OUTPUT"
