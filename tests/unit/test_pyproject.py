@@ -11,11 +11,9 @@ import pytest
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.pyproject import (
-    _required_name,
-    _required_version,
+    _read_name,
+    _read_version,
     _static_and_dynamic_warnings,
-    _valid_name,
-    _valid_version,
     load_pyproject,
     read_extra_names,
     read_group_names,
@@ -567,18 +565,33 @@ def test_read_project_normalized_name(tmp_path: Path, name: str, expected: str) 
     assert metadata["normalized_name"] == expected
 
 
-def test_required_name() -> None:
-    assert _required_name({"name": 1}, []) == 1
+@pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
+def test_read_name(name: str) -> None:
+    assert _read_name({"name": name}, []) == name
 
 
-def test_required_name_missing() -> None:
+def test_read_name_missing() -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].name: missing$"):
-        _required_name({}, ["version"])
+        _read_name({}, ["version"])
 
 
-def test_required_name_dynamic() -> None:
+def test_read_name_dynamic() -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].name: listed in .*static name$"):
-        _required_name({}, ["name"])
+        _read_name({}, ["name"])
+
+
+@pytest.mark.parametrize("name", [1, "", None, ["a"]])
+def test_read_name_not_a_non_empty_string(name: object) -> None:
+    with pytest.raises(
+        MetadataError, match=r"^\[project\].name: must be a non-empty string, got: "
+    ):
+        _read_name({"name": name}, [])
+
+
+@pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
+def test_read_name_not_a_project_name(name: str) -> None:
+    with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
+        _read_name({"name": name}, [])
 
 
 def test_static_and_dynamic_warnings() -> None:
@@ -603,22 +616,18 @@ def test_static_and_dynamic_warnings_none() -> None:
     assert _static_and_dynamic_warnings({"name": "a"}, ["version"]) == []
 
 
-def test_required_version_static() -> None:
-    assert _required_version({"version": "1.0"}, []) == (
-        "1.0",
-        True,
-        [],
-    )
+@pytest.mark.parametrize("version", ["1.0-RC1", "1.2.3", "v1.0"])
+def test_read_version_static(version: str) -> None:
+    assert _read_version({"version": version}, []) == (version, [])
 
 
-def test_required_version_is_returned_whatever_its_type() -> None:
-    assert _required_version({"version": 1.0}, []) == (1.0, True, [])
+def test_read_version_static_wins_over_dynamic() -> None:
+    assert _read_version({"version": "1.0"}, ["version"]) == ("1.0", [])
 
 
-def test_required_version_dynamic_warns() -> None:
-    assert _required_version({}, ["version"]) == (
-        "",
-        False,
+def test_read_version_dynamic_warns() -> None:
+    assert _read_version({}, ["version"]) == (
+        None,
         [
             ReportWarning(
                 "dynamic-version", "[project].version is dynamic, the version output is empty"
@@ -627,50 +636,32 @@ def test_required_version_dynamic_warns() -> None:
     )
 
 
-def test_required_version_missing() -> None:
+def test_read_version_missing() -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].version: missing$"):
-        _required_version({}, ["readme"])
+        _read_version({}, ["readme"])
 
 
-@pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
-def test_valid_name(name: str) -> None:
-    assert _valid_name(name) == name
-
-
-@pytest.mark.parametrize("name", [1, "", None, ["a"]])
-def test_valid_name_not_a_non_empty_string(name: object) -> None:
-    with pytest.raises(
-        MetadataError, match=r"^\[project\].name: must be a non-empty string, got: "
-    ):
-        _valid_name(name)
-
-
-@pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
-def test_valid_name_not_a_project_name(name: str) -> None:
-    with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
-        _valid_name(name)
-
-
-@pytest.mark.parametrize("version", ["1.0-RC1", "1.2.3", "v1.0"])
-def test_valid_version_static(version: str) -> None:
-    assert _valid_version(version, True) == version
-
-
-def test_valid_version_dynamic() -> None:
-    assert _valid_version("", False) is None
-
-
-def test_valid_version_not_a_string() -> None:
+def test_read_version_not_a_string() -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].version: must be a string, got: 1.0$"):
-        _valid_version(1.0, True)
+        _read_version({"version": 1.0}, [])
 
 
-def test_valid_version_invalid() -> None:
+def test_read_version_invalid() -> None:
     with pytest.raises(
         MetadataError,
         match=r"^\[project\].version: not a valid PEP 440 version: 'latest'$",
     ):
-        _valid_version("latest", True)
+        _read_version({"version": "latest"}, [])
+
+
+def test_read_project_reports_the_name_before_the_version() -> None:
+    with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
+        read_project({"project": {"name": "a b", "version": "latest"}}, [])
+
+
+def test_read_project_reports_an_invalid_name_before_a_missing_version() -> None:
+    with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
+        read_project({"project": {"name": "a b"}}, [])
 
 
 @pytest.mark.parametrize(
