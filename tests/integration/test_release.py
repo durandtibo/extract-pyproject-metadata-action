@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import re
-import subprocess
-
 import pytest
 import yaml
 
@@ -80,23 +77,13 @@ def test_ci_can_be_called_by_the_release() -> None:
     assert "workflow_call" in ci[True]
 
 
-@pytest.mark.parametrize(
-    ("tag", "minor"),
-    [("v0.3.0", "v0.3"), ("v0.3.1", "v0.3"), ("v1.2.3", "v1.2"), ("v10.20.30", "v10.20")],
-)
-def test_the_minor_tag_of_a_release(tag: str, minor: str) -> None:
-    run = RELEASE["jobs"]["release"]["steps"][-1]["run"]
-    expression = re.search(r'minor="(\$\{TAG[^}]*\})"', run)
-    assert expression is not None
+def test_the_release_creates_the_release_and_moves_no_tag() -> None:
+    steps = RELEASE["jobs"]["release"]["steps"]
+    commands = " ".join(step.get("run", "") for step in steps)
 
-    result = subprocess.run(
-        ["bash", "-c", f'TAG={tag}; echo "{expression.group(1)}"'],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert result.stdout.strip() == minor
+    assert "gh release create" in commands
+    assert "git tag" not in commands
+    assert "git push" not in commands
 
 
 def test_dependabot_groups_the_updates() -> None:
