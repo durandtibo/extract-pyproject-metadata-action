@@ -26,26 +26,15 @@ def test_build_report(tmp_path: Path) -> None:
     assert report == {
         "name": "p",
         "normalized_name": "p",
+        "file_name": "p",
         "version": "1",
         "normalized_version": "1",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license_files": [],
-        "authors": [],
-        "urls": {},
-        "keywords": [],
-        "classifiers": [],
-        "scripts": {},
         "requires_python": "",
         "extras": ["", "a"],
         "groups": ["base", "dev", "other"],
-        "build_backend": "",
-        "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
         "python_max": "3.15",
-        "project_dependencies": {"Foo_Bar": "<2,>=1", "nospec": "", "withextra": ">=3"},
         "dependency_specifiers": {"dup": ">=1", "missing": None},
         "dependency_requirements": {
             "dup": [{"specifier": ">=1", "marker": ""}, {"specifier": ">=2", "marker": ""}],
@@ -99,12 +88,11 @@ def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
     )
 
     with pytest.raises(MetadataError) as excinfo:
-        build_report(parse_inputs_args("--strict", "true", str(path), "[]"))
+        build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["x"]'))
 
     lines = str(excinfo.value).splitlines()
-    assert lines[0] == "strict is 'true' and there are 2 warning(s):"
-    assert lines[1].startswith("- ")
-    assert lines[2].startswith("- ")
+    assert lines[0] == "strict is 'true' and there are 3 warning(s):"
+    assert len([line for line in lines if line.startswith("- ")]) == 3
 
 
 def test_build_report_strict_without_warnings(tmp_path: Path) -> None:

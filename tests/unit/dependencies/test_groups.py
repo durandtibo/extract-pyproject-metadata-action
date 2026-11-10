@@ -10,10 +10,9 @@ import pytest
 from extract_pyproject_metadata.dependencies.groups import flatten_group
 from extract_pyproject_metadata.dependencies.requirements import (
     candidate_requirements,
-    extract_project_dependencies,
 )
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.fields import read_group_names
+from extract_pyproject_metadata.pyproject import read_group_names
 from tests.helpers import (
     GROUPS_TOML,
     chain_of_groups,
@@ -334,12 +333,3 @@ def test_group_names_without_groups() -> None:
 def test_group_names_must_be_a_table() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[dependency-groups\] must be a table"):
         read_group_names({"dependency-groups": []}, "p.toml")
-
-
-def test_extract_project_dependencies_ignores_extras_and_groups() -> None:
-    data = {
-        "project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}},
-        "dependency-groups": {"dev": ["c"]},
-    }
-
-    assert extract_project_dependencies(data) == ({"a": ""}, [])

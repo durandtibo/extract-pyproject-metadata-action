@@ -14,7 +14,6 @@ from extract_pyproject_metadata.output.github import (
     format_outputs,
     format_summary,
     new_delimiter,
-    oversized_outputs,
     write_github_output,
 )
 from extract_pyproject_metadata.report import build_report
@@ -60,44 +59,33 @@ def test_format_outputs() -> None:
     assert outputs == {
         "name": "coola",
         "normalized-name": "coola",
+        "file-name": "coola",
         "version": "1.2.3",
         "normalized-version": "1.2.3",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license-files": "[]",
-        "authors": "[]",
-        "urls": "{}",
-        "keywords": "[]",
-        "classifiers": "[]",
-        "scripts": "{}",
         "requires-python": ">=3.10",
         "extras": '["","numpy"]',
         "groups": '["dev","test"]',
-        "build-backend": "",
-        "build-requires": "[]",
         "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
         "python-min": "3.11",
         "python-max": "3.15",
-        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
-        "project-dependencies": '{"numpy":">=1","Foo_Bar":""}',
         "dependency-specifiers": '{"numpy":">=1","missing":null}',
-        "dependency-requirements": '{"numpy":[{"specifier":">=1","marker":""}],"missing":[]}',
     }
 
 
 def test_format_outputs_json_is_the_whole_report_in_compact_form() -> None:
     result = format_outputs(METADATA)["json"]
 
-    assert result.startswith('{"name":"coola","normalized_name":"coola","version":"1.2.3",')
+    assert result.startswith(
+        '{"name":"coola","normalized_name":"coola","file_name":"coola","version":"1.2.3",'
+    )
     assert result.endswith('"warnings":[],"schema_version":1}')
     assert json.loads(result) == METADATA
 
 
 def test_format_outputs_json_keeps_non_ascii_characters() -> None:
-    metadata: Report = {**METADATA, "description": "é"}
+    metadata: Report = {**METADATA, "requires_python": "é"}
 
-    assert '"description":"é"' in format_outputs(metadata)["json"]
+    assert '"requires_python":"é"' in format_outputs(metadata)["json"]
 
 
 def test_format_outputs_keeps_non_ascii_characters() -> None:
@@ -153,96 +141,19 @@ def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert parse_github_output(output.read_text(encoding="utf-8")) == format_outputs(report)
 
 
-def test_format_outputs_python_matrix() -> None:
-    report = Report(
-        name="a",
-        normalized_name="a",
-        version="1",
-        normalized_version="1",
-        description="",
-        readme="",
-        license="",
-        license_files=[],
-        authors=[],
-        urls={},
-        keywords=[],
-        classifiers=[],
-        scripts={},
-        requires_python="",
-        extras=[],
-        groups=[],
-        build_backend="",
-        build_requires=[],
-        python_versions=["3.11", "3.12"],
-        python_min="3.11",
-        python_max="3.12",
-        project_dependencies={},
-        dependency_specifiers={},
-        dependency_requirements={},
-        warnings=[],
-        schema_version=1,
-    )
-
-    assert format_outputs(report)["python-matrix"] == '{"python-version":["3.11","3.12"]}'
-
-
-def test_format_outputs_python_matrix_without_allowed_version() -> None:
-    report = Report(
-        name="a",
-        normalized_name="a",
-        version="1",
-        normalized_version="1",
-        description="",
-        readme="",
-        license="",
-        license_files=[],
-        authors=[],
-        urls={},
-        keywords=[],
-        classifiers=[],
-        scripts={},
-        requires_python=">=4",
-        extras=[],
-        groups=[],
-        build_backend="",
-        build_requires=[],
-        python_versions=[],
-        python_min="",
-        python_max="",
-        project_dependencies={},
-        dependency_specifiers={},
-        dependency_requirements={},
-        warnings=[],
-        schema_version=1,
-    )
-
-    assert format_outputs(report)["python-matrix"] == '{"python-version":[]}'
-
-
 def test_format_outputs_normalized_version() -> None:
     report = Report(
         name="a",
         normalized_name="a",
+        file_name="a",
         version="1.0-RC1",
         normalized_version="1.0rc1",
-        description="",
-        readme="",
-        license="",
-        license_files=[],
-        authors=[],
-        urls={},
-        keywords=[],
-        classifiers=[],
-        scripts={},
         requires_python="",
         extras=[],
         groups=[],
-        build_backend="",
-        build_requires=[],
         python_versions=[],
         python_min="",
         python_max="",
-        project_dependencies={},
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
@@ -274,25 +185,13 @@ def test_readme_lists_the_outputs_of_the_log_line() -> None:
     assert f"The line shows {listed};" in readme
 
 
-def test_log_line_leaves_out_only_derived_or_long_outputs() -> None:
+def test_log_line_leaves_out_only_derived_outputs() -> None:
     omitted = set(_action_section_keys("outputs")) - set(output_github_module._SUMMARY_FIELDS)
 
     assert omitted == {
         "normalized-name",
+        "file-name",
         "normalized-version",
-        "description",
-        "readme",
-        "license",
-        "license-files",
-        "authors",
-        "urls",
-        "keywords",
-        "classifiers",
-        "scripts",
-        "build-backend",
-        "build-requires",
-        "python-matrix",
-        "dependency-requirements",
         "json",
     }
 
@@ -302,7 +201,6 @@ def test_format_summary() -> None:
         "📦 name=coola version=1.2.3 requires-python=>=3.10 "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","numpy"] '
         'groups=["dev","test"] '
-        'project-dependencies={"numpy":">=1","Foo_Bar":""} '
         'dependency-specifiers={"numpy":">=1","missing":null}'
     )
 
@@ -336,21 +234,3 @@ def test_write_github_output_appends(tmp_path: Path) -> None:
     write_github_output(str(output), {"name": "coola"}, lambda: "DELIM")
 
     assert output.read_text(encoding="utf-8") == "previous=step\nname<<DELIM\ncoola\nDELIM\n"
-
-
-@pytest.mark.parametrize(
-    ("outputs", "expected"),
-    [
-        ({}, []),
-        ({"a": "x" * 899_999}, []),
-        ({"a": "x" * 900_000}, ["a"]),
-        ({"a": "x", "b": "y" * 900_000, "c": "z" * 950_000}, ["b", "c"]),
-        # The size is in bytes of UTF-8: "é" takes 2.
-        ({"a": "é" * 450_000}, ["a"]),
-        ({"a": "é" * 449_999}, []),
-    ],
-)
-def test_oversized_outputs_lists_the_outputs_of_900_kb_or_more(
-    outputs: dict[str, str], expected: list[str]
-) -> None:
-    assert oversized_outputs(outputs) == expected

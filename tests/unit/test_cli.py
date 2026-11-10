@@ -100,122 +100,18 @@ def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
     assert "cannot write the job summary" not in err
 
 
-def test_main_description_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\ndescription = "Two\\nlines"\n'
-    )
-    output = tmp_path / "github_output"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["description"] == "Two\nlines"
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["description"] == "Two\nlines"
-    assert "description=" not in capsys.readouterr().out
-
-
 def test_main_json_keeps_non_ascii_characters(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\ndescription = "Héllo ✓"\n'
+        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = "Héllo ✓"\n'
     )
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
 
     out = capsys.readouterr().out
-    assert '"description": "Héllo ✓"' in out
+    assert '"requires_python": "Héllo ✓"' in out
     assert "\\u" not in out
-
-
-def test_main_license_files_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\nlicense-files = ["LICENSE", "licenses/*.txt"]\n',
-    )
-    output = tmp_path / "github_output"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["license_files"] == ["LICENSE", "licenses/*.txt"]
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["license-files"] == (
-        '["LICENSE","licenses/*.txt"]'
-    )
-
-
-def test_main_keywords_classifiers_and_scripts_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\nkeywords = ["toml"]\n'
-        'classifiers = ["Programming Language :: Python :: 3"]\n\n[project.scripts]\ntool = "a.cli:main"\n',
-    )
-    output = tmp_path / "github_output"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    report = json.loads(capsys.readouterr().out)
-    assert (report["keywords"], report["classifiers"], report["scripts"]) == (
-        ["toml"],
-        ["Programming Language :: Python :: 3"],
-        {"tool": "a.cli:main"},
-    )
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    values = parse_github_output(output.read_text(encoding="utf-8"))
-    assert (values["keywords"], values["classifiers"], values["scripts"]) == (
-        '["toml"]',
-        '["Programming Language :: Python :: 3"]',
-        '{"tool":"a.cli:main"}',
-    )
-
-
-def test_main_build_system_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[build-system]\nrequires = ["hatchling", "hatch-vcs>=0.4"]\nbuild-backend = "hatchling.build"\n\n'
-        '[project]\nname = "a"\nversion = "1"\n',
-    )
-    output = tmp_path / "github_output"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    report = json.loads(capsys.readouterr().out)
-    assert (report["build_backend"], report["build_requires"]) == (
-        "hatchling.build",
-        ["hatchling", "hatch-vcs>=0.4"],
-    )
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    values = parse_github_output(output.read_text(encoding="utf-8"))
-    assert (values["build-backend"], values["build-requires"]) == (
-        "hatchling.build",
-        '["hatchling","hatch-vcs>=0.4"]',
-    )
-
-
-def test_main_returns_one_for_an_invalid_build_system(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[build-system]\nrequires = "x"\n\n[project]\nname = "a"\nversion = "1"\n'
-    )
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert f"{path}: [build-system].requires must be an array, got: 'x'" in capsys.readouterr().err
-
-
-def test_main_strict_fails_on_an_invalid_license_expression(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n'
-    )
-
-    assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
-    assert "not a valid SPDX license expression" in capsys.readouterr().err
 
 
 def test_main_strict_fails_on_a_static_and_dynamic_field(
@@ -242,26 +138,15 @@ def test_main_dynamic_version_warning_in_json(
     assert json.loads(capsys.readouterr().out) == {
         "name": "coola",
         "normalized_name": "coola",
+        "file_name": "coola",
         "version": "",
         "normalized_version": "",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license_files": [],
-        "authors": [],
-        "urls": {},
-        "keywords": [],
-        "classifiers": [],
-        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "build_backend": "",
-        "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
         "python_max": "3.15",
-        "project_dependencies": {},
         "dependency_specifiers": {},
         "dependency_requirements": {},
         "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
@@ -286,26 +171,15 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert json.loads(captured.out) == {
         "name": "coola",
         "normalized_name": "coola",
+        "file_name": "coola",
         "version": "1.2.3",
         "normalized_version": "1.2.3",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license_files": [],
-        "authors": [],
-        "urls": {},
-        "keywords": [],
-        "classifiers": [],
-        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "build_backend": "",
-        "build_requires": [],
         "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
         "python_min": "3.11",
         "python_max": "3.15",
-        "project_dependencies": {},
         "dependency_specifiers": {},
         "dependency_requirements": {},
         "warnings": [],
@@ -422,32 +296,16 @@ def test_main_github_output_writes_outputs_and_annotations(
     assert outputs == {
         "name": "p",
         "normalized-name": "p",
+        "file-name": "p",
         "version": "1",
         "normalized-version": "1",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license-files": "[]",
-        "authors": "[]",
-        "urls": "{}",
-        "keywords": "[]",
-        "classifiers": "[]",
-        "scripts": "{}",
         "requires-python": "",
         "extras": '["","a"]',
         "groups": '["base","dev","other"]',
-        "build-backend": "",
-        "build-requires": "[]",
         "python-versions": '["3.11","3.12","3.13","3.14","3.15"]',
         "python-min": "3.11",
         "python-max": "3.15",
-        "python-matrix": '{"python-version":["3.11","3.12","3.13","3.14","3.15"]}',
-        "project-dependencies": '{"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"}',
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
-        "dependency-requirements": (
-            '{"dup":[{"specifier":">=1","marker":""},{"specifier":">=2","marker":""}],'
-            '"nospec":[{"specifier":"","marker":""}],"missing":[]}'
-        ),
     }
     assert captured.out == (
         f"::warning file={path}::dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'\n"
@@ -455,7 +313,6 @@ def test_main_github_output_writes_outputs_and_annotations(
         "📦 name=p version=1 requires-python= "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
         'groups=["base","dev","other"] '
-        'project-dependencies={"Foo_Bar":"<2,>=1","nospec":"","withextra":">=3"} '
         'dependency-specifiers={"dup":">=1","nospec":"","missing":null}\n'
     )
     assert captured.err == ""
@@ -992,27 +849,6 @@ def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
     ]
 
 
-def test_main_github_output_python_matrix(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=3.12"\n'
-    )
-    output = tmp_path / "out"
-
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    values = parse_github_output(output.read_text(encoding="utf-8"))
-    assert values["python-matrix"] == '{"python-version":["3.12","3.13","3.14","3.15"]}'
-    assert json.loads(values["python-matrix"])["python-version"] == json.loads(
-        values["python-versions"]
-    )
-
-
-def test_main_json_has_no_python_matrix(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert "python_matrix" not in json.loads(capsys.readouterr().out)
-
-
 def test_main_github_output_normalized_version(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1.0-RC1"\n')
     output = tmp_path / "out"
@@ -1020,105 +856,6 @@ def test_main_github_output_normalized_version(tmp_path: Path) -> None:
     assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
     values = parse_github_output(output.read_text(encoding="utf-8"))
     assert (values["version"], values["normalized-version"]) == ("1.0-RC1", "1.0rc1")
-
-
-def test_main_readme_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nreadme = "docs/README.md"\n'
-    )
-    output = tmp_path / "out"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["readme"] == "docs/README.md"
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["readme"] == "docs/README.md"
-
-
-def test_main_invalid_readme_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nreadme = 1\n')
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert "[project].readme must be a string or a table" in capsys.readouterr().err
-
-
-def test_main_license_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT"\n')
-    output = tmp_path / "out"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["license"] == "MIT"
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["license"] == "MIT"
-
-
-def test_main_invalid_license_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = 1\n')
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert "[project].license must be a string or a table" in capsys.readouterr().err
-
-
-def test_main_authors_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\nauthors = [{name = "Zoé", email = "z@e.org"}]\n',
-    )
-    output = tmp_path / "out"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["authors"] == [{"name": "Zoé", "email": "z@e.org"}]
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    assert (
-        parse_github_output(output.read_text(encoding="utf-8"))["authors"]
-        == '[{"name":"Zoé","email":"z@e.org"}]'
-    )
-
-
-def test_main_invalid_authors_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nauthors = ["Ada"]\n')
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert "[project].authors[0] must be a table" in capsys.readouterr().err
-
-
-def test_main_urls_in_json_and_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\n[project.urls]\nHomepage = "https://a.org"\nDocs = "https://a.org/d"\n',
-    )
-    output = tmp_path / "out"
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["urls"] == {
-        "Homepage": "https://a.org",
-        "Docs": "https://a.org/d",
-    }
-    assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
-    assert (
-        parse_github_output(output.read_text(encoding="utf-8"))["urls"]
-        == '{"Homepage":"https://a.org","Docs":"https://a.org/d"}'
-    )
-
-
-def test_main_invalid_urls_returns_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nurls = 1\n')
-
-    assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert "[project.urls] must be a table" in capsys.readouterr().err
 
 
 def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1162,8 +899,7 @@ def test_main_warns_when_no_python_version_is_allowed(
     assert json.loads(capsys.readouterr().out)["warnings"] == [
         (
             f"{path}: no python-candidates version satisfies [project].requires-python ('>=4'): "
-            "python-versions and python-matrix are empty, and a job matrix built from them is "
-            "rejected by GitHub"
+            "python-versions is empty, and a job matrix built from it is rejected by GitHub"
         )
     ]
 
@@ -1323,19 +1059,18 @@ def test_main_warnings_are_in_the_order_of_the_sources(
 
     assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 0
     warnings = json.loads(capsys.readouterr().out)["warnings"]
-    assert len(warnings) == 5
-    # The metadata, the Python versions, the dependencies of the project, then the lookups.
-    assert warnings[:3] == [
+    assert len(warnings) == 4
+    # The metadata, the Python versions, then the lookups.
+    assert warnings[:2] == [
         f"{path}: [project].version is dynamic, the version output is empty",
         (
             f"{path}: [project].requires-python is not a valid version specifier, "
             f"the python-versions output is empty: {_specifier_error('python3')}"
         ),
-        f"x has different specifiers in {path}: ['>=1', '>=2']; using '>=1'",
     ]
-    assert warnings[3].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
+    assert warnings[2].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
     assert (
-        warnings[4] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
+        warnings[3] == f"x has different specifiers in {path}: ['>=1', '>=2', '>=3']; using '>=1'"
     )
 
 
@@ -1404,9 +1139,9 @@ def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
     assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
     # "x>=1", "y" and "w" are parsed once, in the index of all the requirements that both lookups
     # share. They are read again for the index of their own place ("x>=1" and "y" for the project,
-    # "w" for the extra), and "x>=1" and "y" for the project dependencies.
+    # "w" for the extra).
     assert dependencies_requirements_module._parse_requirement.cache_info().misses == 3
-    assert dependencies_requirements_module._parse_requirement.cache_info().hits == 5
+    assert dependencies_requirements_module._parse_requirement.cache_info().hits == 3
 
 
 def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
@@ -1431,37 +1166,6 @@ def test_main_non_string_requirement_returns_one(
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     assert "[project].dependencies must contain only strings, got: 1" in capsys.readouterr().err
-
-
-def test_main_project_dependencies_in_json_and_warnings_are_not_duplicated(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\ndependencies = ["dup>=1", "dup>=2"]\n'
-    )
-
-    exit_code = main(["extract_metadata.py", str(path), "[]", '["dup"]'])
-    report = json.loads(capsys.readouterr().out)
-
-    assert exit_code == 0
-    assert report["project_dependencies"] == {"dup": ">=1"}
-    assert report["warnings"] == [
-        f"dup has different specifiers in {path}: ['>=1', '>=2']; using '>=1'"
-    ]
-
-
-def test_main_github_output_project_dependencies(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\ndependencies = ["numpy>=1.20"]\n'
-    )
-    output = tmp_path / "github_output"
-
-    exit_code = main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"])
-
-    assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["project-dependencies"] == (
-        '{"numpy":">=1.20"}'
-    )
 
 
 def test_main_dynamic_version_is_a_warning_and_strict_fails(

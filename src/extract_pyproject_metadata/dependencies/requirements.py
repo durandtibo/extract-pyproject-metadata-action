@@ -17,7 +17,6 @@ from extract_pyproject_metadata.inputs import PROJECT_SCOPE
 __all__ = [
     "candidate_requirements",
     "conflict_warnings",
-    "extract_project_dependencies",
     "index_dependencies",
 ]
 
@@ -126,9 +125,8 @@ def _scoped_requirements(
 def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
     """Parse a requirement string, once per distinct string.
 
-    ``build_report`` reads the requirements of ``[project].dependencies`` twice (for
-    ``project-dependencies`` and in the index of all the requirements that the
-    lookups of ``dependencies`` share): the cache makes each string parsed only once.
+    ``index_dependencies`` parses the requirements of each place twice (all the
+    places together, then each place alone): the cache makes each string parsed only once.
 
     Args:
         raw: The requirement string.
@@ -174,47 +172,6 @@ def _index_requirements(
         found.setdefault(key, []).append((str(req.specifier), marker))
         names.setdefault(key, req.name)
     return found, names, warnings
-
-
-def extract_project_dependencies(
-    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
-) -> tuple[dict[str, str], list[str]]:
-    """Map each package of ``[project].dependencies`` to its specifier.
-
-    Only the requirements of ``[project].dependencies`` are read, not the
-    extras or the dependency groups. Like ``extract_dependency_specifiers``, the
-    first requirement of a package wins, whatever its environment marker.
-
-    Args:
-        data: The parsed pyproject.toml, as returned by ``load_pyproject``.
-        pyproject_path: Path of the file ``data`` was read from, used only in
-            error and warning messages.
-
-    Returns:
-        A tuple ``(dependencies, warnings)``. ``dependencies`` maps the name of
-        each package, as written in its first requirement and in the order of
-        the file, to its specifier (``""`` if it has none). ``warnings`` lists
-        the requirements that cannot be parsed and are ignored, the packages
-        that have different specifiers (with the same environment marker), and
-        a ``dynamic`` ``dependencies``.
-
-    Raises:
-        MetadataError: If ``[project]`` is not a table, or
-            ``[project].dependencies`` is not an array of strings.
-    """
-    project = get_table(data, "project", "[project]", pyproject_path)
-    entries = check_string_array(
-        project.get("dependencies", []), "[project].dependencies", pyproject_path
-    )
-    found, names, warnings = _index_requirements(entries, pyproject_path)
-    if "dependencies" in _dynamic_dependency_fields(data):
-        warnings.append(_dynamic_message("dependencies", pyproject_path))
-    dependencies: dict[str, str] = {}
-    for key, matches in found.items():
-        specifier = matches[0][0]
-        dependencies[names[key]] = specifier
-        warnings.extend(conflict_warnings(names[key], matches, specifier, pyproject_path))
-    return dependencies, warnings
 
 
 def index_dependencies(

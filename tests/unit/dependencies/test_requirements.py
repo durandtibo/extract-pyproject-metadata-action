@@ -15,7 +15,6 @@ from extract_pyproject_metadata.dependencies.requirements import (
     _scoped_requirements,
     candidate_requirements,
     conflict_warnings,
-    extract_project_dependencies,
     index_dependencies,
 )
 from extract_pyproject_metadata.errors import MetadataError
@@ -236,86 +235,6 @@ def test_index_dependencies_empty() -> None:
 def test_index_dependencies_wrong_type() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
         index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
-
-
-def test_extract_project_dependencies() -> None:
-    data = {"project": {"dependencies": ["numpy>=1.20,<3", "Foo_Bar", "tqdm[extra]~=4.0"]}}
-
-    assert extract_project_dependencies(data) == (
-        {"numpy": "<3,>=1.20", "Foo_Bar": "", "tqdm": "~=4.0"},
-        [],
-    )
-
-
-@pytest.mark.parametrize(
-    "data", [{}, {"project": {}}, {"project": {"dependencies": []}}, {"project": {"name": "a"}}]
-)
-def test_extract_project_dependencies_empty(data: dict) -> None:
-    assert extract_project_dependencies(data) == ({}, [])
-
-
-def test_extract_project_dependencies_first_requirement_wins() -> None:
-    data = {
-        "project": {
-            "dependencies": [
-                "numpy>=1.20; python_version < '3.12'",
-                "numpy>=1.26; python_version >= '3.12'",
-            ]
-        }
-    }
-
-    assert extract_project_dependencies(data) == ({"numpy": ">=1.20"}, [])
-
-
-def test_extract_project_dependencies_keeps_the_first_spelling_of_the_name() -> None:
-    data = {"project": {"dependencies": ["Zope_Interface>=5", "zope.interface>=6"]}}
-
-    result, warnings = extract_project_dependencies(data, "p.toml")
-
-    assert result == {"Zope_Interface": ">=5"}
-    assert warnings == [
-        "Zope_Interface has different specifiers in p.toml: ['>=5', '>=6']; using '>=5'"
-    ]
-
-
-def test_extract_project_dependencies_non_string_entry() -> None:
-    with pytest.raises(
-        MetadataError, match=r"p\.toml: \[project\]\.dependencies must contain only strings, got: 1"
-    ):
-        extract_project_dependencies({"project": {"dependencies": ["a", 1]}}, "p.toml")
-
-
-def test_extract_project_dependencies_invalid_requirement_warns() -> None:
-    result, warnings = extract_project_dependencies(
-        {"project": {"dependencies": ["good>=1", "bad requirement!!"]}}, "p.toml"
-    )
-
-    assert result == {"good": ">=1"}
-    assert len(warnings) == 1
-    assert warnings[0].startswith("Ignoring invalid requirement 'bad requirement!!' in p.toml: ")
-
-
-def test_extract_project_dependencies_dynamic_dependencies_warns() -> None:
-    data = {"project": {"dynamic": ["dependencies"]}}
-
-    assert extract_project_dependencies(data, "p.toml") == (
-        {},
-        [
-            "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it"
-        ],
-    )
-
-
-@pytest.mark.parametrize(
-    ("data", "match"),
-    [
-        ({"project": 1}, r"\[project\] must be a table"),
-        ({"project": {"dependencies": "a"}}, r"\[project\]\.dependencies must be an array"),
-    ],
-)
-def test_extract_project_dependencies_wrong_type(data: dict, match: str) -> None:
-    with pytest.raises(MetadataError, match=match):
-        extract_project_dependencies(data)
 
 
 def test_index_requirements() -> None:

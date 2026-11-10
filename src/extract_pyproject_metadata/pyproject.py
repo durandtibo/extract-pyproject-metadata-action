@@ -1,4 +1,5 @@
-"""Read and parse a pyproject.toml file."""
+"""Read and parse a pyproject.toml file, and read the names of its extras and
+dependency groups."""
 
 from __future__ import annotations
 
@@ -6,9 +7,11 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
+from extract_pyproject_metadata.checks import get_table
 from extract_pyproject_metadata.errors import MetadataError
 
-__all__ = ["UTF8_BOM", "load_pyproject"]
+__all__ = ["UTF8_BOM", "load_pyproject", "read_extra_names", "read_group_names"]
 
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
@@ -50,3 +53,57 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
     except OSError as exc:
         msg = f"{pyproject_path} cannot be read: {exc}"
         raise MetadataError(msg) from exc
+
+
+def read_extra_names(
+    project: dict[str, Any], extra_values: list[str], pyproject_path: str
+) -> list[str]:
+    """Return the extra names: ``extra_values`` first, then the sorted
+    extras.
+
+    Extra names are normalized like package names (PEP 685), so "Foo_Bar" and
+    "foo-bar" are one extra. The first spelling of each is kept, at the
+    position of its first occurrence.
+
+    Args:
+        project: The ``[project]`` table.
+        extra_values: The values to put first, as returned by ``parse_string_array``.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The names, without duplicates.
+
+    Raises:
+        MetadataError: If ``[project.optional-dependencies]`` is not a table.
+    """
+    optional_dependencies = get_table(
+        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
+    )
+    extras = sorted(optional_dependencies, key=canonicalize_name)
+    unique_extras: dict[str, str] = {}
+    for extra in extra_values + extras:
+        unique_extras.setdefault(canonicalize_name(extra), extra)
+    return list(unique_extras.values())
+
+
+def read_group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
+    """Return the names of ``[dependency-groups]``, sorted by normalized
+    name.
+
+    Group names are normalized per PEP 503 (PEP 735): the first spelling is kept.
+
+    Args:
+        data: The parsed pyproject.toml.
+        pyproject_path: Path of the file, used in the error message.
+
+    Returns:
+        The names, without duplicates; empty if there is no such table.
+
+    Raises:
+        MetadataError: If ``[dependency-groups]`` is not a table.
+    """
+    dependency_groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+    unique_groups: dict[str, str] = {}
+    for group in sorted(dependency_groups, key=canonicalize_name):
+        unique_groups.setdefault(canonicalize_name(group), group)
+    return list(unique_groups.values())

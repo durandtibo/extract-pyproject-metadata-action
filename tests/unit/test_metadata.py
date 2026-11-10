@@ -4,7 +4,7 @@ file."""
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -45,158 +45,13 @@ def test_extract_metadata_name_and_version(tmp_path: Path) -> None:
     assert metadata == {
         "name": "coola",
         "normalized_name": "coola",
+        "file_name": "coola",
         "version": "1.2.3",
         "normalized_version": "1.2.3",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license_files": [],
-        "authors": [],
-        "urls": {},
-        "keywords": [],
-        "classifiers": [],
-        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "build_backend": "",
-        "build_requires": [],
     }
-
-
-@pytest.mark.parametrize(
-    ("project", "expected"),
-    [
-        ('description = "A fast library"', "A fast library"),
-        ('description = ""', ""),
-        ('description = "Line one\\nline two"', "Line one\nline two"),
-        ('description = "Héllo ✓"', "Héllo ✓"),
-        ('dynamic = ["description"]', ""),
-        ("", ""),
-    ],
-)
-def test_extract_metadata_description(tmp_path: Path, project: str, expected: str) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "coola"\nversion = "1"\n{project}\n')
-
-    assert extract(path)["description"] == expected
-
-
-@pytest.mark.parametrize("value", ["1", "true", '["a"]', "{a = 1}"])
-def test_extract_metadata_description_must_be_a_string(tmp_path: Path, value: str) -> None:
-    path = write_pyproject(
-        tmp_path, f'[project]\nname = "coola"\nversion = "1"\ndescription = {value}\n'
-    )
-
-    with pytest.raises(
-        MetadataError, match=r"p\.toml: \[project\]\.description must be a string, got: "
-    ):
-        extract_metadata(load_pyproject(str(path)), [], "p.toml")
-
-
-@pytest.mark.parametrize("key", ["keywords", "classifiers"])
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("", []),
-        ("[]", []),
-        ('["a"]', ["a"]),
-        ('["b", "a", "b"]', ["b", "a", "b"]),
-    ],
-)
-def test_extract_metadata_keywords_and_classifiers(
-    tmp_path: Path, key: Literal["keywords", "classifiers"], value: str, expected: list[str]
-) -> None:
-    line = f"{key} = {value}\n" if value else ""
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{line}')
-
-    assert extract(path)[key] == expected
-
-
-@pytest.mark.parametrize("key", ["keywords", "classifiers"])
-@pytest.mark.parametrize(
-    ("value", "match"),
-    [
-        ('"x"', r"must be an array, got: 'x'"),
-        ('["x", 1]', r"must contain only strings, got: 1"),
-    ],
-)
-def test_extract_metadata_keywords_and_classifiers_must_be_arrays_of_strings(
-    tmp_path: Path, key: str, value: str, match: str
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{key} = {value}\n')
-
-    with pytest.raises(MetadataError, match=rf"\[project\]\.{key} {match}"):
-        extract(path)
-
-
-def test_extract_metadata_scripts(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\n\n[project.scripts]\nz = "pkg.cli:z"\na = "pkg.cli:a"\n\n'
-        '[project.gui-scripts]\ng = "pkg.gui:main"\n',
-    )
-
-    assert extract(path)["scripts"] == {"z": "pkg.cli:z", "a": "pkg.cli:a"}
-    assert list(extract(path)["scripts"]) == ["z", "a"]
-
-
-def test_extract_metadata_scripts_default_to_empty(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert extract(path)["scripts"] == {}
-
-
-@pytest.mark.parametrize(
-    ("scripts", "match"),
-    [
-        ('scripts = ["a"]', r"\[project\.scripts\] must be a table, got: \['a'\]"),
-        ("[project.scripts]\na = 1", r"\[project\.scripts\]\.a must be a string, got: 1"),
-    ],
-)
-def test_extract_metadata_scripts_must_be_a_table_of_strings(
-    tmp_path: Path, scripts: str, match: str
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{scripts}\n')
-
-    with pytest.raises(MetadataError, match=match):
-        extract(path)
-
-
-def test_extract_metadata_build_system(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n\n'
-        '[project]\nname = "a"\nversion = "1"\n',
-    )
-
-    metadata = extract(path)
-
-    assert (metadata["build_backend"], metadata["build_requires"]) == (
-        "hatchling.build",
-        ["hatchling"],
-    )
-
-
-def test_extract_metadata_without_build_system(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    metadata = extract(path)
-
-    assert (metadata["build_backend"], metadata["build_requires"]) == ("", [])
-
-
-def test_extract_metadata_invalid_license_expression_warns(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nlicense = "MIT License"\n'
-    )
-
-    metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
-
-    assert metadata["license"] == "MIT License"
-    assert len(warnings) == 1
-    assert warnings[0].startswith(
-        f"{path}: [project].license is not a valid SPDX license expression"
-    )
 
 
 def test_extract_metadata_extras_are_sorted(tmp_path: Path) -> None:
@@ -330,7 +185,7 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
         """
         [project]
         name = "coola"
-        dynamic = ["version", "readme"]
+        dynamic = ["version", "description"]
         """,
     )
     metadata, warnings = extract_metadata(load_pyproject(str(path)), [], str(path))
@@ -338,22 +193,12 @@ def test_extract_metadata_dynamic_version_is_empty_and_warns(tmp_path: Path) -> 
     assert metadata == {
         "name": "coola",
         "normalized_name": "coola",
+        "file_name": "coola",
         "version": "",
         "normalized_version": "",
-        "description": "",
-        "readme": "",
-        "license": "",
-        "license_files": [],
-        "authors": [],
-        "urls": {},
-        "keywords": [],
-        "classifiers": [],
-        "scripts": {},
         "requires_python": "",
         "extras": [],
         "groups": [],
-        "build_backend": "",
-        "build_requires": [],
     }
     assert warnings == [f"{path}: [project].version is dynamic, the version output is empty"]
 
@@ -880,150 +725,6 @@ def test_extract_metadata_normalized_version_is_empty_when_the_version_is_dynami
     assert extract(path)["normalized_version"] == ""
 
 
-@pytest.mark.parametrize(
-    ("readme", "expected"),
-    [
-        ('readme = "README.md"', "README.md"),
-        ('readme = "docs/README.rst"', "docs/README.rst"),
-        ('readme = ""', ""),
-        ('readme = {file = "README.rst", content-type = "text/x-rst"}', "README.rst"),
-        ('readme = {text = "Inline readme", content-type = "text/plain"}', ""),
-        ("readme = {}", ""),
-        ('dynamic = ["readme"]', ""),
-        ("", ""),
-    ],
-)
-def test_extract_metadata_readme(tmp_path: Path, readme: str, expected: str) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{readme}\n')
-
-    assert extract(path)["readme"] == expected
-
-
-@pytest.mark.parametrize(
-    ("readme", "match"),
-    [
-        ("readme = 1", r"\[project\]\.readme must be a string or a table, got: 1"),
-        ('readme = ["README.md"]', r"\[project\]\.readme must be a string or a table"),
-        ("readme = true", r"\[project\]\.readme must be a string or a table, got: True"),
-        ("readme = {file = 1}", r"\[project\]\.readme\.file must be a string, got: 1"),
-        ('readme = {file = ["a"]}', r"\[project\]\.readme\.file must be a string"),
-    ],
-)
-def test_extract_metadata_readme_must_be_a_string_or_a_table(
-    tmp_path: Path, readme: str, match: str
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{readme}\n')
-
-    with pytest.raises(MetadataError, match=match):
-        extract(path)
-
-
-@pytest.mark.parametrize(
-    ("authors", "expected"),
-    [
-        ("", []),
-        ("authors = []", []),
-        ('authors = [{name = "Ada"}]', [{"name": "Ada"}]),
-        ('authors = [{email = "ada@example.com"}]', [{"email": "ada@example.com"}]),
-        (
-            'authors = [{email = "a@b.c", name = "Ada"}, {name = "Bob"}]',
-            [{"name": "Ada", "email": "a@b.c"}, {"name": "Bob"}],
-        ),
-        ('authors = [{name = "Ada", url = "x"}]', [{"name": "Ada"}]),
-        ("authors = [{}]", [{}]),
-        ('authors = [{name = "Ada"}, {name = "Ada"}]', [{"name": "Ada"}, {"name": "Ada"}]),
-        ('dynamic = ["authors"]', []),
-    ],
-)
-def test_extract_metadata_authors(
-    tmp_path: Path, authors: str, expected: list[dict[str, str]]
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{authors}\n')
-
-    assert extract(path)["authors"] == expected
-
-
-@pytest.mark.parametrize(
-    ("authors", "match"),
-    [
-        ('authors = "Ada"', r"\[project\]\.authors must be an array, got: 'Ada'"),
-        ('authors = {name = "Ada"}', r"\[project\]\.authors must be an array"),
-        ('authors = ["Ada"]', r"\[project\]\.authors\[0\] must be a table, got: 'Ada'"),
-        ('authors = [{name = "a"}, 1]', r"\[project\]\.authors\[1\] must be a table, got: 1"),
-        ("authors = [{name = 1}]", r"\[project\]\.authors\[0\]\.name must be a string, got: 1"),
-        (
-            'authors = [{name = "a", email = ["b"]}]',
-            r"\[project\]\.authors\[0\]\.email must be a string",
-        ),
-    ],
-)
-def test_extract_metadata_authors_must_be_an_array_of_tables(
-    tmp_path: Path, authors: str, match: str
-) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{authors}\n')
-
-    with pytest.raises(MetadataError, match=match):
-        extract(path)
-
-
-@pytest.mark.parametrize(
-    ("urls", "expected"),
-    [
-        ("", {}),
-        ("[project.urls]", {}),
-        ('[project.urls]\nHomepage = "https://a.org"', {"Homepage": "https://a.org"}),
-        (
-            (
-                '[project.urls]\nSource = "https://a.org/s"\n"Bug Tracker" = "https://a.org/b"\n'
-                'Homepage = "https://a.org"'
-            ),
-            {
-                "Source": "https://a.org/s",
-                "Bug Tracker": "https://a.org/b",
-                "Homepage": "https://a.org",
-            },
-        ),
-        ('[project.urls]\nHomepage = ""', {"Homepage": ""}),
-    ],
-)
-def test_extract_metadata_urls(tmp_path: Path, urls: str, expected: dict[str, str]) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{urls}\n')
-
-    assert extract(path)["urls"] == expected
-
-
-def test_extract_metadata_urls_keep_the_order_of_the_file(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\n[project.urls]\nZ = "z"\nA = "a"\nM = "m"\n',
-    )
-
-    assert list(extract(path)["urls"]) == ["Z", "A", "M"]
-
-
-@pytest.mark.parametrize(
-    ("urls", "match"),
-    [
-        ("urls = 1", r"\[project\.urls\] must be a table, got: 1"),
-        ('urls = ["https://a.org"]', r"\[project\.urls\] must be a table"),
-        ("[project.urls]\nHomepage = 1", r"\[project\.urls\]\.Homepage must be a string, got: 1"),
-        (
-            '[project.urls]\nHomepage = ["https://a.org"]',
-            r"\[project\.urls\]\.Homepage must be a string",
-        ),
-    ],
-)
-def test_extract_metadata_urls_must_be_a_table_of_strings(
-    tmp_path: Path, urls: str, match: str
-) -> None:
-    # An inline "urls = ..." must come before any table header.
-    content = f'[project]\nname = "a"\nversion = "1"\n{urls}\n'
-    path = write_pyproject(tmp_path, content)
-
-    with pytest.raises(MetadataError, match=match):
-        extract(path)
-
-
 def test_extract_metadata_static_version_listed_as_dynamic_warns() -> None:
     data = {"project": {"name": "a", "version": "1.0", "dynamic": ["version"]}}
 
@@ -1045,3 +746,19 @@ def test_extract_metadata_dynamic_version_warns() -> None:
 
     assert metadata["version"] == ""
     assert warnings == ["p.toml: [project].version is dynamic, the version output is empty"]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("coola", "coola"),
+        ("My_Package.Name", "my_package_name"),
+        ("a-b", "a_b"),
+        ("Foo--Bar__baz..qux", "foo_bar_baz_qux"),
+        ("A", "a"),
+    ],
+)
+def test_extract_metadata_file_name(tmp_path: Path, name: str, expected: str) -> None:
+    path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
+
+    assert extract(path)["file_name"] == expected
