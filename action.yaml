@@ -41,13 +41,6 @@ inputs:
       python-versions output (e.g. '["3.11","3.12"]')
     default: '["3.11","3.12","3.13","3.14","3.15"]'
 
-  resolve-dynamic-version:
-    description: >
-      Set to "true" to read a version listed in [project].dynamic from the file
-      of the build backend (setuptools file or attr, hatch path), without running
-      project code ("true" or "false")
-    default: "false"
-
   strict:
     description: >
       Set to "true" to fail when there is any warning (a dynamic version, a
@@ -127,12 +120,10 @@ runs:
         EXTRA_VALUES: ${{ inputs.extra-values }}
         DEPENDENCIES: ${{ inputs.dependencies }}
         PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
-        RESOLVE_DYNAMIC_VERSION: ${{ inputs.resolve-dynamic-version }}
         STRICT: ${{ inputs.strict }}
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
           --github-output "$GITHUB_OUTPUT" \
           --python-candidates "$PYTHON_CANDIDATES" \
-          --resolve-dynamic-version "$RESOLVE_DYNAMIC_VERSION" \
           --strict "$STRICT" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"

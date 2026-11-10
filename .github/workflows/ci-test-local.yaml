@@ -150,7 +150,6 @@ jobs:
           dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
           python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '["3.11","3.12","3.13","3.14","3.15"]' }}
           strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
-          resolve-dynamic-version: ${{ fromJSON(steps.case.outputs.inputs)['resolve-dynamic-version'] || 'false' }}
 
       - name: ✓ Compare the json output with the golden file
         env:
@@ -272,23 +271,6 @@ jobs:
           source scripts/test-helper.sh
           assert_equal "outcome" "failure" "$OUTCOME"
           print_success "Test strict with a missing dependency fails the step"
-
-      - name: 🧪 Test a dynamic version that cannot be resolved (should fail)
-        id: test-unresolved
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-          resolve-dynamic-version: "true"
-          strict: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify Test a dynamic version that cannot be resolved fails the step
-        env:
-          OUTCOME: ${{ steps.test-unresolved.outcome }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
-          print_success "Test a dynamic version that cannot be resolved fails the step"
 
       - name: ✓ Verify the action leaves nothing behind
         run: |

@@ -1,6 +1,0 @@
-[project]
-name = "dynamic-file-pkg"
-dynamic = ["version"]
-
-[tool.setuptools.dynamic]
-version = { file = "VERSION" }

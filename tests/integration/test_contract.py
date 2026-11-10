@@ -62,7 +62,7 @@ def test_action_yaml_every_input_has_a_default() -> None:
 def test_the_readme_lists_the_boolean_inputs_of_parse_inputs() -> None:
     readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
 
-    assert "`resolve-dynamic-version` and `strict` are boolean inputs" in readme
+    assert "`strict` is a boolean input" in readme
 
 
 @pytest.mark.parametrize(("section", "heading"), [("inputs", "Inputs"), ("outputs", "Outputs")])

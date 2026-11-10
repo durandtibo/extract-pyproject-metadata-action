@@ -38,12 +38,7 @@ def build_report(inputs: Inputs) -> Report:
             warning with ``strict``.
     """
     data = load_pyproject(inputs.pyproject_path)
-    metadata, warnings = extract_metadata(
-        data,
-        inputs.extra_values,
-        inputs.pyproject_path,
-        inputs.resolve_dynamic_version,
-    )
+    metadata, warnings = extract_metadata(data, inputs.extra_values, inputs.pyproject_path)
     # Computed in the order of their warnings in the report: the metadata, the Python versions,
     # then the lookups of the requested dependencies.
     python_versions, python_warnings = compatible_python_versions(

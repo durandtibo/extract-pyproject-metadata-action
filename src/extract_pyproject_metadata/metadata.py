@@ -9,7 +9,6 @@ from typing import Any
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion, Version
 from extract_pyproject_metadata.checks import check_str, check_string_array, get_table
-from extract_pyproject_metadata.dynamic_version import read_dynamic_version
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.pyproject import read_extra_names, read_group_names
 from extract_pyproject_metadata.types import Metadata
@@ -25,7 +24,6 @@ def extract_metadata(
     data: dict[str, Any],
     extra_values: list[str],
     pyproject_path: str = "pyproject.toml",
-    resolve_dynamic_version: bool = False,
 ) -> tuple[Metadata, list[str]]:
     """Read the name, version, requires-python, extras and groups from a
     parsed pyproject.toml.
@@ -37,10 +35,6 @@ def extract_metadata(
             ``parse_string_array``.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
-        resolve_dynamic_version: Whether to look for a ``version`` listed in
-            ``[project].dynamic`` in the file that the build backend reads it
-            from (see ``read_dynamic_version``). A version that is found is
-            used like a static one, so it is not a warning.
 
     Returns:
         A tuple ``(metadata, warnings)``. ``warnings`` lists the warning
@@ -74,9 +68,7 @@ def extract_metadata(
     dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
     raw_name = _required_name(project, dynamic, pyproject_path)
     warnings = _static_and_dynamic_warnings(project, dynamic, pyproject_path)
-    raw_version, is_known, version_warnings = _required_version(
-        data, project, dynamic, pyproject_path, resolve_dynamic_version
-    )
+    raw_version, is_known, version_warnings = _required_version(project, dynamic, pyproject_path)
     warnings.extend(version_warnings)
     name = _valid_name(raw_name, pyproject_path)
     version, normalized_version = _valid_version(raw_version, is_known, pyproject_path)
@@ -151,29 +143,21 @@ def _static_and_dynamic_warnings(
 
 
 def _required_version(
-    data: dict[str, Any],
-    project: dict[str, Any],
-    dynamic: list[str],
-    pyproject_path: str,
-    resolve_dynamic_version: bool,
+    project: dict[str, Any], dynamic: list[str], pyproject_path: str
 ) -> tuple[object, bool, list[str]]:
-    """Return ``[project].version`` as written, the version that a file
-    holds, or an empty string if it is dynamic.
+    """Return ``[project].version`` as written, or an empty string if it
+    is dynamic.
 
     Args:
-        data: The parsed pyproject.toml.
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
         pyproject_path: Path of the file, used in the messages.
-        resolve_dynamic_version: Whether to look for a dynamic version in the file
-            of the build backend first.
 
     Returns:
         A tuple ``(version, is_known, warnings)``. ``version`` is the value of
-        ``version`` whatever its type (see ``_valid_version``), the version found
-        in a file, or ``""`` when the build backend computes it. ``is_known`` is
-        false in that last case. ``warnings`` has the messages of a dynamic
-        version that is not resolved.
+        ``version`` whatever its type (see ``_valid_version``), or ``""`` when the
+        build backend computes it (setuptools-scm, hatch-vcs, ...). ``is_known`` is
+        false in that last case, and ``warnings`` then says so.
 
     Raises:
         MetadataError: If ``version`` is neither set nor dynamic.
@@ -183,15 +167,7 @@ def _required_version(
     if "version" not in dynamic:
         msg = f"{pyproject_path} is missing required key [project].version"
         raise MetadataError(msg)
-    reason = ""
-    if resolve_dynamic_version:
-        resolved, reason = read_dynamic_version(data, pyproject_path)
-        if resolved:
-            return resolved, True, []
-    # The build backend computes the version (setuptools-scm, hatch-vcs, ...).
     warnings = [f"{pyproject_path}: [project].version is dynamic, the version output is empty"]
-    if reason:
-        warnings.insert(0, f"{pyproject_path}: cannot resolve the dynamic version: {reason}")
     return "", False, warnings
 
 

@@ -9,8 +9,7 @@ The modules, from the bottom of the import graph to the top:
 
 - ``errors``, ``types``, ``checks``, ``inputs``: the error, the typed report, the type checks
   of the values read from the file and the parsing of the inputs.
-- ``pyproject``, ``dynamic_version``, ``metadata``: reading the file and its fields
-  (``dynamic_version`` finds a dynamic version in the file of the build backend).
+- ``pyproject``, ``metadata``: reading the file and its fields.
 - ``requirements``, ``python_versions``: the requirements (``[project].dependencies``, the
   extras and the groups) and their lookup, and the Python versions that ``requires-python``
   allows.

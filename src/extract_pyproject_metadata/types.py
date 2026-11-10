@@ -17,7 +17,6 @@ class Inputs:
     dependencies: list[str]
     python_candidates: list[str]
     strict: bool
-    resolve_dynamic_version: bool
 
 
 class Metadata(TypedDict):

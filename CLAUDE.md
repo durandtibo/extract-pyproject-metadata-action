@@ -18,10 +18,9 @@ module above it:
 1. `errors` (`MetadataError`), `types` (`Inputs`, `Metadata`, `Report`), `checks`
    (type checks of the values read from the file), `inputs` (`parse_inputs`: the
    single place that validates the input strings and builds `Inputs`).
-2. `pyproject` (read and parse the file, the names of the extras and groups),
-   `dynamic_version` (a dynamic version read statically from the file of the build
-   backend), `metadata` (`extract_metadata`: name, version, `requires-python`, extras
-   and groups). Only what the action outputs is read and validated.
+2. `pyproject` (read and parse the file, the names of the extras and groups) and
+   `metadata` (`extract_metadata`: name, version, `requires-python`, extras and groups).
+   Only what the action outputs is read and validated.
 3. `requirements` (the requirements of `[project].dependencies`, the extras and the
    groups with `include-group`, and the lookup of the requested dependencies) and
    `python_versions`.
