@@ -171,7 +171,7 @@ def test_readme_default_of_python_candidates_matches_the_script() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
 
     assert (
-        f"<!-- candidates:start -->\n`{DEFAULT_PYTHON_CANDIDATES}`\n<!-- candidates:end -->"
+        f"<!-- candidates:start -->\n\n`{DEFAULT_PYTHON_CANDIDATES}`\n<!-- candidates:end -->"
         in readme
     )
 

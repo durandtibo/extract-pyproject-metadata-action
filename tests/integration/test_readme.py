@@ -119,3 +119,14 @@ def test_a_pipe_in_a_description_is_escaped_in_the_table() -> None:
     action = {"inputs": {"a": {"description": "x | y", "default": ""}}}
 
     assert "x \\| y" in generate_docs.render_inputs(action)
+
+
+def test_a_block_has_the_blank_lines_that_prettier_writes() -> None:
+    text = "<!-- t:start -->\nold\n<!-- t:end -->\n<!-- c:start -->\nold\n<!-- c:end -->\n"
+
+    text = generate_docs.replace_block(text, "t", "| a |")
+    text = generate_docs.replace_block(text, "c", "`x`", table=False)
+
+    assert text == (
+        "<!-- t:start -->\n\n| a |\n\n<!-- t:end -->\n<!-- c:start -->\n\n`x`\n<!-- c:end -->\n"
+    )
