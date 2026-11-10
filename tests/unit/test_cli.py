@@ -125,7 +125,7 @@ def test_main_dynamic_version_warning_in_json(
                 "message": "[project].version is dynamic, the version output is empty",
             }
         ],
-        "schema_version": 3,
+        "schema_version": 1,
     }
 
 
@@ -158,7 +158,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "dependency_specifiers": {},
         "dependency_requirements": {},
         "warnings": [],
-        "schema_version": 3,
+        "schema_version": 1,
     }
 
 
@@ -634,7 +634,7 @@ def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFi
 
     assert run_main([str(path), "[]"]) == 0
     assert (
-        json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 3
+        json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 1
     )
 
 

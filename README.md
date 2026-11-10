@@ -158,7 +158,7 @@ default it is:
 
 Scalars are plain strings; arrays and objects are compact JSON strings for `fromJSON`.
 The `json` output is the whole result with real JSON values (`fromJSON(...json).extras`),
-plus `dependency_requirements`, the `warnings` (items `{"code", "message"}`) and the `schema_version` (`3`). The step logs a
+plus `dependency_requirements`, the `warnings` (items `{"code", "message"}`) and the `schema_version` (`1`). The step logs a
 one-line `📦` log line of the outputs, with line breaks escaped. The line shows `name`,
 `version`, `requires-python`, `python-versions`, `python-min`, `python-max`, `extras`,
 `groups`, `dependency-specifiers`.

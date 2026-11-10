@@ -27,7 +27,7 @@ characters are kept as they are, as in the action outputs):
      "extras": [...], "groups": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
      "dependency_specifiers": {...}, "dependency_requirements": {...},
-     "warnings": [...], "schema_version": 3}
+     "warnings": [...], "schema_version": 1}
 
 "warnings" lists the suspicious but non-fatal input as objects with a ``code`` (a stable
 identifier, see ``warning_codes.py``) and a ``message`` (for a human, it may be reworded).

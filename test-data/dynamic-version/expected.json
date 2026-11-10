@@ -26,5 +26,5 @@
       "message": "[project].version is dynamic, the version output is empty"
     }
   ],
-  "schema_version": 3
+  "schema_version": 1
 }

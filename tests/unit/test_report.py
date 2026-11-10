@@ -44,7 +44,7 @@ def test_build_report(tmp_path: Path) -> None:
             "missing": [],
         },
         "warnings": [{"code": "dependency-not-found", "message": "dependency 'missing' not found"}],
-        "schema_version": 3,
+        "schema_version": 1,
     }
 
 
