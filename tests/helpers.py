@@ -15,14 +15,14 @@ from extract_pyproject_metadata._vendor.packaging.requirements import (
 )
 from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
 from extract_pyproject_metadata.inputs import parse_string_array
-from extract_pyproject_metadata.metadata import extract_metadata
 from extract_pyproject_metadata.pyproject import load_pyproject
+from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.requirements import (
     index_dependencies,
     requirements_from_index,
     specifiers_from_index,
 )
-from extract_pyproject_metadata.types import Inputs, Metadata, Report
+from extract_pyproject_metadata.types import Inputs, Report
 
 ROOT_PATH = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
@@ -36,12 +36,35 @@ def write_pyproject(tmp_path: Path, content: str) -> Path:
     return path
 
 
-def extract(path: Path, extra_values_json: str = "[]") -> Metadata:
-    """Load ``path`` and extract its metadata."""
-    metadata, _ = extract_metadata(
-        load_pyproject(str(path)), parse_string_array(extra_values_json, "extra-values"), str(path)
+METADATA_KEYS = (
+    "name",
+    "normalized_name",
+    "file_name",
+    "version",
+    "normalized_version",
+    "requires_python",
+    "extras",
+    "groups",
+)
+
+
+def extract_with_warnings(path: Path, extra_values_json: str = "[]") -> tuple[dict, list[str]]:
+    """Build the report of ``path`` and return the project fields and the warnings."""
+    report = build_report(
+        Inputs(
+            pyproject_path=str(path),
+            extra_values=parse_string_array(extra_values_json, "extra-values"),
+            dependencies=[],
+            python_candidates=[],
+            strict=False,
+        )
     )
-    return metadata
+    return {key: report[key] for key in METADATA_KEYS}, report["warnings"]
+
+
+def extract(path: Path, extra_values_json: str = "[]") -> dict:
+    """Build the report of ``path`` and return the project fields."""
+    return extract_with_warnings(path, extra_values_json)[0]
 
 
 def extract_dependency_specifiers(
