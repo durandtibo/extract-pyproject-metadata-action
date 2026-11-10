@@ -12,11 +12,13 @@ from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_dependencies
 from extract_pyproject_metadata.pyproject import load_pyproject, read_group_names
 from extract_pyproject_metadata.requirements import (
+    _Expansion,
     collect_requirements,
     find_requirements,
     flatten_group,
     lookup_requirements,
     lookup_specifiers,
+    read_groups,
 )
 from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 from tests.helpers import (
@@ -243,13 +245,53 @@ def test_flatten_group_rejects_an_exponential_expansion() -> None:
         flatten_group(diamond_of_groups(25), "g0")
 
 
-def test_flatten_group_shares_the_budget_between_the_included_groups() -> None:
-    budget = [3]
+def test_expansion_shares_the_budget_between_the_included_groups() -> None:
+    expansion = _Expansion(read_groups(chain_of_groups(5)), budget=3)
 
     with pytest.raises(MetadataError, match="expand more than"):
-        flatten_group(chain_of_groups(5), "g0", budget=budget)
+        expansion.expand("g0")
 
-    assert budget == [-1]
+    assert expansion.budget == -1
+
+
+def test_expansion_reads_the_groups_by_normalized_name() -> None:
+    expansion = _Expansion(read_groups({"Dev": ["a"], "dev": ["b"], "Other_Group": ["c"]}))
+
+    assert expansion.expand("DEV") == ["a", "b"]
+    assert expansion.expand("other-group") == ["c"]
+    assert expansion.expand("missing") == []
+
+
+def test_read_groups_merges_the_spellings_in_file_order() -> None:
+    table = {"Dev": ["a"], "other": ["x"], "dev": ["b"], "DEV": ["c"]}
+
+    assert read_groups(table) == {
+        "dev": [("Dev", ["a"]), ("dev", ["b"]), ("DEV", ["c"])],
+        "other": [("other", ["x"])],
+    }
+
+
+def test_read_groups_does_not_check_the_values() -> None:
+    assert read_groups({"a": "x"}) == {"a": [("a", "x")]}
+
+
+def test_read_groups_does_not_change_the_table() -> None:
+    table = {"Dev": ["a"], "dev": ["b"]}
+
+    read_groups(table)
+
+    assert table == {"Dev": ["a"], "dev": ["b"]}
+
+
+def test_flatten_group_expands_every_spelling_of_the_group() -> None:
+    groups = {"Dev": ["a", {"include-group": "x_y"}], "dev": ["b"], "X.Y": ["c"]}
+
+    assert flatten_group(groups, "dev")[0] == ["a", "c", "b"]
+
+
+def test_flatten_group_error_names_the_spelling_of_the_group() -> None:
+    with pytest.raises(MetadataError, match=r"^\[dependency-groups\]\.dev: entries must be"):
+        flatten_group({"Dev": ["a"], "dev": [1]}, "DEV")
 
 
 def test_flatten_group_missing_include_group_adds_a_warning() -> None:
