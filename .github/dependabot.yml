@@ -1,7 +1,6 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+# Weekly updates of the GitHub Actions (pinned to a commit SHA) and of the dev dependencies.
+# Updates of the same ecosystem arrive in one pull request.
+# packaging is vendored: scripts/vendor_packaging.py updates it (see packaging-update.yaml).
 
 version: 2
 updates:
@@ -9,8 +8,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      dev-dependencies:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]

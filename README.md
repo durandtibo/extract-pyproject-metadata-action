@@ -258,3 +258,9 @@ gate), `make docs` (regenerates the tables of this file from `action.yaml`), `ma
 `tests/integration/test_golden.py` and, with the real action, by `ci-test-local.yaml`, which can
 only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
 removed or changes type.
+
+To release: update the default `python-candidates` in `inputs.py` (every October), check
+that `packaging` is current (`make vendor-packaging`), run `make check` and `make docs`,
+write `release-notes/vX.Y.Z.md`, and push the tag `vX.Y.Z`. `release.yaml` then runs the
+checks, creates the GitHub release and moves the `vX` tag. Afterwards set `STABLE_REF` in
+`scripts/generate_workflows.py` to the new tag and run `make workflows`.
