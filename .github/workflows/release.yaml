@@ -1,8 +1,9 @@
 # Release workflow.
 # On a tag `vX.Y.Z` (pushed by hand: `git tag v0.3.0 && git push origin v0.3.0`): run the
-# checks and create the GitHub release with the notes of release-notes/vX.Y.Z.md (generated
-# notes when the file does not exist). Workflows pin the exact tag (`@v0.3.0`): no tag is
-# moved. The checklist is in the README.
+# checks and create the GitHub release with the notes of release-notes/vX.Y.Z.md. The job fails
+# when that file does not exist: the notes of an immutable tag are reviewed text in the
+# repository. Workflows pin the exact tag (`@v0.3.0`): no tag is moved. The checklist is in the
+# README.
 
 name: Release
 on:
@@ -35,8 +36,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           notes="release-notes/$TAG.md"
-          if [ -f "$notes" ]; then
-            gh release create "$TAG" --title "$TAG" --notes-file "$notes" --verify-tag
-          else
-            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          if [ ! -f "$notes" ]; then
+            echo "::error::$notes: missing (write and review the notes before the tag)" >&2
+            exit 1
           fi
+          gh release create "$TAG" --title "$TAG" --notes-file "$notes" --verify-tag
