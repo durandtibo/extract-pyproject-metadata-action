@@ -43,6 +43,14 @@ module above it:
   path) as an argument with a default, instead of monkeypatching a module.
 - Every module has a docstring, and `from __future__ import annotations`.
 
+## Supported platforms
+
+- Linux and macOS only. **Windows is not supported, and that is a deliberate,
+  final decision of the maintainer.** Do not add `windows-latest` to any matrix,
+  do not add Windows-specific code, branches, tests or documentation, and do not
+  propose or re-add Windows support, even as a small or optional change. If a
+  failure only happens on Windows, it is out of scope.
+
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then

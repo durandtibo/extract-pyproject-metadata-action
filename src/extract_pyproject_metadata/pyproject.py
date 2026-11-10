@@ -46,7 +46,7 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
     try:
         with path.open("rb") as f:
             content = f.read()
-        # Some editors (on Windows) start a UTF-8 file with a byte order mark, which TOML rejects.
+        # Some editors start a UTF-8 file with a byte order mark, which TOML rejects.
         return tomllib.loads(content.removeprefix(UTF8_BOM).decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
         msg = f"pyproject-path: not valid TOML: {exc}"

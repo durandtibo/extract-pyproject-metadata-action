@@ -10,7 +10,7 @@
 # the action outputs ($GITHUB_OUTPUT).
 # Requires the repository to already be checked out and a Python 3.11+ interpreter
 # (python3 or python) to be available on PATH. Nothing is installed: the only dependency,
-# "packaging", is vendored. Linux, macOS and Windows runners are supported.
+# "packaging", is vendored. Linux and macOS runners are supported; Windows is not.
 
 name: Extract pyproject metadata
 description: Read the project name, version, optional-dependency extra names, and dependency version specifiers from pyproject.toml

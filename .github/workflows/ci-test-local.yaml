@@ -151,19 +151,15 @@ jobs:
           ACTUAL: ${{ steps.action.outputs.json }}
         run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
 
-  # What the golden files cannot see: failures, strict, and what the action leaves behind. It
-  # also runs on Windows.
+  # What the golden files cannot see: failures, strict, and what the action leaves behind.
   wiring:
     # local-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
-    defaults:
-      run:
-        shell: bash # the default shell of Windows is PowerShell
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.14"] # the oldest and the newest supported version
 
     steps:
