@@ -23,7 +23,7 @@ characters are kept as they are, as in the action outputs):
      "extras": [...], "groups": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
      "dependency_specifiers": {...}, "dependency_requirements": {...},
-     "warnings": [...], "schema_version": 1}
+     "warnings": [...], "schema_version": 2}
 
 "warnings" lists human-readable messages about suspicious but non-fatal
 input.

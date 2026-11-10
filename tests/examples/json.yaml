@@ -1,0 +1,8 @@
+- id: metadata
+  uses: durandtibo/extract-pyproject-metadata-action@v1
+  with:
+    dependencies: '["numpy"]'
+
+- run: echo "$REQUIREMENTS"
+  env:
+    REQUIREMENTS: ${{ toJSON(fromJSON(steps.metadata.outputs.json).dependency_requirements) }}

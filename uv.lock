@@ -184,6 +184,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -199,6 +200,7 @@ dev = [
     { name = "pytest", specifier = ">=9.1,<10.0" },
     { name = "pytest-cov", specifier = ">=7.1,<8.0" },
     { name = "pytest-timeout", specifier = ">=2.4,<3.0" },
+    { name = "pyyaml", specifier = ">=6.0,<7.0" },
     { name = "ruff", specifier = ">=0.16,<1.0" },
 ]
 

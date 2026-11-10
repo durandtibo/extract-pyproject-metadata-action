@@ -31,10 +31,11 @@ def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
     assert list(extract(path)) == list(Metadata.__annotations__)
 
 
-def test_action_yaml_default_of_python_candidates_matches_the_script() -> None:
+def test_action_yaml_does_not_repeat_the_default_of_python_candidates() -> None:
     action = ACTION_PATH.read_text(encoding="utf-8")
 
-    assert f"default: '{DEFAULT_PYTHON_CANDIDATES}'" in action
+    assert 'default: ""' in action
+    assert DEFAULT_PYTHON_CANDIDATES not in action
 
 
 def test_action_yaml_separates_the_inputs_with_a_blank_line() -> None:

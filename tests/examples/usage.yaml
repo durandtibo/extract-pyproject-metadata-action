@@ -1,0 +1,14 @@
+- uses: actions/checkout@v7
+
+- id: metadata
+  uses: durandtibo/extract-pyproject-metadata-action@v1
+  with:
+    extra-values: '[""]'
+    dependencies: '["numpy", "pytest@group:dev"]'
+
+- run: echo "$NAME $VERSION $EXTRAS $SPECIFIERS"
+  env:
+    NAME: ${{ steps.metadata.outputs.name }}
+    VERSION: ${{ steps.metadata.outputs.version }}
+    EXTRAS: ${{ steps.metadata.outputs.extras }}
+    SPECIFIERS: ${{ steps.metadata.outputs.dependency-specifiers }}

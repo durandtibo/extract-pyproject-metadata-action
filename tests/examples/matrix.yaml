@@ -1,0 +1,24 @@
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      extras: ${{ steps.metadata.outputs.extras }}
+      python-versions: ${{ steps.metadata.outputs.python-versions }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: metadata
+        uses: durandtibo/extract-pyproject-metadata-action@v1
+        with:
+          extra-values: '[""]'
+
+  test:
+    needs: metadata
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ${{ fromJSON(needs.metadata.outputs.python-versions) }}
+        extra: ${{ fromJSON(needs.metadata.outputs.extras) }}
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}

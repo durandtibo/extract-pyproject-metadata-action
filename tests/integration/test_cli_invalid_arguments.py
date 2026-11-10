@@ -63,7 +63,6 @@ def run_script(
         (["{path}", "[]", '{"a": 1}'], "dependencies must be a JSON array of strings"),
         (["{path}", "[]", "[1]"], "dependencies must be a JSON array of strings"),
         # python-candidates
-        (["--python-candidates", "", "{path}", "[]"], "python-candidates is not valid JSON"),
         (["--python-candidates", "3.12", "{path}", "[]"], "python-candidates"),
         (["--python-candidates", "[3.12]", "{path}", "[]"], "python-candidates"),
         (["--python-candidates", '["3"]', "{path}", "[]"], "python-candidates"),

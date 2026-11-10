@@ -58,7 +58,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "dependency_specifiers": {},
         "dependency_requirements": {},
         "warnings": [],
-        "schema_version": 1,
+        "schema_version": 2,
     }
 
 
@@ -147,7 +147,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
             "pandas": [],
         },
         "warnings": [f"{path}: dependency 'pandas' not found"],
-        "schema_version": 1,
+        "schema_version": 2,
     }
 
 

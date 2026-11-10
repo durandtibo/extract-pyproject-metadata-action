@@ -1,0 +1,9 @@
+- id: metadata
+  uses: durandtibo/extract-pyproject-metadata-action@v1
+  with:
+    strict: "true"
+
+- run: pip install "dist/$FILE_NAME-$VERSION-py3-none-any.whl"
+  env:
+    FILE_NAME: ${{ steps.metadata.outputs.file-name }}
+    VERSION: ${{ steps.metadata.outputs.normalized-version }}
