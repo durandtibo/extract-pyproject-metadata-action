@@ -68,20 +68,26 @@ def render_candidates() -> str:
     return f"`{DEFAULT_PYTHON_CANDIDATES}`"
 
 
-def replace_block(text: str, name: str, content: str) -> str:
-    """Replace what is between the ``name`` markers of ``text``."""
+def replace_block(text: str, name: str, content: str, *, table: bool = True) -> str:
+    """Replace what is between the ``name`` markers of ``text``.
+
+    Prettier puts a blank line after an HTML comment and before a table that follows it, so the
+    block is written that way (a table also gets a blank line before the end marker), and
+    formatting the README does not change it.
+    """
     pattern = re.compile(rf"(<!-- {name}:start -->).*?(<!-- {name}:end -->)", re.DOTALL)
     if not pattern.search(text):
         msg = f"README.md has no <!-- {name}:start --> ... <!-- {name}:end --> block"
         raise SystemExit(msg)
-    return pattern.sub(lambda match: f"{match.group(1)}\n{content}\n{match.group(2)}", text)
+    end = "\n\n" if table else "\n"
+    return pattern.sub(lambda match: f"{match.group(1)}\n\n{content}{end}{match.group(2)}", text)
 
 
 def generate(readme: str, action: dict[str, Any]) -> str:
     """Return the README with its generated blocks up to date."""
     readme = replace_block(readme, "inputs", render_inputs(action))
     readme = replace_block(readme, "outputs", render_outputs(action))
-    return replace_block(readme, "candidates", render_candidates())
+    return replace_block(readme, "candidates", render_candidates(), table=False)
 
 
 def main(argv: list[str]) -> int:
