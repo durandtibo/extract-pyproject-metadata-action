@@ -1,6 +1,6 @@
 # Weekly updates of the GitHub Actions (pinned to a commit SHA) and of the dev dependencies.
 # Updates of the same ecosystem arrive in one pull request.
-# packaging is vendored: scripts/vendor_packaging.py updates it (see packaging-update.yaml).
+# packaging is vendored: scripts/vendor_packaging.py updates it (see maintenance.yaml).
 
 version: 2
 updates:

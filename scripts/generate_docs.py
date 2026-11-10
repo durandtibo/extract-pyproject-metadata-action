@@ -22,7 +22,7 @@ import yaml
 ROOT_PATH = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_PATH / "src"))
 
-from extract_pyproject_metadata.inputs import DEFAULT_PYTHON_CANDIDATES  # noqa: E402
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES  # noqa: E402
 from extract_pyproject_metadata.warning_codes import WARNING_CODES  # noqa: E402
 
 ACTION_PATH = ROOT_PATH / "action.yaml"

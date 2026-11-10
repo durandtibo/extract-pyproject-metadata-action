@@ -9,12 +9,12 @@ import pytest
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import (
-    DEFAULT_PYTHON_CANDIDATES,
     parse_bool,
     parse_dependencies,
     parse_inputs,
     parse_python_candidates,
 )
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.types import Inputs, Lookup
 from tests.helpers import README_PATH
 
