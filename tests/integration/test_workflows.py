@@ -70,6 +70,32 @@ def test_no_expression_is_interpolated_in_a_run_block(path: Path) -> None:
     assert offenders == []
 
 
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
+def test_a_reusable_workflow_that_is_called_exists(path: Path) -> None:
+    called = re.findall(r"(?m)^\s*uses: \./\.github/workflows/([\w.-]+)$", path.read_text("utf-8"))
+
+    assert [name for name in called if not (WORKFLOWS_PATH / name).exists()] == []
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
+def test_no_workflow_uses_concurrency(path: Path) -> None:
+    assert not re.search(r"(?m)^\s*concurrency:", path.read_text(encoding="utf-8"))
+
+
+def test_ci_runs_every_night_through_the_nightly_workflow_only() -> None:
+    ci = (WORKFLOWS_PATH / "ci.yaml").read_text(encoding="utf-8")
+    nightly = (WORKFLOWS_PATH / "nightly.yaml").read_text(encoding="utf-8")
+
+    assert "schedule:" not in ci
+    assert "schedule:" in nightly
+    assert "uses: ./.github/workflows/ci.yaml" in nightly
+    assert "uses: ./.github/workflows/nightly-test-stable.yaml" in nightly
+
+
+def test_the_shared_matrix_workflow_is_gone() -> None:
+    assert not (WORKFLOWS_PATH / "lib-get-test-matrix.yaml").exists()
+
+
 def test_the_local_workflow_repeats_the_defaults_of_the_inputs() -> None:
     action = ACTION_PATH.read_text(encoding="utf-8")
     local = LOCAL_PATH.read_text(encoding="utf-8")
