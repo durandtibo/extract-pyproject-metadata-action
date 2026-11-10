@@ -25,7 +25,7 @@ FIXTURES = [*EXAMPLES, *(ROOT_PATH / "test-data").glob("*/pyproject.toml")]
 README = README_PATH.read_text(encoding="utf-8")
 ACTION = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
 CODE_BLOCKS = re.findall(r"```(\w+)\n(.*?)```", README, flags=re.DOTALL)
-ACTION_USES = "durandtibo/extract-pyproject-metadata-action@v0.3"
+ACTION_USES = "durandtibo/extract-pyproject-metadata-action@v0.3.0"
 
 
 def _fixture_text() -> str:

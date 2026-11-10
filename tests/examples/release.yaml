@@ -1,5 +1,5 @@
 - id: metadata
-  uses: durandtibo/extract-pyproject-metadata-action@v0.3
+  uses: durandtibo/extract-pyproject-metadata-action@v0.3.0
   with:
     strict: "true"
 

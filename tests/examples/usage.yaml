@@ -1,7 +1,7 @@
 - uses: actions/checkout@v7
 
 - id: metadata
-  uses: durandtibo/extract-pyproject-metadata-action@v0.3
+  uses: durandtibo/extract-pyproject-metadata-action@v0.3.0
   with:
     extra-values: '[""]'
     dependencies: '["numpy", "pytest@group:dev"]'
