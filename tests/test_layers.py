@@ -39,7 +39,7 @@ RANKS = {
 MODULES = sorted(
     path
     for path in PACKAGE_PATH.rglob("*.py")
-    if path.stem not in {"__init__", "__main__"} and "_vendor" not in path.parts
+    if path.stem != "__init__" and "_vendor" not in path.parts
 )
 
 
