@@ -5,11 +5,11 @@
 # - lib-get-test-matrix.yaml: the shared OS and Python matrix (durandtibo/workflow-config-action).
 # - ci-lint.yaml: ruff, pre-commit, generated README tables.
 # - ci-type-checking.yaml: pyright.
-# - ci-test.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
-# - ci-test-properties.yaml: the property-based tests, on the standard Python versions.
-# - ci-test-local.yaml: the integration test of the current code of the action (`uses: ./`).
+# - ci-test-python.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
+# - ci-test-python-properties.yaml: the property-based tests, on the standard Python versions.
+# - ci-test-action.yaml: the integration test of the current code of the action (`uses: ./`).
 # - ci-verify-workflows.yaml: lints the workflows.
-# The test of the published action is nightly-test-stable.yaml (called from nightly.yaml).
+# The test of the published action is nightly-test-released.yaml (called from nightly.yaml).
 
 name: CI
 on:
@@ -39,20 +39,20 @@ jobs:
 
   unit:
     needs: get-matrix
-    uses: ./.github/workflows/ci-test.yaml
+    uses: ./.github/workflows/ci-test-python.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
   # The property-based tests (hypothesis has no free-threaded wheels): standard versions only
   properties:
     needs: get-matrix
-    uses: ./.github/workflows/ci-test-properties.yaml
+    uses: ./.github/workflows/ci-test-python-properties.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
   # Test the action from the current repository code (dev version)
   action:
     needs: get-matrix
-    uses: ./.github/workflows/ci-test-local.yaml
+    uses: ./.github/workflows/ci-test-action.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

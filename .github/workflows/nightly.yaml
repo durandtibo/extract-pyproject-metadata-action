@@ -1,6 +1,6 @@
 # Nightly workflow, the only scheduled one for the checks.
 # Runs the CI (to catch changes of the runner images and of the dependencies) and the test of
-# the latest stable, published version of the action (nightly-test-stable.yaml).
+# the latest published version of the action (nightly-test-released.yaml).
 
 name: Nightly
 on:
@@ -19,8 +19,8 @@ jobs:
   get-matrix:
     uses: ./.github/workflows/lib-get-test-matrix.yaml
 
-  stable:
+  released:
     needs: get-matrix
-    uses: ./.github/workflows/nightly-test-stable.yaml
+    uses: ./.github/workflows/nightly-test-released.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
