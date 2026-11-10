@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: metadata
-        uses: durandtibo/extract-pyproject-metadata-action@v1
+        uses: durandtibo/extract-pyproject-metadata-action@v0.3
         with:
           extra-values: '[""]'
 

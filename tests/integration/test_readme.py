@@ -25,7 +25,7 @@ FIXTURES = [*EXAMPLES, *(ROOT_PATH / "test-data").glob("*/pyproject.toml")]
 README = README_PATH.read_text(encoding="utf-8")
 ACTION = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
 CODE_BLOCKS = re.findall(r"```(\w+)\n(.*?)```", README, flags=re.DOTALL)
-ACTION_USES = "durandtibo/extract-pyproject-metadata-action@v1"
+ACTION_USES = "durandtibo/extract-pyproject-metadata-action@v0.3"
 
 
 def _fixture_text() -> str:
@@ -90,7 +90,8 @@ def test_the_generated_blocks_are_up_to_date() -> None:
 
 def test_the_readme_does_not_tell_the_history() -> None:
     assert "used to" not in README
-    assert "@v0" not in README
+    assert "@v0.1" not in README
+    assert "@v0.2" not in README
     assert "later than" not in README
 
 

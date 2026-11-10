@@ -82,7 +82,7 @@ module above it:
   changed, and any behaviour change (for example a changed input, default or
   output of the action).
 - Releases are made by pushing a tag `vX.Y.Z` (never from a PR): `.github/workflows/release.yaml`
-  creates the GitHub release from `release-notes/vX.Y.Z.md` and moves `vX`. The checklist is in
+  creates the GitHub release from `release-notes/vX.Y.Z.md` and moves `vX.Y`. The checklist is in
   the README. Do not create or move tags.
 - When a PR conflicts with `main`, merge `origin/main` into the branch (do not
   rebase and force-push).

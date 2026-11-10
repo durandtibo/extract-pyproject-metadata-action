@@ -11,11 +11,11 @@ import yaml
 from tests.helpers import ACTION_PATH, ROOT_PATH
 
 WORKFLOWS_PATH = ROOT_PATH / ".github" / "workflows"
-NOTES = (ROOT_PATH / "release-notes" / "v1.0.0.md").read_text(encoding="utf-8")
+NOTES = (ROOT_PATH / "release-notes" / "v0.3.0.md").read_text(encoding="utf-8")
 ACTION = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
 RELEASE = yaml.safe_load((WORKFLOWS_PATH / "release.yaml").read_text(encoding="utf-8"))
 
-# What the development version of v0.x had and v1 does not.
+# What the development version of v0.x had and v0.3 does not.
 REMOVED_INPUTS = [
     "fail-on-missing",
     "fail-on-dynamic-version",
@@ -81,11 +81,12 @@ def test_ci_can_be_called_by_the_release() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tag", "major"), [("v1.0.0", "v1"), ("v1.2.3", "v1"), ("v10.20.30", "v10"), ("v0.3.1", "v0")]
+    ("tag", "minor"),
+    [("v0.3.0", "v0.3"), ("v0.3.1", "v0.3"), ("v1.2.3", "v1.2"), ("v10.20.30", "v10.20")],
 )
-def test_the_major_tag_of_a_release(tag: str, major: str) -> None:
+def test_the_minor_tag_of_a_release(tag: str, minor: str) -> None:
     run = RELEASE["jobs"]["release"]["steps"][-1]["run"]
-    expression = re.search(r'major="(\$\{TAG[^}]*\})"', run)
+    expression = re.search(r'minor="(\$\{TAG[^}]*\})"', run)
     assert expression is not None
 
     result = subprocess.run(
@@ -95,7 +96,7 @@ def test_the_major_tag_of_a_release(tag: str, major: str) -> None:
         check=True,
     )
 
-    assert result.stdout.strip() == major
+    assert result.stdout.strip() == minor
 
 
 def test_dependabot_groups_the_updates() -> None:
