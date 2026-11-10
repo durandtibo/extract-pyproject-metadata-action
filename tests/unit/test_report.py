@@ -43,7 +43,7 @@ def test_build_report(tmp_path: Path) -> None:
             ],
             "missing": [],
         },
-        "warnings": [f"{path}: dependency 'missing' not found"],
+        "warnings": ["dependency 'missing' not found"],
         "schema_version": 2,
     }
 
@@ -51,15 +51,15 @@ def test_build_report(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("argv", "match"),
     [
-        (["--strict", "maybe", "{path}", "[]"], r"strict must be 'true' or 'false'"),
+        (["--strict", "maybe", "{path}", "[]"], r"strict: must be 'true' or 'false'"),
         (
             ["--python-candidates", "[3]", "{path}", "[]"],
-            r"python-candidates must be a JSON array of strings",
+            r"python-candidates: must be a JSON array of strings",
         ),
         (["--strict", "true", "{path}", "[]", '["missing"]'], r"dependency 'missing' not found"),
-        (["{path}", "nope"], r"extra-values is not valid JSON"),
-        (["{path}", "[]", "nope"], r"dependencies is not valid JSON"),
-        (["missing.toml", "[]"], r"pyproject\.toml not found at: missing\.toml"),
+        (["{path}", "nope"], r"extra-values: not valid JSON"),
+        (["{path}", "[]", "nope"], r"dependencies: not valid JSON"),
+        (["missing.toml", "[]"], r"pyproject-path: not a file"),
     ],
 )
 def test_build_report_errors(tmp_path: Path, argv: list[str], match: str) -> None:
@@ -75,7 +75,7 @@ def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
 
     with pytest.raises(
         MetadataError,
-        match=r"^strict is 'true' and there are 1 warning\(s\):\n- .*: dependency 'missing' not found$",
+        match=r"^strict: true and there are 1 warning\(s\):\n- dependency 'missing' not found$",
     ):
         build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["missing"]'))
 
@@ -91,7 +91,7 @@ def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
         build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["x"]'))
 
     lines = str(excinfo.value).splitlines()
-    assert lines[0] == "strict is 'true' and there are 3 warning(s):"
+    assert lines[0] == "strict: true and there are 3 warning(s):"
     assert len([line for line in lines if line.startswith("- ")]) == 3
 
 

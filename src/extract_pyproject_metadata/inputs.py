@@ -61,11 +61,11 @@ def parse_string_array(raw: str, input_name: str) -> list[str]:
     try:
         values = json.loads(raw)
     except json.JSONDecodeError as exc:
-        msg = f"{input_name} is not valid JSON: {raw!r}"
+        msg = f"{input_name}: not valid JSON: {raw!r}"
         raise MetadataError(msg) from exc
     items = cast("list[Any]", values) if isinstance(values, list) else None
     if items is None or not all(isinstance(item, str) for item in items):
-        msg = f"{input_name} must be a JSON array of strings, got: {raw!r}"
+        msg = f"{input_name}: must be a JSON array of strings, got: {raw!r}"
         raise MetadataError(msg)
     return cast("list[str]", items)
 
@@ -85,7 +85,7 @@ def parse_bool(value: str, name: str) -> bool:
     """
     lowered = value.strip().lower()
     if lowered not in {"true", "false"}:
-        msg = f"{name} must be 'true' or 'false', got: {value!r}"
+        msg = f"{name}: must be 'true' or 'false', got: {value!r}"
         raise MetadataError(msg)
     return lowered == "true"
 
@@ -123,7 +123,7 @@ def parse_dependencies(raw: str) -> list[Lookup]:
             source = f"{kind}:{canonicalize_name(scope_name)}"
         else:
             msg = (
-                f"dependencies entry {entry!r} has an invalid scope: it must be 'project', "
+                f"dependencies: entry {entry!r} has an invalid scope, it must be 'project', "
                 "'extra:<name>' or 'group:<name>' (for example 'pytest@group:dev')"
             )
             raise MetadataError(msg)
@@ -147,7 +147,7 @@ def parse_python_candidates(raw: str) -> list[str]:
     candidates = parse_string_array(raw, "python-candidates")
     for candidate in candidates:
         if not _MINOR_VERSION.fullmatch(candidate):
-            msg = f"python-candidates must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
+            msg = f"python-candidates: must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
             raise MetadataError(msg)
     return list(dict.fromkeys(candidates))
 

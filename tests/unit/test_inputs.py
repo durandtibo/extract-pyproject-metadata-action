@@ -49,17 +49,17 @@ def test_parse_inputs_defaults() -> None:
 
 def test_parse_inputs_invalid_strict() -> None:
     name = "strict"
-    with pytest.raises(MetadataError, match=rf"{name} must be 'true' or 'false', got: 'maybe'"):
+    with pytest.raises(MetadataError, match=rf"{name}: must be 'true' or 'false', got: 'maybe'"):
         parse_inputs({name: "maybe"})
 
 
 @pytest.mark.parametrize(
     ("name", "value", "match"),
     [
-        ("extra-values", "not json", r"extra-values is not valid JSON"),
-        ("dependencies", "[1]", r"dependencies must be a JSON array of strings"),
-        ("dependencies", '["numpy@dev"]', r"dependencies entry 'numpy@dev' has an invalid scope"),
-        ("python-candidates", '["3"]', r"python-candidates must contain 'major.minor'"),
+        ("extra-values", "not json", r"extra-values: not valid JSON"),
+        ("dependencies", "[1]", r"dependencies: must be a JSON array of strings"),
+        ("dependencies", '["numpy@dev"]', r"dependencies: entry 'numpy@dev' has an invalid scope"),
+        ("python-candidates", '["3"]', r"python-candidates: must contain 'major.minor'"),
     ],
 )
 def test_parse_inputs_invalid_array(name: str, value: str, match: str) -> None:
@@ -68,7 +68,7 @@ def test_parse_inputs_invalid_array(name: str, value: str, match: str) -> None:
 
 
 def test_parse_inputs_reports_the_first_invalid_value() -> None:
-    with pytest.raises(MetadataError, match=r"^extra-values is not valid JSON"):
+    with pytest.raises(MetadataError, match=r"^extra-values: not valid JSON"):
         parse_inputs({"strict": "x", "extra-values": "y"})
 
 
@@ -88,7 +88,9 @@ def test_parse_bool(value: str, expected: bool) -> None:
 
 @pytest.mark.parametrize("value", ["", "yes", "1", "0", "tru", "true false", "null"])
 def test_parse_bool_invalid(value: str) -> None:
-    with pytest.raises(MetadataError, match=rf"my-input must be 'true' or 'false', got: {value!r}"):
+    with pytest.raises(
+        MetadataError, match=rf"my-input: must be 'true' or 'false', got: {value!r}"
+    ):
         parse_bool(value, "my-input")
 
 
@@ -112,7 +114,7 @@ def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
 )
 def test_parse_python_candidates_not_major_minor(raw: str) -> None:
     with pytest.raises(
-        MetadataError, match=r"python-candidates must contain 'major.minor' versions"
+        MetadataError, match=r"python-candidates: must contain 'major.minor' versions"
     ):
         parse_python_candidates(raw)
 
@@ -120,7 +122,7 @@ def test_parse_python_candidates_not_major_minor(raw: str) -> None:
 @pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[3.12]"])
 def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
     with pytest.raises(
-        MetadataError, match=r"python-candidates (is not valid JSON|must be a JSON array)"
+        MetadataError, match=r"python-candidates: (not valid JSON|must be a JSON array)"
     ):
         parse_python_candidates(raw)
 
@@ -167,7 +169,8 @@ def test_parse_dependencies_empty() -> None:
 )
 def test_parse_dependencies_invalid_scope(entry: str) -> None:
     with pytest.raises(
-        MetadataError, match=rf"^dependencies entry {re.escape(repr(entry))} has an invalid scope: "
+        MetadataError,
+        match=rf"^dependencies: entry {re.escape(repr(entry))} has an invalid scope, ",
     ):
         parse_dependencies(json.dumps([entry]))
 
@@ -175,7 +178,7 @@ def test_parse_dependencies_invalid_scope(entry: str) -> None:
 @pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[1]"])
 def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
     with pytest.raises(
-        MetadataError, match=r"^dependencies (is not valid JSON|must be a JSON array of strings)"
+        MetadataError, match=r"^dependencies: (not valid JSON|must be a JSON array of strings)"
     ):
         parse_dependencies(raw)
 

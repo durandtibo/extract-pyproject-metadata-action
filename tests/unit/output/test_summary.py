@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def test_write_step_summary_unwritable_file(tmp_path: Path) -> None:
-    with pytest.raises(MetadataError, match=r"cannot write the job summary to .*: "):
+    with pytest.raises(MetadataError, match=r"GITHUB_STEP_SUMMARY: cannot write .*: "):
         write_step_summary(str(tmp_path), "# Title\n")
 
 
@@ -58,12 +58,12 @@ def test_write_step_summary_appends(tmp_path: Path) -> None:
 
 
 def test_format_error_summary() -> None:
-    summary = format_error_summary("p.toml: [project].name | bad\nsecond line")
+    summary = format_error_summary("[project].name | bad\nsecond line")
 
     assert summary == (
         "### ❌ Project metadata\n"
         "\n"
-        "- <code>p&#46;toml&#58; &#91;project&#93;&#46;name &#124; bad</code>\n"
+        "- <code>&#91;project&#93;&#46;name &#124; bad</code>\n"
         "- <code>second line</code>\n"
     )
 

@@ -41,7 +41,7 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
     """
     path = Path(pyproject_path)
     if not path.is_file():
-        msg = f"pyproject.toml not found at: {pyproject_path}"
+        msg = "pyproject-path: not a file"
         raise MetadataError(msg)
     try:
         with path.open("rb") as f:
@@ -49,23 +49,22 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
         # Some editors (on Windows) start a UTF-8 file with a byte order mark, which TOML rejects.
         return tomllib.loads(content.removeprefix(UTF8_BOM).decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        msg = f"{pyproject_path} is not valid TOML: {exc}"
+        msg = f"pyproject-path: not valid TOML: {exc}"
         raise MetadataError(msg) from exc
     except UnicodeDecodeError as exc:
-        msg = f"{pyproject_path} is not valid UTF-8: {exc}"
+        msg = f"pyproject-path: not valid UTF-8: {exc}"
         raise MetadataError(msg) from exc
     except RecursionError as exc:  # tomllib recurses on nested arrays and inline tables
-        msg = f"{pyproject_path} is nested too deeply to be parsed"
+        msg = "pyproject-path: nested too deeply to be parsed"
         raise MetadataError(msg) from exc
     except OSError as exc:
-        msg = f"{pyproject_path} cannot be read: {exc}"
+        msg = f"pyproject-path: cannot be read: {exc}"
         raise MetadataError(msg) from exc
 
 
 def read_project(
     data: dict[str, Any],
     extra_values: list[str],
-    pyproject_path: str = "pyproject.toml",
 ) -> tuple[Project, list[str]]:
     """Read and validate the fields that the action outputs from a parsed
     pyproject.toml.
@@ -75,8 +74,6 @@ def read_project(
         extra_values: Extra values to prepend to the extras read from
             ``[project.optional-dependencies]``, as returned by
             ``parse_string_array``.
-        pyproject_path: Path of the file ``data`` was read from, used only in
-            error and warning messages.
 
     Returns:
         A tuple ``(project, warnings)``. ``warnings`` lists the warning messages (for example
@@ -91,34 +88,31 @@ def read_project(
             version, a ``requires-python`` that is not a string, or an
             ``optional-dependencies`` or ``dependency-groups`` that is not a table.
     """
-    project = get_table(data, "project", "[project]", pyproject_path)
-    dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic", pyproject_path)
-    raw_name = _required_name(project, dynamic, pyproject_path)
-    warnings = _static_and_dynamic_warnings(project, dynamic, pyproject_path)
-    raw_version, is_known, version_warnings = _required_version(project, dynamic, pyproject_path)
+    project = get_table(data, "project", "[project]")
+    dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic")
+    raw_name = _required_name(project, dynamic)
+    warnings = _static_and_dynamic_warnings(project, dynamic)
+    raw_version, is_known, version_warnings = _required_version(project, dynamic)
     warnings.extend(version_warnings)
-    name = _valid_name(raw_name, pyproject_path)
-    version = _valid_version(raw_version, is_known, pyproject_path)
-    requires_python = check_str(
-        project.get("requires-python", ""), "[project].requires-python", pyproject_path
-    )
+    name = _valid_name(raw_name)
+    version = _valid_version(raw_version, is_known)
+    requires_python = check_str(project.get("requires-python", ""), "[project].requires-python")
     return Project(
         name=name,
         version=version,
         requires_python=requires_python,
         dynamic=frozenset(dynamic),
-        extras=read_extra_names(project, extra_values, pyproject_path),
-        groups=read_group_names(data, pyproject_path),
+        extras=read_extra_names(project, extra_values),
+        groups=read_group_names(data),
     ), warnings
 
 
-def _required_name(project: dict[str, Any], dynamic: list[str], pyproject_path: str) -> object:
+def _required_name(project: dict[str, Any], dynamic: list[str]) -> object:
     """Return ``[project].name`` as written, which must be set.
 
     Args:
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
-        pyproject_path: Path of the file, used in the error messages.
 
     Returns:
         The value of ``name``, whatever its type (see ``_valid_name``).
@@ -132,18 +126,13 @@ def _required_name(project: dict[str, Any], dynamic: list[str], pyproject_path: 
     except KeyError as exc:
         if "name" in dynamic:
             # PEP 621: the name cannot be dynamic, so the build backend cannot supply it.
-            msg = (
-                f"{pyproject_path}: [project].name is listed in [project].dynamic, but "
-                "PEP 621 requires a static name"
-            )
+            msg = "[project].name: listed in [project].dynamic, but PEP 621 requires a static name"
             raise MetadataError(msg) from exc
-        msg = f"{pyproject_path} is missing required key [project].{exc.args[0]}"
+        msg = f"[project].{exc.args[0]}: missing"
         raise MetadataError(msg) from exc
 
 
-def _static_and_dynamic_warnings(
-    project: dict[str, Any], dynamic: list[str], pyproject_path: str
-) -> list[str]:
+def _static_and_dynamic_warnings(project: dict[str, Any], dynamic: list[str]) -> list[str]:
     """Describe the fields that are set in ``[project]`` and also listed
     in ``dynamic``.
 
@@ -152,13 +141,12 @@ def _static_and_dynamic_warnings(
     Args:
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
-        pyproject_path: Path of the file, used in the messages.
 
     Returns:
         One warning per such field, in the order of ``dynamic``, without duplicates.
     """
     return [
-        f"{pyproject_path}: [project].{field} is set and also listed in [project].dynamic, "
+        f"[project].{field} is set and also listed in [project].dynamic, "
         "which PEP 621 forbids; the static value is used"
         for field in dict.fromkeys(dynamic)
         if field in project
@@ -166,7 +154,7 @@ def _static_and_dynamic_warnings(
 
 
 def _required_version(
-    project: dict[str, Any], dynamic: list[str], pyproject_path: str
+    project: dict[str, Any], dynamic: list[str]
 ) -> tuple[object, bool, list[str]]:
     """Return ``[project].version`` as written, or an empty string if it
     is dynamic.
@@ -174,7 +162,6 @@ def _required_version(
     Args:
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
-        pyproject_path: Path of the file, used in the messages.
 
     Returns:
         A tuple ``(version, is_known, warnings)``. ``version`` is the value of
@@ -188,18 +175,17 @@ def _required_version(
     if "version" in project:
         return project["version"], True, []
     if "version" not in dynamic:
-        msg = f"{pyproject_path} is missing required key [project].version"
+        msg = "[project].version: missing"
         raise MetadataError(msg)
-    warnings = [f"{pyproject_path}: [project].version is dynamic, the version output is empty"]
+    warnings = ["[project].version is dynamic, the version output is empty"]
     return "", False, warnings
 
 
-def _valid_name(name: object, pyproject_path: str) -> str:
+def _valid_name(name: object) -> str:
     """Return ``name`` if it is a valid project name (PEP 508).
 
     Args:
         name: The value of ``[project].name``.
-        pyproject_path: Path of the file, used in the error messages.
 
     Returns:
         ``name``, unchanged.
@@ -210,25 +196,24 @@ def _valid_name(name: object, pyproject_path: str) -> str:
             does not start and end with a letter or a digit.
     """
     if not isinstance(name, str) or not name:
-        msg = f"{pyproject_path}: [project].name must be a non-empty string, got: {name!r}"
+        msg = f"[project].name: must be a non-empty string, got: {name!r}"
         raise MetadataError(msg)
     if not _VALID_NAME.fullmatch(name):
         msg = (
-            f"{pyproject_path}: [project].name is not a valid project name (letters, digits, "
+            "[project].name: not a valid project name (letters, digits, "
             f"'-', '_' and '.', starting and ending with a letter or a digit): {name!r}"
         )
         raise MetadataError(msg)
     return name
 
 
-def _valid_version(version: object, is_static: bool, pyproject_path: str) -> str | None:
+def _valid_version(version: object, is_static: bool) -> str | None:
     """Return the version if it is static and valid (PEP 440).
 
     Args:
         version: The value of ``[project].version``, or ``""`` if it is dynamic.
         is_static: Whether ``version`` is set in ``[project]`` (it is not
             when it is dynamic).
-        pyproject_path: Path of the file, used in the error messages.
 
     Returns:
         ``version``, unchanged, or None when the version is dynamic.
@@ -237,20 +222,18 @@ def _valid_version(version: object, is_static: bool, pyproject_path: str) -> str
         MetadataError: If ``version`` is not a string, or a static version is
             not a valid PEP 440 version.
     """
-    version = check_str(version, "[project].version", pyproject_path)
+    version = check_str(version, "[project].version")
     if not is_static:
         return None
     try:
         Version(version)
     except InvalidVersion as exc:
-        msg = f"{pyproject_path}: [project].version is not a valid PEP 440 version: {version!r}"
+        msg = f"[project].version: not a valid PEP 440 version: {version!r}"
         raise MetadataError(msg) from exc
     return version
 
 
-def read_extra_names(
-    project: dict[str, Any], extra_values: list[str], pyproject_path: str
-) -> list[str]:
+def read_extra_names(project: dict[str, Any], extra_values: list[str]) -> list[str]:
     """Return the extra names: ``extra_values`` first, then the sorted
     extras.
 
@@ -261,7 +244,6 @@ def read_extra_names(
     Args:
         project: The ``[project]`` table.
         extra_values: The values to put first, as returned by ``parse_string_array``.
-        pyproject_path: Path of the file, used in the error message.
 
     Returns:
         The names, without duplicates.
@@ -270,7 +252,7 @@ def read_extra_names(
         MetadataError: If ``[project.optional-dependencies]`` is not a table.
     """
     optional_dependencies = get_table(
-        project, "optional-dependencies", "[project].optional-dependencies", pyproject_path
+        project, "optional-dependencies", "[project].optional-dependencies"
     )
     extras = sorted(optional_dependencies, key=canonicalize_name)
     unique_extras: dict[str, str] = {}
@@ -279,7 +261,7 @@ def read_extra_names(
     return list(unique_extras.values())
 
 
-def read_group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
+def read_group_names(data: dict[str, Any]) -> list[str]:
     """Return the names of ``[dependency-groups]``, sorted by normalized
     name.
 
@@ -287,7 +269,6 @@ def read_group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
 
     Args:
         data: The parsed pyproject.toml.
-        pyproject_path: Path of the file, used in the error message.
 
     Returns:
         The names, without duplicates; empty if there is no such table.
@@ -295,7 +276,7 @@ def read_group_names(data: dict[str, Any], pyproject_path: str) -> list[str]:
     Raises:
         MetadataError: If ``[dependency-groups]`` is not a table.
     """
-    dependency_groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
+    dependency_groups = get_table(data, "dependency-groups", "[dependency-groups]")
     unique_groups: dict[str, str] = {}
     for group in sorted(dependency_groups, key=canonicalize_name):
         unique_groups.setdefault(canonicalize_name(group), group)

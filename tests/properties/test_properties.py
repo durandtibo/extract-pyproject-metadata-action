@@ -67,7 +67,7 @@ def test_parse_string_array_accepts_only_a_list_of_strings(value: object) -> Non
     if is_valid:
         assert parse_string_array(json.dumps(value), "input") == value
     else:
-        with pytest.raises(MetadataError, match=r"^input must be a JSON array of strings"):
+        with pytest.raises(MetadataError, match=r"^input: must be a JSON array of strings"):
             parse_string_array(json.dumps(value), "input")
 
 
@@ -80,7 +80,7 @@ def test_parse_string_array_never_fails_with_another_error(raw: str) -> None:
     else:
         assert all(isinstance(item, str) for item in result)
         return
-    assert message.startswith("input ")
+    assert message.startswith("input: ")
 
 
 @given(st.text())
@@ -166,7 +166,7 @@ def test_parse_bool_accepts_only_true_and_false(value: str) -> None:
     if value.strip().lower() in {"true", "false"}:
         assert parse_bool(value, "flag") == (value.strip().lower() == "true")
     else:
-        with pytest.raises(MetadataError, match=r"^flag must be 'true' or 'false'"):
+        with pytest.raises(MetadataError, match=r"^flag: must be 'true' or 'false'"):
             parse_bool(value, "flag")
 
 

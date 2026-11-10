@@ -57,7 +57,7 @@ def test_main_returns_one_for_an_invalid_utf8_file(
     path.write_bytes(b"\xff\xfe")
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
-    assert "is not valid UTF-8" in capsys.readouterr().err
+    assert "not valid UTF-8" in capsys.readouterr().err
 
 
 def test_main_returns_one_when_the_outputs_cannot_be_written(
@@ -82,7 +82,7 @@ def test_main_returns_one_when_the_job_summary_cannot_be_written(
     exit_code = main(["extract_metadata.py", str(path), "[]"])
 
     assert exit_code == 1
-    assert "cannot write the job summary" in capsys.readouterr().err
+    assert "GITHUB_STEP_SUMMARY: cannot write" in capsys.readouterr().err
 
 
 def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
@@ -95,8 +95,8 @@ def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
 
     assert exit_code == 1
     err = capsys.readouterr().err
-    assert "missing required key" in err
-    assert "cannot write the job summary" not in err
+    assert "[project].name: missing" in err
+    assert "GITHUB_STEP_SUMMARY: cannot write" not in err
 
 
 def test_main_json_keeps_non_ascii_characters(
@@ -148,7 +148,7 @@ def test_main_dynamic_version_warning_in_json(
         "python_max": "3.15",
         "dependency_specifiers": {},
         "dependency_requirements": {},
-        "warnings": [f"{path}: [project].version is dynamic, the version output is empty"],
+        "warnings": ["[project].version is dynamic, the version output is empty"],
         "schema_version": 2,
     }
 
@@ -212,7 +212,7 @@ def test_main_returns_nonzero_on_error(tmp_path: Path, capsys: pytest.CaptureFix
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "not found" in captured.err
+    assert "not a file" in captured.err
 
 
 def test_main_returns_usage_error_on_bad_args() -> None:
@@ -262,7 +262,7 @@ def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert json.loads(captured.out)["warnings"] == [f"{path}: dependency 'missing' not found"]
+    assert json.loads(captured.out)["warnings"] == ["dependency 'missing' not found"]
     assert captured.err == ""
 
 
@@ -305,7 +305,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
-        f"::warning file={path}::{path}: dependency 'missing' not found\n"
+        f"::warning file={path}::dependency 'missing' not found\n"
         "📦 name=p version=1 requires-python= "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
         'groups=["base","dev","other"] '
@@ -336,7 +336,7 @@ def test_main_strict_fails_without_writing_the_outputs(
 
     assert exit_code == 1
     assert captured.err.startswith(
-        f"::error file={path}::strict is 'true' and there are 1 warning(s):%0A- {path}: dependency"
+        f"::error file={path}::strict: true and there are 1 warning(s):%0A- dependency"
     )
     assert captured.out == ""
     assert not output.exists()
@@ -348,7 +348,7 @@ def test_main_invalid_strict_returns_one(
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
     assert main(["extract_metadata.py", "--strict", "maybe", str(path), "[]"]) == 1
-    assert "strict must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
+    assert "strict: must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
 
 
 def test_parse_cli_inputs_maps_every_option() -> None:
@@ -368,7 +368,7 @@ def test_parse_cli_inputs_maps_every_option() -> None:
 
 
 def test_parse_cli_inputs_invalid_value() -> None:
-    with pytest.raises(MetadataError, match=r"strict must be 'true' or 'false', got: 'maybe'"):
+    with pytest.raises(MetadataError, match=r"strict: must be 'true' or 'false', got: 'maybe'"):
         parse_cli_inputs(parse_args("--strict", "maybe", "p.toml", "[]"))
 
 
@@ -409,9 +409,9 @@ def test_main_summary_reports_an_error(
     assert exit_code == 1
     text = summary.read_text(encoding="utf-8")
     assert text.startswith("### ❌ Project metadata\n")
-    assert "missing required key" in text
+    assert "name&#58; missing" in text
     assert "&#91;project&#93;&#46;name" in text
-    assert "missing required key" in capsys.readouterr().err
+    assert "[project].name: missing" in capsys.readouterr().err
 
 
 def test_main_summary_lists_the_warnings_of_a_strict_failure(
@@ -469,8 +469,8 @@ def test_main_removed_options_are_usage_errors(
 @pytest.mark.parametrize(
     ("message", "pyproject_path", "annotate", "expected"),
     [
-        ("boom", "p.toml", False, "boom"),
-        ("a\nb", "p.toml", False, "a\nb"),
+        ("boom", "p.toml", False, "p.toml: boom"),
+        ("a\nb", "p.toml", False, "p.toml: a\nb"),
         ("boom", "p.toml", True, "::error file=p.toml::boom"),
         ("50%\nnext\r", "a,b:c.toml", True, "::error file=a%2Cb%3Ac.toml::50%25%0Anext%0D"),
     ],
@@ -487,7 +487,7 @@ def test_main_error_is_a_plain_message_without_github_output(
     assert main(["extract_metadata.py", str(path), "[]"]) == 1
     captured = capsys.readouterr()
 
-    assert captured.err == f"pyproject.toml not found at: {path}\n"
+    assert captured.err == f"{path}: pyproject-path: not a file\n"
     assert captured.out == ""
 
 
@@ -502,7 +502,7 @@ def test_main_error_is_an_annotation_with_github_output(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert captured.err == f"::error file={path}::pyproject.toml not found at: {path}\n"
+    assert captured.err == f"::error file={path}::pyproject-path: not a file\n"
 
 
 def test_main_error_annotation_cannot_inject_a_command(
@@ -531,7 +531,7 @@ def test_main_github_output_error_writes_nothing(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "not found" in captured.err
+    assert "not a file" in captured.err
     assert captured.out == ""
     assert not output.exists()
 
@@ -568,17 +568,17 @@ def test_main_github_output_multiline_name_is_rejected(
     assert not output.exists()
     assert captured.out == ""
     assert len(captured.err.splitlines()) == 1
-    assert "[project].name is not a valid project name" in captured.err
+    assert "[project].name: not a valid project name" in captured.err
 
 
 @pytest.mark.parametrize(
     ("argv_tail", "message"),
     [
-        (["[]", "not json"], "dependencies is not valid JSON"),
-        (["[]", '{"a": 1}'], "dependencies must be a JSON array of strings"),
-        (["not json"], "extra-values is not valid JSON"),
-        (["{}"], "extra-values must be a JSON array"),
-        (["[1]"], "extra-values must be a JSON array of strings"),
+        (["[]", "not json"], "dependencies: not valid JSON"),
+        (["[]", '{"a": 1}'], "dependencies: must be a JSON array of strings"),
+        (["not json"], "extra-values: not valid JSON"),
+        (["{}"], "extra-values: must be a JSON array"),
+        (["[1]"], "extra-values: must be a JSON array of strings"),
     ],
 )
 def test_main_invalid_inputs_return_one(
@@ -617,7 +617,7 @@ def test_main_unknown_group_entry_returns_one(
     )
 
     assert main(["extract_metadata.py", str(path), "[]", '["x"]']) == 1
-    assert "[dependency-groups].dev entries must be strings or" in capsys.readouterr().err
+    assert "[dependency-groups].dev: entries must be strings or" in capsys.readouterr().err
 
 
 def test_main_malformed_dependency_table_returns_one(
@@ -631,7 +631,7 @@ def test_main_malformed_dependency_table_returns_one(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "[dependency-groups].dev must be an array" in captured.err
+    assert "[dependency-groups].dev: must be an array" in captured.err
     assert "Traceback" not in captured.err
     assert captured.out == ""
 
@@ -652,7 +652,7 @@ def test_main_include_group_cycle_warning_annotation(
 
     assert exit_code == 0
     assert captured.out.splitlines()[0] == (
-        f"::warning file={path}::{path}: [dependency-groups] has an include-group cycle: a -> a"
+        f"::warning file={path}::[dependency-groups] has an include-group cycle: a -> a"
     )
 
 
@@ -671,8 +671,7 @@ def test_main_warning_annotation_escapes_the_file_property(
     escaped = str(path).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
     assert exit_code == 0
     assert captured.out.splitlines()[0] == (
-        f"::warning file={escaped}::{path}: [project].version is dynamic, "
-        "the version output is empty"
+        f"::warning file={escaped}::[project].version is dynamic, the version output is empty"
     )
 
 
@@ -688,8 +687,7 @@ def test_main_warning_annotation_names_the_file(
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines()[0] == (
-        "::warning file=pyproject.toml::pyproject.toml: [project].version is dynamic, "
-        "the version output is empty"
+        "::warning file=pyproject.toml::[project].version is dynamic, the version output is empty"
     )
 
 
@@ -702,7 +700,7 @@ def test_main_invalid_version_returns_one(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "is not a valid PEP 440 version: 'latest'" in captured.err
+    assert "not a valid PEP 440 version: 'latest'" in captured.err
     assert captured.out == ""
 
 
@@ -780,7 +778,7 @@ def test_main_missing_dependency_is_a_warning(
     assert parse_github_output(output.read_text(encoding="utf-8"))["dependency-specifiers"] == (
         '{"nospec":"","missing":null}'
     )
-    assert f"::warning file={path}::{path}: dependency 'missing' not found" in captured.out
+    assert f"::warning file={path}::dependency 'missing' not found" in captured.out
 
 
 def test_main_strict_fails_for_a_missing_dependency(
@@ -805,9 +803,9 @@ def test_main_strict_fails_for_a_missing_dependency(
 
     assert exit_code == 1
     assert captured.err == (
-        f"::error file={path}::strict is 'true' and there are 2 warning(s):"
-        f"%0A- {path}: dependency 'missing' not found"
-        f"%0A- {path}: dependency 'other' not found\n"
+        f"::error file={path}::strict: true and there are 2 warning(s):"
+        f"%0A- dependency 'missing' not found"
+        f"%0A- dependency 'other' not found\n"
     )
     assert captured.out == ""
     assert not output.exists()
@@ -835,11 +833,8 @@ def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["warnings"] == [
-        (
-            f"{path}: [project].dependencies is dynamic, it cannot be read, so no requirement is "
-            "found in it"
-        ),
-        f"{path}: dependency 'numpy' not found",
+        ("[project].dependencies is dynamic, it cannot be read, so no requirement is found in it"),
+        "dependency 'numpy' not found",
     ]
 
 
@@ -892,7 +887,7 @@ def test_main_warns_when_no_python_version_is_allowed(
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert json.loads(capsys.readouterr().out)["warnings"] == [
         (
-            f"{path}: no python-candidates version satisfies [project].requires-python ('>=4'): "
+            "no python-candidates version satisfies [project].requires-python ('>=4'): "
             "python-versions is empty, and a job matrix built from it is rejected by GitHub"
         )
     ]
@@ -906,7 +901,7 @@ def test_main_strict_fails_when_no_python_version_is_allowed(
     )
 
     assert main(["extract_metadata.py", "--strict", "true", str(path), "[]"]) == 1
-    assert "strict is 'true' and there are 1 warning(s)" in capsys.readouterr().err
+    assert "strict: true and there are 1 warning(s)" in capsys.readouterr().err
 
 
 def test_main_python_max_compares_versions_as_numbers(
@@ -1056,13 +1051,13 @@ def test_main_warnings_are_in_the_order_of_the_sources(
     assert len(warnings) == 3
     # The metadata, the Python versions, then the lookups.
     assert warnings[:2] == [
-        f"{path}: [project].version is dynamic, the version output is empty",
+        "[project].version is dynamic, the version output is empty",
         (
-            f"{path}: [project].requires-python is not a valid version specifier, "
+            f"[project].requires-python is not a valid version specifier, "
             f"the python-versions output is empty: {_specifier_error('python3')}"
         ),
     ]
-    assert warnings[2].startswith(f"Ignoring invalid requirement 'not valid!' in {path}: ")
+    assert warnings[2].startswith("Ignoring invalid requirement 'not valid!': ")
 
 
 def test_main_dependency_requirements_with_a_scope(
@@ -1106,7 +1101,7 @@ def test_main_missing_dependency_names_the_entry_with_a_scope(
 
     assert main(["extract_metadata.py", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 0
     assert json.loads(capsys.readouterr().out)["warnings"] == [
-        f"{path}: dependency 'tqdm@extra:fast' not found"
+        "dependency 'tqdm@extra:fast' not found"
     ]
 
 
@@ -1116,7 +1111,7 @@ def test_main_returns_one_for_an_invalid_dependency_scope(
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
     assert main(["extract_metadata.py", str(path), "[]", '["numpy@dev"]']) == 1
-    assert "dependencies entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
+    assert "dependencies: entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
 
 
 def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:
@@ -1140,7 +1135,7 @@ def test_main_non_string_requirement_returns_one(
     )
 
     assert main(["extract_metadata.py", str(path), "[]", '["a"]']) == 1
-    assert "[project].dependencies must contain only strings, got: 1" in capsys.readouterr().err
+    assert "[project].dependencies: must contain only strings, got: 1" in capsys.readouterr().err
 
 
 def test_main_dynamic_version_is_a_warning_and_strict_fails(

@@ -76,24 +76,24 @@ def dynamic_fields(data: dict) -> frozenset[str]:
 
 
 def extract_dependency_specifiers(
-    data: dict, dependencies: list[str], pyproject_path: str = "pyproject.toml"
+    data: dict, dependencies: list[str]
 ) -> tuple[dict[str, str | None], list[str]]:
     """Look up the specifiers of ``dependencies`` in parsed data, with the warnings (the
     ones of the requirements, then the ones of the lookup)."""
     dynamic = dynamic_fields(data)
-    requirements, warnings = collect_requirements(data, dynamic, pyproject_path)
+    requirements, warnings = collect_requirements(data, dynamic)
     result, lookup_warnings = lookup_specifiers(
-        requirements, parse_dependencies(json.dumps(dependencies)), pyproject_path
+        requirements, parse_dependencies(json.dumps(dependencies))
     )
     return result, [*(warnings if dependencies else []), *lookup_warnings]
 
 
 def extract_dependency_requirements(
-    data: dict, dependencies: list[str], pyproject_path: str = "pyproject.toml"
+    data: dict, dependencies: list[str]
 ) -> dict[str, list[dict[str, str]]]:
     """List all the requirements of ``dependencies`` in parsed data."""
     dynamic = dynamic_fields(data)
-    requirements, _ = collect_requirements(data, dynamic, pyproject_path)
+    requirements, _ = collect_requirements(data, dynamic)
     return lookup_requirements(requirements, parse_dependencies(json.dumps(dependencies)))
 
 
@@ -101,7 +101,7 @@ def specifiers(path: Path, dependencies_json: str) -> dict:
     """Load ``path`` and extract the specifiers of the requested
     dependencies."""
     result, _ = extract_dependency_specifiers(
-        load_pyproject(str(path)), parse_string_array(dependencies_json, "dependencies"), str(path)
+        load_pyproject(str(path)), parse_string_array(dependencies_json, "dependencies")
     )
     return result
 

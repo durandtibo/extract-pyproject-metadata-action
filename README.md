@@ -221,10 +221,11 @@ them all.
 
 ## Failures
 
-Invalid input fails the step with one message that names the field and the file
-(`<file>: <field> <problem>`) and an `::error file=<pyproject-path>::` annotation; the
-inputs are validated before the file is read, and there is never a Python traceback. It
-happens when:
+Invalid input fails the step with one message `<field>: <problem>` and an
+`::error file=<pyproject-path>::` annotation (the field is an input name, `pyproject-path`,
+or a TOML path such as `[project].version`; the message never contains the file name, the
+annotation does). The inputs are validated before the file is read, and there is never a
+Python traceback. It happens when:
 
 - no `python3` or `python` on `PATH` is Python 3.11 or later;
 - `pyproject-path` is not a file, or the file is not valid UTF-8 TOML (a byte order mark is

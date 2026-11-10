@@ -22,7 +22,7 @@ _PATCH_RELEASES = (*range(100), 9999)
 
 
 def compatible_python_versions(
-    requires_python: str, candidates: list[str], pyproject_path: str = "pyproject.toml"
+    requires_python: str, candidates: list[str]
 ) -> tuple[list[str], list[str]]:
     """Select the candidate Python versions that ``requires-python``
     allows.
@@ -40,7 +40,6 @@ def compatible_python_versions(
             string if it is not declared.
         candidates: The "major.minor" versions to choose from, as returned by
             ``parse_inputs``.
-        pyproject_path: Path of the file, used in the warning message.
 
     Returns:
         A tuple ``(versions, warnings)``. ``versions`` are the allowed
@@ -56,7 +55,7 @@ def compatible_python_versions(
         specifier = SpecifierSet(requires_python)
     except InvalidSpecifier as exc:
         warning = (
-            f"{pyproject_path}: [project].requires-python is not a valid version specifier, "
+            "[project].requires-python is not a valid version specifier, "
             f"the python-versions output is empty: {exc}"
         )
         return [], [warning]
@@ -68,7 +67,7 @@ def compatible_python_versions(
     if candidates and not versions:
         # GitHub rejects a matrix vector without values, far from the cause.
         warning = (
-            f"{pyproject_path}: no python-candidates version satisfies [project].requires-python "
+            "no python-candidates version satisfies [project].requires-python "
             f"({requires_python!r}): python-versions is empty, and a job "
             "matrix built from it is rejected by GitHub"
         )
