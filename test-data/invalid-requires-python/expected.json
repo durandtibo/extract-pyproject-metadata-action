@@ -1,0 +1,22 @@
+{
+  "name": "py-pkg",
+  "normalized_name": "py-pkg",
+  "file_name": "py_pkg",
+  "version": "0.4.0",
+  "normalized_version": "0.4.0",
+  "requires_python": "python3",
+  "extras": [],
+  "groups": [],
+  "python_versions": [],
+  "python_min": "",
+  "python_max": "",
+  "dependency_specifiers": {},
+  "dependency_requirements": {},
+  "warnings": [
+    {
+      "code": "invalid-requires-python",
+      "message": "[project].requires-python is not a valid version specifier, the python-versions output is empty: Invalid specifier: 'python3'"
+    }
+  ],
+  "schema_version": 1
+}

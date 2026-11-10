@@ -25,7 +25,7 @@ from tests.helpers import (
     DEPS_TOML,
     METADATA,
     README_PATH,
-    _action_section_keys,
+    action_section_keys,
     parse_github_output,
     parse_inputs_args,
     write_pyproject,
@@ -178,8 +178,8 @@ def test_the_format_of_the_boolean_inputs_is_stated_once_in_the_readme() -> None
 
 
 def test_action_section_keys_finds_the_inputs_and_outputs() -> None:
-    assert "pyproject-path" in _action_section_keys("inputs")
-    assert "normalized-name" in _action_section_keys("outputs")
+    assert "pyproject-path" in action_section_keys("inputs")
+    assert "normalized-name" in action_section_keys("outputs")
 
 
 def test_readme_lists_the_outputs_of_the_log_line() -> None:
@@ -190,7 +190,7 @@ def test_readme_lists_the_outputs_of_the_log_line() -> None:
 
 
 def test_log_line_leaves_out_only_derived_outputs() -> None:
-    omitted = set(_action_section_keys("outputs")) - set(output_github_module._SUMMARY_FIELDS)
+    omitted = set(action_section_keys("outputs")) - set(output_github_module._SUMMARY_FIELDS)
 
     assert omitted == {
         "normalized-name",
