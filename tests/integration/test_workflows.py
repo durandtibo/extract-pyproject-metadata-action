@@ -122,7 +122,7 @@ def test_the_shared_matrix_workflow_reads_the_workflow_config_action() -> None:
     text = (WORKFLOWS_PATH / "lib-get-test-matrix.yaml").read_text(encoding="utf-8")
 
     assert "uses: durandtibo/workflow-config-action@" in text
-    assert "python_versions_standard" in text
+    assert "python_versions" in text
     assert "os_unix" in text
 
 
@@ -165,10 +165,7 @@ def test_the_matrix_jobs_use_the_shared_matrix(name: str) -> None:
     assert matrices
     for matrix in matrices:
         assert matrix["os"] == "${{ fromJson(inputs.test-matrix).os_matrix }}"
-        assert (
-            matrix["python-version"]
-            == "${{ fromJson(inputs.test-matrix).python_versions_standard }}"
-        )
+        assert matrix["python-version"] == "${{ fromJson(inputs.test-matrix).python_versions }}"
 
 
 @pytest.mark.parametrize(
