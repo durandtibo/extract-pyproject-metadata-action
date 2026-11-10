@@ -11,11 +11,42 @@ include .make/yaml.mk
 
 .DEFAULT_GOAL := help
 
+PYTHON_RUN ?= uv run
+
+.PHONY: install
+install: install-uv ## Install the dependencies and the dev group in .venv
+	uv sync --group dev
+
 .PHONY: format
-format: format-yaml format-makefile format-shell format-toml format-markdown ## Format all files
+format: format-python format-yaml format-makefile format-shell format-toml format-markdown ## Format all files
+
+.PHONY: format-python
+format-python: ## Format the Python files
+	$(PYTHON_RUN) ruff format src scripts tests
 
 .PHONY: lint
-lint: lint-yaml lint-makefile lint-shell lint-markdown ## Lint all files
+lint: lint-python lint-yaml lint-makefile lint-shell lint-markdown ## Lint all files
+
+.PHONY: lint-python
+lint-python: ## Lint the Python files
+	$(PYTHON_RUN) ruff check src scripts tests
+	$(PYTHON_RUN) ruff format --check src scripts tests
+
+.PHONY: types
+types: ## Check the types of the package and the script (pyright, strict)
+	$(PYTHON_RUN) pyright
+
+.PHONY: test
+test: ## Run the tests with the coverage gate
+	$(PYTHON_RUN) pytest -q --cov
+
+.PHONY: check
+check: lint-python types test ## Run the Python checks (lint, format, types, tests)
+
+.PHONY: fix
+fix: ## Fix the lint errors and format the Python files
+	$(PYTHON_RUN) ruff check --fix src scripts tests
+	$(PYTHON_RUN) ruff format src scripts tests
 
 .PHONY: clean
 clean: ## Remove the generated coverage reports and caches

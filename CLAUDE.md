@@ -44,23 +44,22 @@ module above it:
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
-  `.venv/bin/pip install -r scripts/requirements.txt --group dev`) and run `.venv/bin/python`,
-  `.venv/bin/pytest`, `.venv/bin/ruff check src scripts tests` (must pass),
-  `.venv/bin/ty check`, `.venv/bin/pyright` (strict on `src` and `scripts`) and `.venv/bin/lint-imports` (all must pass; there is no mypy).
-- The tooling follows [coola](https://github.com/durandtibo/coola). `uv sync
---group dev` installs the `dev` dependency group of `pyproject.toml` (the CI
-  installs it with `pip install -r scripts/requirements.txt --group dev`). Each
-  dependency is declared once: the runtime ones in `scripts/requirements.txt`
-  (read by `pyproject.toml` through `hatch-requirements-txt`), the others in the
-  `dev` group.
-- `tasks.py` and `invoke.yaml` define the [invoke-tasklib](https://github.com/durandtibo/invoke-tasklib)
-  tasks: `inv --list` shows them, for example `inv check.all` (lint, format,
-  types, imports, unit tests), `inv fix.all`, `inv test.unit --cov`,
-  `inv test.integration`. Run them in the environment (`uv run inv ...`).
-- `pre-commit` (`.pre-commit-config.yaml`) runs ruff, docformatter, shfmt,
-  shellcheck, codespell, ty and import-linter. The layering of the
-  architecture above is an import-linter contract in `pyproject.toml`: update
-  it with the architecture.
+  `.venv/bin/pip install -r scripts/requirements.txt --group dev`, or `make install`
+  which runs `uv sync --group dev`) and run `.venv/bin/python`, `.venv/bin/pytest`,
+  `.venv/bin/ruff check src scripts tests` (must pass) and `.venv/bin/pyright`
+  (strict on `src` and `scripts`; must pass). There is no mypy and no `ty`.
+- The `Makefile` is the only task runner: `make help` lists the targets, for
+  example `make check` (ruff, format check, pyright, tests with the coverage gate),
+  `make test`, `make fix`, `make format` and `make lint`. They run in the
+  environment (`uv run`). `.make/` is shared with other repositories and synced
+  by a bot: do not edit it here.
+- `pyproject.toml` holds the tool configuration and the `dev` group; the repository
+  is not a Python distribution (`[tool.uv] package = false`). The runtime
+  requirement is declared in `scripts/requirements.txt` (read by `run.sh`) and
+  repeated in `[project].dependencies` for `uv sync`; a test checks they agree.
+- `pre-commit` (`.pre-commit-config.yaml`) runs ruff, shfmt, shellcheck,
+  codespell and pyright. The layering of the architecture above is enforced by
+  `tests/test_layers.py` (a rank per module): update it with the architecture.
 - Run the unit tests with `.venv/bin/pytest -q`. Some tests may fail on `main`;
   check with `git stash` before blaming your change.
 - Only Python >= 3.11 is supported (the script uses `tomllib`). The script must

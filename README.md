@@ -526,9 +526,9 @@ and the `warnings`. Its `schema_version` key (currently `1`) increases when a ke
 is renamed, removed or changes type, not when a key is added, so that a tool that
 reads the object can check it.
 
-Formatting and linting of the non-Python files (YAML, Markdown, shell, TOML,
-Makefiles) go through the `Makefile`; run `make help` to list the targets, for
-example `make format` and `make lint`.
+The `Makefile` is the only task runner; run `make help` to list the targets, for
+example `make check` (lint, format check, types and tests of the Python code),
+`make format` and `make lint` (also the YAML, Markdown, shell, TOML and Makefile files).
 
 The integration workflows (`.github/workflows/ci-test-local.yaml` and
 `nightly-test-stable.yaml`) can only run on GitHub.

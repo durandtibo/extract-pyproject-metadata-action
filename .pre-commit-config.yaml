@@ -54,18 +54,6 @@ repos:
       # Formats Python/pyi/Jupyter source code and Python code blocks in Markdown docs.
       - id: ruff-format
         types_or: [python, pyi, jupyter, markdown]
-  - repo: local
-    hooks:
-      # Reformats docstrings (wrapping, spacing) per the config in pyproject.toml.
-      - id: docformatter
-        name: docformatter
-        entry: python -Im docformatter
-        additional_dependencies:
-          - docformatter >= 1.7.5
-        args: ["--in-place", "--config", "./pyproject.toml"]
-        language: python
-        types:
-          - python
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.14.1-1
     hooks:
@@ -85,22 +73,9 @@ repos:
           - tomli
   - repo: local
     hooks:
-      - id: ty
-        name: ty
-        entry: uv run ty check
-        language: system
-        types: [python]
-        pass_filenames: false
       - id: pyright
         name: pyright
         entry: uv run pyright
-        language: system
-        types: [python]
-        pass_filenames: false
-      # Enforces the package layering contract defined in pyproject.toml.
-      - id: import-linter
-        name: import-linter
-        entry: uv run lint-imports
         language: system
         types: [python]
         pass_filenames: false
