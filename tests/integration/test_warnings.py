@@ -10,7 +10,7 @@ import pytest
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Report
-from tests.helpers import README_PATH, parse_args, requires_licenses, write_pyproject
+from tests.helpers import README_PATH, parse_inputs_args, requires_licenses, write_pyproject
 
 PROJECT = '[project]\nname = "a"\n'
 
@@ -99,7 +99,7 @@ def _readme_warnings() -> list[str]:
 def _report(tmp_path: Path, case: Case, strict: bool) -> Report:
     path = write_pyproject(tmp_path, case.toml)
     options = ["--strict", "true"] if strict else []
-    return build_report(parse_args(*options, str(path), "[]", case.dependencies))
+    return build_report(parse_inputs_args(*options, str(path), "[]", case.dependencies))
 
 
 @pytest.mark.parametrize("case", PARAMS)

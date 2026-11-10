@@ -10,7 +10,7 @@ from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.report import build_report
 from tests.helpers import (
     DEPS_TOML,
-    parse_args,
+    parse_inputs_args,
     write_pyproject,
 )
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 def test_build_report(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    report = build_report(parse_args(str(path), '[""]', '["dup", "missing"]'))
+    report = build_report(parse_inputs_args(str(path), '[""]', '["dup", "missing"]'))
 
     assert report == {
         "name": "p",
@@ -82,7 +82,7 @@ def test_build_report_errors(tmp_path: Path, argv: list[str], match: str) -> Non
     argv = [arg.replace("{path}", str(path)) for arg in argv]
 
     with pytest.raises(MetadataError, match=match):
-        build_report(parse_args(*argv))
+        build_report(parse_inputs_args(*argv))
 
 
 def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
@@ -92,7 +92,7 @@ def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
         MetadataError,
         match=r"^strict is 'true' and there are 1 warning\(s\):\n- dup has different specifiers in ",
     ):
-        build_report(parse_args("--strict", "true", str(path), "[]", '["dup"]'))
+        build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["dup"]'))
 
 
 def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
@@ -103,7 +103,7 @@ def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
     )
 
     with pytest.raises(MetadataError) as excinfo:
-        build_report(parse_args("--strict", "true", str(path), "[]"))
+        build_report(parse_inputs_args("--strict", "true", str(path), "[]"))
 
     lines = str(excinfo.value).splitlines()
     assert lines[0] == "strict is 'true' and there are 2 warning(s):"
@@ -114,7 +114,7 @@ def test_build_report_strict_lists_every_warning(tmp_path: Path) -> None:
 def test_build_report_strict_without_warnings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
 
-    report = build_report(parse_args("--strict", "true", str(path), "[]"))
+    report = build_report(parse_inputs_args("--strict", "true", str(path), "[]"))
 
     assert report["warnings"] == []
 
@@ -122,6 +122,6 @@ def test_build_report_strict_without_warnings(tmp_path: Path) -> None:
 def test_build_report_not_strict_keeps_the_warnings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
 
-    report = build_report(parse_args("--strict", "false", str(path), "[]", '["dup"]'))
+    report = build_report(parse_inputs_args("--strict", "false", str(path), "[]", '["dup"]'))
 
     assert len(report["warnings"]) == 1

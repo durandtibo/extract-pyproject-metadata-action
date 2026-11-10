@@ -1,28 +1,54 @@
-"""Parsing of the inputs of the action: JSON arrays and booleans."""
+"""Validation and parsing of the inputs of the action: the single place
+that turns the input strings into ``Inputs``."""
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+import re
+from typing import TYPE_CHECKING, Any, cast
 
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.types import Inputs
 
 if TYPE_CHECKING:
-    import argparse
+    from collections.abc import Mapping
 
     from extract_pyproject_metadata.types import StepSummary
 
-__all__ = ["Options", "parse_bool", "parse_options", "parse_step_summary", "parse_string_array"]
+__all__ = [
+    "DEFAULT_INPUTS",
+    "DEFAULT_PYTHON_CANDIDATES",
+    "PROJECT_SCOPE",
+    "parse_bool",
+    "parse_dependencies",
+    "parse_inputs",
+    "parse_python_candidates",
+    "parse_step_summary",
+    "parse_string_array",
+]
 
+# The Python versions that ``python-candidates`` defaults to (and the default of the input).
+DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 
-class Options(NamedTuple):
-    """The boolean inputs of the action, parsed."""
+# The scope of the requirements of ``[project].dependencies`` (see ``_scoped_requirements``).
+PROJECT_SCOPE = "project"
 
-    fail_on_missing: bool
-    fail_on_dynamic_version: bool
-    strict: bool
-    step_summary: StepSummary
-    resolve_dynamic_version: bool
+# The value of each input that is not given, by input name.
+DEFAULT_INPUTS = {
+    "pyproject-path": "pyproject.toml",
+    "extra-values": "[]",
+    "dependencies": "[]",
+    "python-candidates": DEFAULT_PYTHON_CANDIDATES,
+    "fail-on-missing": "false",
+    "fail-on-dynamic-version": "false",
+    "strict": "false",
+    "step-summary": "false",
+    "resolve-dynamic-version": "false",
+}
+
+# A "major.minor" Python version, such as "3.12". Always used with ``fullmatch``: ``$`` would
+# also match before a trailing line break.
+_MINOR_VERSION = re.compile(r"[0-9]+\.[0-9]+")
 
 
 def parse_string_array(raw: str, input_name: str) -> list[str]:
@@ -93,24 +119,89 @@ def parse_step_summary(value: str, name: str) -> StepSummary:
     return mode
 
 
-def parse_options(args: argparse.Namespace) -> Options:
-    """Parse the five boolean inputs of the command line (``step-
-    summary`` also accepts ``auto``), in one place.
+def parse_dependencies(raw: str) -> list[str]:
+    """Parse the ``dependencies`` input: a JSON array of package names
+    with an optional scope.
+
+    A name may be followed by ``@`` and the only place to look it up in:
+    ``name@project`` (``[project].dependencies``), ``name@extra:<extra>``
+    (``[project.optional-dependencies]``) or ``name@group:<group>``
+    (``[dependency-groups]``, ``include-group`` expanded). Without a scope, every place is
+    searched. A package name cannot contain ``@``, so the scope is unambiguous.
 
     Args:
-        args: The parsed command line, as returned by ``_build_parser``.
+        raw: The value of the input.
 
     Returns:
-        The parsed booleans.
+        The entries as written, in order, duplicates included.
 
     Raises:
-        MetadataError: If one of them is invalid (the first one, in the order of
-            ``Options``).
+        MetadataError: If ``raw`` is not a JSON array of strings, or an entry has a scope that is
+            not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name).
     """
-    return Options(
-        fail_on_missing=parse_bool(args.fail_on_missing, "fail-on-missing"),
-        fail_on_dynamic_version=parse_bool(args.fail_on_dynamic_version, "fail-on-dynamic-version"),
-        strict=parse_bool(args.strict, "strict"),
-        step_summary=parse_step_summary(args.step_summary, "step-summary"),
-        resolve_dynamic_version=parse_bool(args.resolve_dynamic_version, "resolve-dynamic-version"),
+    entries = parse_string_array(raw, "dependencies")
+    for entry in entries:
+        _, separator, scope = entry.partition("@")
+        kind, _, name = scope.partition(":")
+        if separator and scope != PROJECT_SCOPE and (kind not in {"extra", "group"} or not name):
+            msg = (
+                f"dependencies entry {entry!r} has an invalid scope: it must be 'project', "
+                "'extra:<name>' or 'group:<name>' (for example 'pytest@group:dev')"
+            )
+            raise MetadataError(msg)
+    return entries
+
+
+def parse_python_candidates(raw: str) -> list[str]:
+    """Parse the ``python-candidates`` input.
+
+    Args:
+        raw: The value of the input, a JSON array of "major.minor" strings.
+
+    Returns:
+        The versions, in order, without duplicates.
+
+    Raises:
+        MetadataError: If ``raw`` is not a JSON array of strings, or a string
+            is not of the form "major.minor" (such as ``"3.12"``).
+    """
+    candidates = parse_string_array(raw, "python-candidates")
+    for candidate in candidates:
+        if not _MINOR_VERSION.fullmatch(candidate):
+            msg = f"python-candidates must contain 'major.minor' versions such as '3.12', got: {candidate!r}"
+            raise MetadataError(msg)
+    return list(dict.fromkeys(candidates))
+
+
+def parse_inputs(raw: Mapping[str, str]) -> Inputs:
+    """Validate the inputs of the action and parse them, in one place.
+
+    The inputs are validated in the order of ``DEFAULT_INPUTS``, the first
+    invalid one is reported.
+
+    Args:
+        raw: The input strings by input name (``fail-on-missing``, ...). An input that is
+            missing takes its value in ``DEFAULT_INPUTS``.
+
+    Returns:
+        The parsed inputs.
+
+    Raises:
+        MetadataError: If an input is invalid.
+    """
+    values = {**DEFAULT_INPUTS, **raw}
+    return Inputs(
+        pyproject_path=values["pyproject-path"],
+        extra_values=parse_string_array(values["extra-values"], "extra-values"),
+        dependencies=parse_dependencies(values["dependencies"]),
+        python_candidates=parse_python_candidates(values["python-candidates"]),
+        fail_on_missing=parse_bool(values["fail-on-missing"], "fail-on-missing"),
+        fail_on_dynamic_version=parse_bool(
+            values["fail-on-dynamic-version"], "fail-on-dynamic-version"
+        ),
+        strict=parse_bool(values["strict"], "strict"),
+        step_summary=parse_step_summary(values["step-summary"], "step-summary"),
+        resolve_dynamic_version=parse_bool(
+            values["resolve-dynamic-version"], "resolve-dynamic-version"
+        ),
     )

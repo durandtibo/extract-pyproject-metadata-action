@@ -4,7 +4,6 @@ requested dependencies."""
 from __future__ import annotations
 
 import json
-import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,7 +13,6 @@ from extract_pyproject_metadata.dependencies.lookup import (
     check_no_missing_dependency,
     extract_dependency_requirements,
     extract_dependency_specifiers,
-    parse_dependencies,
     requirements_from_index,
     specifiers_from_index,
 )
@@ -379,48 +377,6 @@ def test_requirements_from_index() -> None:
         ],
         "other": [],
     }
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        "[]",
-        '["numpy", "NumPy"]',
-        '["numpy@project"]',
-        '["numpy@extra:x", "numpy@group:dev"]',
-        '["a@extra:with:colon", "a@group:Dev_Tools"]',
-    ],
-)
-def test_parse_dependencies(raw: str) -> None:
-    assert parse_dependencies(raw) == json.loads(raw)
-
-
-@pytest.mark.parametrize(
-    "entry",
-    [
-        "numpy@dev",
-        "numpy@",
-        "numpy@extra",
-        "numpy@extra:",
-        "numpy@group:",
-        "numpy@Project",
-        "numpy@feature:x",
-        "numpy@@project",
-    ],
-)
-def test_parse_dependencies_invalid_scope(entry: str) -> None:
-    with pytest.raises(
-        MetadataError, match=rf"^dependencies entry {re.escape(repr(entry))} has an invalid scope: "
-    ):
-        parse_dependencies(json.dumps([entry]))
-
-
-@pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[1]"])
-def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
-    with pytest.raises(
-        MetadataError, match=r"^dependencies (is not valid JSON|must be a JSON array of strings)"
-    ):
-        parse_dependencies(raw)
 
 
 @pytest.mark.parametrize(

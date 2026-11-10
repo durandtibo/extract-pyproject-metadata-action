@@ -15,16 +15,19 @@ from pathlib import Path
 
 import pytest
 
-from extract_pyproject_metadata.dependencies.lookup import parse_dependencies
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import parse_bool, parse_string_array
+from extract_pyproject_metadata.inputs import (
+    parse_bool,
+    parse_dependencies,
+    parse_python_candidates,
+    parse_string_array,
+)
 from extract_pyproject_metadata.output.escaping import escape_annotation, escape_annotation_property
 from extract_pyproject_metadata.output.github import write_github_output
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
     highest_python_version,
     lowest_python_version,
-    parse_python_candidates,
 )
 from tests.helpers import parse_github_output
 

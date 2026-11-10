@@ -9,9 +9,8 @@ from pathlib import Path
 import pytest
 
 import extract_pyproject_metadata.cli as extract_metadata_module
-from extract_pyproject_metadata.dependencies.lookup import parse_dependencies
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
+from extract_pyproject_metadata.inputs import DEFAULT_PYTHON_CANDIDATES, parse_dependencies
 from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Metadata, Report
 from tests.helpers import (
@@ -21,7 +20,7 @@ from tests.helpers import (
     _action_section_keys,
     _readme_table_names,
     extract,
-    parse_args,
+    parse_inputs_args,
     write_pyproject,
 )
 
@@ -60,7 +59,7 @@ def test_action_yaml_every_input_has_a_default() -> None:
     assert inputs.count("    default:") == len(_action_section_keys("inputs"))
 
 
-def test_the_readme_lists_the_boolean_inputs_of_parse_options() -> None:
+def test_the_readme_lists_the_boolean_inputs_of_parse_inputs() -> None:
     readme = " ".join(README_PATH.read_text(encoding="utf-8").split())
     names = ", ".join(
         f"`{name}`"
@@ -117,7 +116,7 @@ def _defined_names(node: ast.stmt) -> list[ast.Name]:
 
 def extract_report(path: Path, dependencies: str) -> Report:
     """Build the report of ``path`` for the ``dependencies`` input."""
-    return build_report(parse_args(str(path), "[]", dependencies))
+    return build_report(parse_inputs_args(str(path), "[]", dependencies))
 
 
 def _dependencies_section() -> str:

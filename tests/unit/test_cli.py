@@ -11,8 +11,9 @@ import pytest
 import extract_pyproject_metadata.cli as extract_metadata_module
 import extract_pyproject_metadata.dependencies.requirements as dependencies_requirements_module
 import extract_pyproject_metadata.report as report_module
-from extract_pyproject_metadata.cli import main
-from extract_pyproject_metadata.inputs import Options, parse_step_summary
+from extract_pyproject_metadata.cli import main, parse_cli_inputs
+from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.inputs import parse_inputs, parse_step_summary
 from extract_pyproject_metadata.output.github import (
     format_error,
 )
@@ -20,7 +21,6 @@ from extract_pyproject_metadata.output.summary import (
     resolve_step_summary,
 )
 from extract_pyproject_metadata.pyproject import load_pyproject
-from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     DATA_WITH_SCOPES,
@@ -516,13 +516,31 @@ def test_resolve_step_summary(value: str, environ: dict[str, str], expected: str
     assert resolve_step_summary(parse_step_summary(value, "step-summary"), environ) == expected
 
 
-def test_build_report_uses_the_given_options(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-    args = parse_args("--strict", "maybe", str(path), "[]", '["missing"]')
+def test_parse_cli_inputs_maps_every_option() -> None:
+    args = parse_args(
+        "--fail-on-missing", "true", "--strict", "true", "--step-summary", "auto",
+        "--python-candidates", '["3.12"]', "--resolve-dynamic-version", "true",
+        "--fail-on-dynamic-version", "true", "p.toml", '["a"]', '["numpy"]',
+    )  # fmt: skip
 
-    report = build_report(args, Options(False, False, False, "false", False))
+    assert parse_cli_inputs(args) == parse_inputs(
+        {
+            "pyproject-path": "p.toml",
+            "extra-values": '["a"]',
+            "dependencies": '["numpy"]',
+            "python-candidates": '["3.12"]',
+            "fail-on-missing": "true",
+            "fail-on-dynamic-version": "true",
+            "strict": "true",
+            "step-summary": "auto",
+            "resolve-dynamic-version": "true",
+        }
+    )
 
-    assert report["dependency_specifiers"] == {"missing": None}
+
+def test_parse_cli_inputs_invalid_value() -> None:
+    with pytest.raises(MetadataError, match=r"strict must be 'true' or 'false', got: 'maybe'"):
+        parse_cli_inputs(parse_args("--strict", "maybe", "p.toml", "[]"))
 
 
 def test_main_step_summary_writes_the_job_summary(

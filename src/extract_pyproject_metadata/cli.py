@@ -119,10 +119,10 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import parse_options
+from extract_pyproject_metadata.inputs import DEFAULT_PYTHON_CANDIDATES, parse_inputs
 from extract_pyproject_metadata.output.escaping import (
     escape_annotation,
 )
@@ -137,12 +137,12 @@ from extract_pyproject_metadata.output.summary import (
     resolve_step_summary,
     write_step_summary,
 )
-from extract_pyproject_metadata.python_versions import (
-    DEFAULT_PYTHON_CANDIDATES,
-)
 from extract_pyproject_metadata.report import build_report
 
-__all__ = ["main"]
+if TYPE_CHECKING:
+    from extract_pyproject_metadata.types import Inputs
+
+__all__ = ["main", "parse_cli_inputs"]
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -230,6 +230,33 @@ def _build_parser(prog: str) -> _ArgumentParser:
     return parser
 
 
+def parse_cli_inputs(args: argparse.Namespace) -> Inputs:
+    """Map the parsed command line to the parsed inputs of the action.
+
+    Args:
+        args: The parsed command line, as returned by ``_build_parser``.
+
+    Returns:
+        The validated inputs.
+
+    Raises:
+        MetadataError: If an input is invalid.
+    """
+    return parse_inputs(
+        {
+            "pyproject-path": args.pyproject_path,
+            "extra-values": args.extra_values,
+            "dependencies": args.dependencies,
+            "python-candidates": args.python_candidates,
+            "fail-on-missing": args.fail_on_missing,
+            "fail-on-dynamic-version": args.fail_on_dynamic_version,
+            "strict": args.strict,
+            "step-summary": args.step_summary,
+            "resolve-dynamic-version": args.resolve_dynamic_version,
+        }
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run the command line interface and return the process exit
     code."""
@@ -243,15 +270,15 @@ def main(argv: list[str]) -> int:
 
     summary_path: str | None = None
     try:
-        options = parse_options(args)
-        summary_path = resolve_step_summary(options.step_summary, os.environ)
-        report = build_report(args, options)
+        inputs = parse_cli_inputs(args)
+        summary_path = resolve_step_summary(inputs.step_summary, os.environ)
+        report = build_report(inputs)
         if args.github_output is None:
             # Like the action outputs, keep non-ASCII characters as they are.
             print(json.dumps(report, ensure_ascii=False))
         else:
             emit_github_output(report, args.pyproject_path, args.github_output)
-        if summary_path is not None and (options.step_summary == "true" or report["warnings"]):
+        if summary_path is not None and (inputs.step_summary == "true" or report["warnings"]):
             write_step_summary(summary_path, format_step_summary(report, format_outputs(report)))
     except MetadataError as exc:
         annotate = args.github_output is not None
