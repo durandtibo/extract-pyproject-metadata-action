@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.helpers import REQUIREMENTS_PATH, ROOT_PATH
+from tests.helpers import REQUIREMENTS_PATH
 
 
 def test_script_requirements_list_the_dependencies_of_the_script() -> None:
@@ -11,8 +11,3 @@ def test_script_requirements_list_the_dependencies_of_the_script() -> None:
 
     assert lines == ["packaging>=23.0,<27"]
 
-
-def test_test_requirements_include_the_script_requirements() -> None:
-    requirements = (ROOT_PATH / "requirements-test.txt").read_text(encoding="utf-8")
-
-    assert "-r scripts/requirements.txt" in requirements.splitlines()

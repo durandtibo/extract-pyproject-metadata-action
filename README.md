@@ -514,7 +514,7 @@ it: `tests/unit` (one module per module), `tests/integration` and
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -r requirements-test.txt
+.venv/bin/pip install -r scripts/requirements.txt --group dev
 .venv/bin/pytest -q --cov
 ```
 

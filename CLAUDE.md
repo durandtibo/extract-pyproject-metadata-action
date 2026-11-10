@@ -42,12 +42,15 @@ module above it:
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
-  `.venv/bin/pip install -r requirements-test.txt`) and run `.venv/bin/python`,
+  `.venv/bin/pip install -r scripts/requirements.txt --group dev`) and run `.venv/bin/python`,
   `.venv/bin/pytest`, `.venv/bin/ruff check src scripts tests` (must pass),
   `.venv/bin/ty check`, `.venv/bin/pyright` (strict on `src` and `scripts`) and `.venv/bin/lint-imports` (all must pass; there is no mypy).
 - The tooling follows [coola](https://github.com/durandtibo/coola). `uv sync
 --group dev` installs the `dev` dependency group of `pyproject.toml` (the CI
-  still uses `requirements-test.txt`: keep the two lists compatible).
+  installs it with `pip install -r scripts/requirements.txt --group dev`). Each
+  dependency is declared once: the runtime ones in `scripts/requirements.txt`
+  (read by `pyproject.toml` through `hatch-requirements-txt`), the others in the
+  `dev` group.
 - `tasks.py` and `invoke.yaml` define the [invoke-tasklib](https://github.com/durandtibo/invoke-tasklib)
   tasks: `inv --list` shows them, for example `inv check.all` (lint, format,
   types, imports, unit tests), `inv fix.all`, `inv test.unit --cov`,
