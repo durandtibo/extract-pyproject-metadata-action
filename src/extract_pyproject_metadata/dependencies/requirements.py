@@ -17,7 +17,6 @@ from extract_pyproject_metadata.inputs import PROJECT_SCOPE
 __all__ = [
     "candidate_requirements",
     "conflict_warnings",
-    "dynamic_dependency_fields",
     "extract_project_dependencies",
     "index_dependencies",
 ]
@@ -32,7 +31,7 @@ def _dynamic_message(field: str, pyproject_path: str) -> str:
     )
 
 
-def dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
+def _dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
     """Return the dependency fields that only the build backend can
     provide.
 
@@ -108,7 +107,7 @@ def _scoped_requirements(
         reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label, pyproject_path))
     groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
-        _dynamic_message(field, pyproject_path) for field in dynamic_dependency_fields(data)
+        _dynamic_message(field, pyproject_path) for field in _dynamic_dependency_fields(data)
     ]
     # flatten_group reads every spelling of a group name (PEP 503), so each group is expanded
     # once, from the first spelling: expanding each spelling would repeat its requirements.
@@ -208,7 +207,7 @@ def extract_project_dependencies(
         project.get("dependencies", []), "[project].dependencies", pyproject_path
     )
     found, names, warnings = _index_requirements(entries, pyproject_path)
-    if "dependencies" in dynamic_dependency_fields(data):
+    if "dependencies" in _dynamic_dependency_fields(data):
         warnings.append(_dynamic_message("dependencies", pyproject_path))
     dependencies: dict[str, str] = {}
     for key, matches in found.items():

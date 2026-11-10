@@ -8,16 +8,12 @@ import pytest
 
 import extract_pyproject_metadata.output.summary as output_summary_module
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.output.github import (
-    format_outputs,
-)
 from extract_pyproject_metadata.output.summary import (
     format_error_summary,
-    format_step_summary,
-    resolve_step_summary,
+    format_warning_summary,
+    resolve_summary_path,
     write_step_summary,
 )
-from extract_pyproject_metadata.types import Report
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -45,103 +41,9 @@ def test_html_cell(value: str, expected: str) -> None:
     assert output_summary_module._html_cell(value) == expected
 
 
-def test_format_step_summary_without_warnings() -> None:
-    report = Report(
-        name="coola",
-        normalized_name="coola",
-        version="1.2.3",
-        normalized_version="1.2.3",
-        description="",
-        readme="",
-        license="",
-        license_files=[],
-        authors=[],
-        urls={},
-        keywords=[],
-        classifiers=[],
-        scripts={},
-        requires_python="",
-        extras=["", "a"],
-        groups=[],
-        build_backend="",
-        build_requires=[],
-        python_versions=["3.12"],
-        python_min="3.12",
-        python_max="3.12",
-        project_dependencies={},
-        dependency_specifiers={},
-        dependency_requirements={},
-        warnings=[],
-        schema_version=1,
-    )
-
-    assert format_step_summary(report, format_outputs(report)) == (
-        "### 📦 Project metadata\n"
-        "\n"
-        "| Output | Value |\n"
-        "| --- | --- |\n"
-        "| `name` | <code>coola</code> |\n"
-        "| `normalized-name` | <code>coola</code> |\n"
-        "| `version` | <code>1&#46;2&#46;3</code> |\n"
-        "| `normalized-version` | <code>1&#46;2&#46;3</code> |\n"
-        "| `description` |  |\n"
-        "| `readme` |  |\n"
-        "| `license` |  |\n"
-        "| `license-files` | <code>&#91;&#93;</code> |\n"
-        "| `authors` | <code>&#91;&#93;</code> |\n"
-        "| `urls` | <code>&#123;&#125;</code> |\n"
-        "| `keywords` | <code>&#91;&#93;</code> |\n"
-        "| `classifiers` | <code>&#91;&#93;</code> |\n"
-        "| `scripts` | <code>&#123;&#125;</code> |\n"
-        "| `requires-python` |  |\n"
-        "| `extras` | <code>&#91;&#34;&#34;&#44;&#34;a&#34;&#93;</code> |\n"
-        "| `groups` | <code>&#91;&#93;</code> |\n"
-        "| `build-backend` |  |\n"
-        "| `build-requires` | <code>&#91;&#93;</code> |\n"
-        "| `python-versions` | <code>&#91;&#34;3&#46;12&#34;&#93;</code> |\n"
-        "| `python-min` | <code>3&#46;12</code> |\n"
-        "| `python-max` | <code>3&#46;12</code> |\n"
-        "| `python-matrix` | <code>&#123;&#34;python&#45;version&#34;&#58;&#91;&#34;3&#46;12&#34;&#93;&#125;</code> |\n"
-        "| `project-dependencies` | <code>&#123;&#125;</code> |\n"
-        "| `dependency-specifiers` | <code>&#123;&#125;</code> |\n"
-        "| `dependency-requirements` | <code>&#123;&#125;</code> |\n"
-    )
-
-
-def test_format_step_summary_lists_the_warnings() -> None:
-    report = Report(
-        name="a",
-        normalized_name="a",
-        version="1",
-        normalized_version="1",
-        description="",
-        readme="",
-        license="",
-        license_files=[],
-        authors=[],
-        urls={},
-        keywords=[],
-        classifiers=[],
-        scripts={},
-        requires_python="",
-        extras=[],
-        groups=[],
-        build_backend="",
-        build_requires=[],
-        python_versions=[],
-        python_min="",
-        python_max="",
-        project_dependencies={},
-        dependency_specifiers={},
-        dependency_requirements={},
-        warnings=["first | one", "second"],
-        schema_version=1,
-    )
-
-    summary = format_step_summary(report, format_outputs(report))
-
-    assert summary.endswith(
-        "\n#### ⚠️ Warnings\n\n- <code>first &#124; one</code>\n- <code>second</code>\n"
+def test_format_warning_summary_lists_the_warnings() -> None:
+    assert format_warning_summary(["first | one", "second"]) == (
+        "### ⚠️ Project metadata\n\n- <code>first &#124; one</code>\n- <code>second</code>\n"
     )
 
 
@@ -180,6 +82,9 @@ def test_format_error_summary_skips_blank_lines() -> None:
 
 
 @pytest.mark.parametrize("environ", [{}, {"GITHUB_STEP_SUMMARY": ""}])
-def test_resolve_step_summary_without_the_environment_variable(environ: dict[str, str]) -> None:
-    with pytest.raises(MetadataError, match=r"step-summary is 'true' but .*GITHUB_STEP_SUMMARY"):
-        resolve_step_summary("true", environ)
+def test_resolve_summary_path_outside_a_workflow(environ: dict[str, str]) -> None:
+    assert resolve_summary_path(environ) is None
+
+
+def test_resolve_summary_path() -> None:
+    assert resolve_summary_path({"GITHUB_STEP_SUMMARY": "/tmp/s.md"}) == "/tmp/s.md"

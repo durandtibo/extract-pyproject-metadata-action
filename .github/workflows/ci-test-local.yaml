@@ -149,10 +149,7 @@ jobs:
           extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
           dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
           python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '["3.11","3.12","3.13","3.14","3.15"]' }}
-          fail-on-missing: ${{ fromJSON(steps.case.outputs.inputs)['fail-on-missing'] || 'false' }}
-          fail-on-dynamic-version: ${{ fromJSON(steps.case.outputs.inputs)['fail-on-dynamic-version'] || 'false' }}
           strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
-          step-summary: ${{ fromJSON(steps.case.outputs.inputs)['step-summary'] || 'false' }}
           resolve-dynamic-version: ${{ fromJSON(steps.case.outputs.inputs)['resolve-dynamic-version'] || 'false' }}
 
       - name: ✓ Compare the json output with the golden file
@@ -259,22 +256,22 @@ jobs:
           assert_equal "outcome" "success" "$OUTCOME"
           print_success "a warning does not fail the step without strict"
 
-      - name: 🧪 Test fail-on-missing with a missing dependency (should fail)
-        id: test-fail-on-missing
+      - name: 🧪 Test strict with a missing dependency (should fail)
+        id: test-strict-missing
         uses: ./
         with:
           pyproject-path: test-data/with-dependencies/pyproject.toml
           dependencies: '["invoke-tasklib","missing"]'
-          fail-on-missing: "true"
+          strict: "true"
         continue-on-error: true
 
-      - name: ✓ Verify Test fail-on-missing with a missing dependency fails the step
+      - name: ✓ Verify Test strict with a missing dependency fails the step
         env:
-          OUTCOME: ${{ steps.test-fail-on-missing.outcome }}
+          OUTCOME: ${{ steps.test-strict-missing.outcome }}
         run: |
           source scripts/test-helper.sh
           assert_equal "outcome" "failure" "$OUTCOME"
-          print_success "Test fail-on-missing with a missing dependency fails the step"
+          print_success "Test strict with a missing dependency fails the step"
 
       - name: 🧪 Test a dynamic version that cannot be resolved (should fail)
         id: test-unresolved
@@ -282,7 +279,7 @@ jobs:
         with:
           pyproject-path: test-data/dynamic-version/pyproject.toml
           resolve-dynamic-version: "true"
-          fail-on-dynamic-version: "true"
+          strict: "true"
         continue-on-error: true
 
       - name: ✓ Verify Test a dynamic version that cannot be resolved fails the step

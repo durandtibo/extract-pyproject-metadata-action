@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from extract_pyproject_metadata.dependencies.lookup import (
-    check_no_missing_dependency,
     requirements_from_index,
     specifiers_from_index,
 )
 from extract_pyproject_metadata.dependencies.requirements import (
-    dynamic_dependency_fields,
     extract_project_dependencies,
     index_dependencies,
 )
@@ -40,9 +38,7 @@ def build_report(inputs: Inputs) -> Report:
         specifiers and the warnings (without duplicates).
 
     Raises:
-        MetadataError: If the pyproject.toml is invalid, the version
-            is dynamic with ``fail_on_dynamic_version``, a dependency
-            is not found with ``fail_on_missing``, or there is a
+        MetadataError: If the pyproject.toml is invalid, or there is a
             warning with ``strict``.
     """
     data = load_pyproject(inputs.pyproject_path)
@@ -50,7 +46,6 @@ def build_report(inputs: Inputs) -> Report:
         data,
         inputs.extra_values,
         inputs.pyproject_path,
-        inputs.fail_on_dynamic_version,
         inputs.resolve_dynamic_version,
     )
     # Computed in the order of their warnings in the report: the metadata, the Python versions,
@@ -70,10 +65,6 @@ def build_report(inputs: Inputs) -> Report:
     warnings.extend(python_warnings)
     warnings.extend(project_warnings)
     warnings.extend(specifier_warnings)
-    if inputs.fail_on_missing:
-        check_no_missing_dependency(
-            specifiers, inputs.pyproject_path, dynamic_dependency_fields(data)
-        )
     report = Report(
         **metadata,
         python_versions=python_versions,

@@ -78,6 +78,11 @@ CASES = [
         "are close to the size limit of a GitHub step output",
         PROJECT + 'version = "1"\nkeywords = ["' + "x" * 900_000 + '"]\n',
     ),
+    Case(
+        "' not found",
+        PROJECT + 'version = "1"\ndependencies = ["pandas"]\n',
+        '["numpy"]',
+    ),
 ]
 
 
@@ -92,6 +97,14 @@ def _readme_warnings() -> list[str]:
     return re.findall(r"^\| `(.+?)` +\|", section, flags=re.MULTILINE)
 
 
+def _own_warnings(report: Report, case: Case) -> list[str]:
+    """Return the warnings of a case, without the "not found" ones of the dependencies that the
+    case requests only to have the warnings of the dependency tables reported."""
+    if case.message == "' not found":
+        return report["warnings"]
+    return [message for message in report["warnings"] if "' not found" not in message]
+
+
 def _report(tmp_path: Path, case: Case, strict: bool) -> Report:
     path = write_pyproject(tmp_path, case.toml)
     options = ["--strict", "true"] if strict else []
@@ -100,7 +113,7 @@ def _report(tmp_path: Path, case: Case, strict: bool) -> Report:
 
 @pytest.mark.parametrize("case", PARAMS)
 def test_the_warning_is_produced(tmp_path: Path, case: Case) -> None:
-    messages = _report(tmp_path, case, strict=False)["warnings"]
+    messages = _own_warnings(_report(tmp_path, case, strict=False), case)
 
     assert len(messages) == 1
     assert case.message in messages[0]
@@ -108,7 +121,11 @@ def test_the_warning_is_produced(tmp_path: Path, case: Case) -> None:
 
 @pytest.mark.parametrize("case", PARAMS)
 def test_the_warning_fails_the_step_with_strict(tmp_path: Path, case: Case) -> None:
-    with pytest.raises(MetadataError, match=r"strict is 'true' and there are 1 warning\(s\):\n- "):
+    count = len(_report(tmp_path, case, strict=False)["warnings"])
+
+    with pytest.raises(
+        MetadataError, match=rf"strict is 'true' and there are {count} warning\(s\):\n- "
+    ):
         _report(tmp_path, case, strict=True)
 
 

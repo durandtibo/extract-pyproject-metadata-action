@@ -10,12 +10,12 @@ import pytest
 
 from extract_pyproject_metadata.dependencies.lookup import (
     _lookup_key,
-    check_no_missing_dependency,
     extract_dependency_requirements,
     extract_dependency_specifiers,
     requirements_from_index,
     specifiers_from_index,
 )
+from extract_pyproject_metadata.dependencies.requirements import index_dependencies
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.pyproject import load_pyproject
 from tests.helpers import (
@@ -102,10 +102,11 @@ def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
     )
 
     assert result == {"good": ">=1", "dev-pkg": ">=2", "missing": None}
-    assert len(warnings) == 3
+    assert len(warnings) == 4
     assert warnings[0].startswith(f"Ignoring invalid requirement 'bad requirement!!' in {path}: ")
     assert warnings[1].startswith(f"Ignoring invalid requirement 'also bad>>' in {path}: ")
     assert warnings[2].startswith(f"Ignoring invalid requirement 'oops==' in {path}: ")
+    assert warnings[3] == f"{path}: dependency 'missing' not found"
 
 
 def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
@@ -325,7 +326,8 @@ def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
 
     assert result == {"numpy": None}
     assert warnings == [
-        "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it"
+        "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
+        "p.toml: dependency 'numpy' not found",
     ]
 
 
@@ -337,6 +339,7 @@ def test_dependency_dynamic_fields_add_one_warning_each() -> None:
     assert warnings == [
         "p.toml: [project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
         "p.toml: [project].optional-dependencies is dynamic, it cannot be read, so no requirement is found in it",
+        "p.toml: dependency 'numpy' not found",
     ]
 
 
@@ -357,7 +360,11 @@ def test_specifiers_from_index() -> None:
 
     assert specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
         {"Numpy": ">=1", "tqdm": "", "other": None},
-        ["warning", "Numpy has different specifiers in p.toml: ['<2', '>=1']; using '>=1'"],
+        [
+            "warning",
+            "Numpy has different specifiers in p.toml: ['<2', '>=1']; using '>=1'",
+            "p.toml: dependency 'other' not found",
+        ],
     )
 
 
@@ -485,24 +492,21 @@ def test_extract_dependency_requirements_wrong_type() -> None:
         extract_dependency_requirements({"project": {"dependencies": 1}}, ["numpy"], "custom.toml")
 
 
-def test_check_no_missing_dependency_all_found() -> None:
-    check_no_missing_dependency({"a": ">=1", "b": ""}, "p.toml")
+def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
+    found, index_warnings = index_dependencies({"project": {"dependencies": ["a>=1"]}}, "p.toml")
+
+    specifiers, warnings = specifiers_from_index(
+        found, index_warnings, ["a", "b", "c@group:dev"], "custom.toml"
+    )
+
+    assert specifiers == {"a": ">=1", "b": None, "c@group:dev": None}
+    assert warnings == [
+        "custom.toml: dependency 'b' not found",
+        "custom.toml: dependency 'c@group:dev' not found",
+    ]
 
 
-def test_check_no_missing_dependency_nothing_requested() -> None:
-    check_no_missing_dependency({}, "p.toml")
+def test_no_warning_when_every_dependency_is_found() -> None:
+    found, index_warnings = index_dependencies({"project": {"dependencies": ["a>=1"]}}, "p.toml")
 
-
-def test_check_no_missing_dependency_lists_the_missing_packages() -> None:
-    with pytest.raises(
-        MetadataError, match=r"custom\.toml: dependencies not found in .*: \['b', 'd'\]$"
-    ):
-        check_no_missing_dependency({"a": ">=1", "b": None, "c": "", "d": None}, "custom.toml")
-
-
-def test_check_no_missing_dependency_points_out_dynamic_fields() -> None:
-    with pytest.raises(
-        MetadataError,
-        match=r"\['numpy'\]; \[project\]\.dependencies is dynamic and cannot be read$",
-    ):
-        check_no_missing_dependency({"numpy": None}, "p.toml", ["dependencies"])
+    assert specifiers_from_index(found, index_warnings, ["a"], "p.toml") == ({"a": ">=1"}, [])

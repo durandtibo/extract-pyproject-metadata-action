@@ -14,7 +14,6 @@ from extract_pyproject_metadata.inputs import (
     parse_dependencies,
     parse_inputs,
     parse_python_candidates,
-    parse_step_summary,
 )
 from extract_pyproject_metadata.types import Inputs
 from tests.helpers import README_PATH
@@ -26,10 +25,7 @@ def test_parse_inputs() -> None:
         "extra-values": '["", "a"]',
         "dependencies": '["numpy@project"]',
         "python-candidates": '["3.12", "3.12", "3.13"]',
-        "fail-on-missing": "true",
-        "fail-on-dynamic-version": " TRUE",
-        "strict": "false",
-        "step-summary": "auto",
+        "strict": " TRUE",
         "resolve-dynamic-version": "TRUE",
     }
 
@@ -38,10 +34,7 @@ def test_parse_inputs() -> None:
         extra_values=["", "a"],
         dependencies=["numpy@project"],
         python_candidates=["3.12", "3.13"],
-        fail_on_missing=True,
-        fail_on_dynamic_version=True,
-        strict=False,
-        step_summary="auto",
+        strict=True,
         resolve_dynamic_version=True,
     )
 
@@ -52,27 +45,15 @@ def test_parse_inputs_defaults() -> None:
         extra_values=[],
         dependencies=[],
         python_candidates=["3.11", "3.12", "3.13", "3.14", "3.15"],
-        fail_on_missing=False,
-        fail_on_dynamic_version=False,
         strict=False,
-        step_summary="false",
         resolve_dynamic_version=False,
     )
 
 
-@pytest.mark.parametrize(
-    "name", ["fail-on-missing", "fail-on-dynamic-version", "strict", "resolve-dynamic-version"]
-)
+@pytest.mark.parametrize("name", ["strict", "resolve-dynamic-version"])
 def test_parse_inputs_invalid_boolean(name: str) -> None:
     with pytest.raises(MetadataError, match=rf"{name} must be 'true' or 'false', got: 'maybe'"):
         parse_inputs({name: "maybe"})
-
-
-def test_parse_inputs_invalid_step_summary() -> None:
-    with pytest.raises(
-        MetadataError, match=r"step-summary must be 'true', 'false' or 'auto', got: 'maybe'"
-    ):
-        parse_inputs({"step-summary": "maybe"})
 
 
 @pytest.mark.parametrize(
@@ -112,28 +93,6 @@ def test_parse_bool(value: str, expected: bool) -> None:
 def test_parse_bool_invalid(value: str) -> None:
     with pytest.raises(MetadataError, match=rf"my-input must be 'true' or 'false', got: {value!r}"):
         parse_bool(value, "my-input")
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("true", "true"),
-        ("false", "false"),
-        ("auto", "auto"),
-        (" AUTO ", "auto"),
-        ("True", "true"),
-    ],
-)
-def test_parse_step_summary(value: str, expected: str) -> None:
-    assert parse_step_summary(value, "step-summary") == expected
-
-
-@pytest.mark.parametrize("value", ["", "maybe", "yes", "0", "automatic"])
-def test_parse_step_summary_invalid(value: str) -> None:
-    with pytest.raises(
-        MetadataError, match=rf"my-input must be 'true', 'false' or 'auto', got: {value!r}"
-    ):
-        parse_step_summary(value, "my-input")
 
 
 @pytest.mark.parametrize(

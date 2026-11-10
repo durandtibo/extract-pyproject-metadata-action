@@ -88,6 +88,8 @@
     ],
     "missing": []
   },
-  "warnings": [],
+  "warnings": [
+    "test-data/dependency-lookup/pyproject.toml: dependency 'missing' not found"
+  ],
   "schema_version": 1
 }

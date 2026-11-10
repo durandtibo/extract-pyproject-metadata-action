@@ -13,8 +13,6 @@ from extract_pyproject_metadata.types import Inputs
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from extract_pyproject_metadata.types import StepSummary
-
 __all__ = [
     "DEFAULT_INPUTS",
     "DEFAULT_PYTHON_CANDIDATES",
@@ -23,7 +21,6 @@ __all__ = [
     "parse_dependencies",
     "parse_inputs",
     "parse_python_candidates",
-    "parse_step_summary",
     "parse_string_array",
 ]
 
@@ -39,10 +36,7 @@ DEFAULT_INPUTS = {
     "extra-values": "[]",
     "dependencies": "[]",
     "python-candidates": DEFAULT_PYTHON_CANDIDATES,
-    "fail-on-missing": "false",
-    "fail-on-dynamic-version": "false",
     "strict": "false",
-    "step-summary": "false",
     "resolve-dynamic-version": "false",
 }
 
@@ -94,29 +88,6 @@ def parse_bool(value: str, name: str) -> bool:
         msg = f"{name} must be 'true' or 'false', got: {value!r}"
         raise MetadataError(msg)
     return lowered == "true"
-
-
-def parse_step_summary(value: str, name: str) -> StepSummary:
-    """Parse the ``"true"`` / ``"false"`` / ``"auto"`` string of the
-    ``step-summary`` input.
-
-    Args:
-        value: The string, compared case-insensitively.
-        name: The name of the input, used in the error message.
-
-    Returns:
-        ``"true"`` (always write the job summary), ``"false"`` (never) or
-        ``"auto"`` (only when there are warnings, or the run fails).
-
-    Raises:
-        MetadataError: If ``value`` is none of them.
-    """
-    modes: dict[str, StepSummary] = {"true": "true", "false": "false", "auto": "auto"}
-    mode = modes.get(value.strip().lower())
-    if mode is None:
-        msg = f"{name} must be 'true', 'false' or 'auto', got: {value!r}"
-        raise MetadataError(msg)
-    return mode
 
 
 def parse_dependencies(raw: str) -> list[str]:
@@ -195,12 +166,7 @@ def parse_inputs(raw: Mapping[str, str]) -> Inputs:
         extra_values=parse_string_array(values["extra-values"], "extra-values"),
         dependencies=parse_dependencies(values["dependencies"]),
         python_candidates=parse_python_candidates(values["python-candidates"]),
-        fail_on_missing=parse_bool(values["fail-on-missing"], "fail-on-missing"),
-        fail_on_dynamic_version=parse_bool(
-            values["fail-on-dynamic-version"], "fail-on-dynamic-version"
-        ),
         strict=parse_bool(values["strict"], "strict"),
-        step_summary=parse_step_summary(values["step-summary"], "step-summary"),
         resolve_dynamic_version=parse_bool(
             values["resolve-dynamic-version"], "resolve-dynamic-version"
         ),

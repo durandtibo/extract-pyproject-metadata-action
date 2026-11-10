@@ -35,23 +35,11 @@ inputs:
       (e.g. '["pytest@group:dev"]').
     default: "[]"
 
-  fail-on-missing:
-    description: >
-      Set to "true" to fail when a package listed in dependencies is not found,
-      instead of reporting it as null in dependency-specifiers ("true" or "false")
-    default: "false"
-
   python-candidates:
     description: >
       JSON array of "major.minor" Python versions to choose from for the
       python-versions output (e.g. '["3.11","3.12"]')
     default: '["3.11","3.12","3.13","3.14","3.15"]'
-
-  fail-on-dynamic-version:
-    description: >
-      Set to "true" to fail when the version is listed in [project].dynamic,
-      instead of reporting an empty version with a warning ("true" or "false")
-    default: "false"
 
   resolve-dynamic-version:
     description: >
@@ -62,17 +50,10 @@ inputs:
 
   strict:
     description: >
-      Set to "true" to fail when there is any warning, instead of only
-      reporting it ("true" or "false")
+      Set to "true" to fail when there is any warning (a dynamic version, a
+      dependency that is not found, ...), instead of only reporting it ("true"
+      or "false")
     default: "false"
-
-  step-summary:
-    description: >
-      Set to "true" to always write the outputs and the warnings to the job
-      summary of the workflow run, "false" to never write them, or "auto" to
-      write them only when there are warnings (and to write the error when the
-      step fails)
-    default: auto
 
 outputs:
   name:
@@ -205,19 +186,13 @@ runs:
         PYPROJECT_PATH: ${{ inputs.pyproject-path }}
         EXTRA_VALUES: ${{ inputs.extra-values }}
         DEPENDENCIES: ${{ inputs.dependencies }}
-        FAIL_ON_MISSING: ${{ inputs.fail-on-missing }}
         PYTHON_CANDIDATES: ${{ inputs.python-candidates }}
-        FAIL_ON_DYNAMIC_VERSION: ${{ inputs.fail-on-dynamic-version }}
         RESOLVE_DYNAMIC_VERSION: ${{ inputs.resolve-dynamic-version }}
         STRICT: ${{ inputs.strict }}
-        STEP_SUMMARY: ${{ inputs.step-summary }}
       run: |
         bash "$GITHUB_ACTION_PATH/scripts/run.sh" \
           --github-output "$GITHUB_OUTPUT" \
-          --fail-on-missing "$FAIL_ON_MISSING" \
           --python-candidates "$PYTHON_CANDIDATES" \
-          --fail-on-dynamic-version "$FAIL_ON_DYNAMIC_VERSION" \
           --resolve-dynamic-version "$RESOLVE_DYNAMIC_VERSION" \
           --strict "$STRICT" \
-          --step-summary "$STEP_SUMMARY" \
           -- "$PYPROJECT_PATH" "$EXTRA_VALUES" "$DEPENDENCIES"

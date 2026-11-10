@@ -22,7 +22,7 @@ from extract_pyproject_metadata.output.github import (
     format_summary,
     write_github_output,
 )
-from extract_pyproject_metadata.output.summary import format_step_summary
+from extract_pyproject_metadata.output.summary import format_warning_summary
 from extract_pyproject_metadata.report import build_report
 
 if TYPE_CHECKING:
@@ -138,8 +138,6 @@ def test_stdout_has_only_the_workflow_commands_of_the_script(
             "extract_metadata.py",
             "--github-output",
             str(output),
-            "--step-summary",
-            "true",
             str(path),
             "[]",
         ]
@@ -184,19 +182,20 @@ def test_the_log_line_of_a_hostile_pyproject_is_a_single_line(tmp_path: Path) ->
     assert "\r" not in summary
 
 
-def test_the_job_summary_of_a_hostile_pyproject_stays_a_table(tmp_path: Path) -> None:
+def test_the_job_summary_of_a_hostile_pyproject_stays_a_list_of_warnings(tmp_path: Path) -> None:
     path = hostile_pyproject(tmp_path)
     report = build_report(_inputs(path))
-    outputs = format_outputs(report)
 
-    markdown = format_step_summary(report, outputs)
+    markdown = format_warning_summary(report["warnings"])
 
-    rows = [line for line in markdown.splitlines() if line.startswith("| `")]
-    # The "json" output repeats the others.
-    assert [row.split("`")[1] for row in rows] == [key for key in outputs if key != "json"]
-    for row in rows:
-        cell = row.split(" | ", 1)[1]
-        assert cell.count("|") == 1  # only the closing pipe of the row
-        assert "<script" not in cell
-        assert "::" not in cell
-    assert not any(line.startswith("::") for line in markdown.splitlines())
+    lines = markdown.splitlines()
+    assert report["warnings"]
+    assert lines[:2] == ["### ⚠️ Project metadata", ""]
+    items = lines[2:]
+    assert len(items) == len(report["warnings"])
+    for item in items:
+        assert item.startswith("- <code>")
+        assert item.endswith("</code>")
+        assert "<script" not in item
+        assert "::" not in item
+    assert not any(line.startswith("::") for line in lines)
