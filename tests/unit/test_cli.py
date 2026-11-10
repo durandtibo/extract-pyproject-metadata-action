@@ -10,7 +10,6 @@ import pytest
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 import extract_pyproject_metadata.report as report_module
-import extract_pyproject_metadata.requirements as dependencies_requirements_module
 from extract_pyproject_metadata.cli import main, parse_cli_inputs
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_inputs
@@ -1118,22 +1117,6 @@ def test_main_returns_one_for_an_invalid_dependency_scope(
 
     assert main(["extract_metadata.py", str(path), "[]", '["numpy@dev"]']) == 1
     assert "dependencies entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
-
-
-def test_main_parses_each_requirement_once(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\nversion = "1"\ndependencies = ["x>=1", "y"]\n\n'
-        '[project.optional-dependencies]\nz = ["w"]\n',
-    )
-    dependencies_requirements_module._parse_requirement.cache_clear()
-
-    assert main(["extract_metadata.py", str(path), "[]", '["x", "w"]']) == 0
-    # "x>=1", "y" and "w" are parsed once, in the index of all the requirements that both lookups
-    # share. They are read again for the index of their own place ("x>=1" and "y" for the project,
-    # "w" for the extra).
-    assert dependencies_requirements_module._parse_requirement.cache_info().misses == 3
-    assert dependencies_requirements_module._parse_requirement.cache_info().hits == 3
 
 
 def test_build_parser_description_is_the_first_line_of_the_docstring() -> None:

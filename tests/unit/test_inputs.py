@@ -15,7 +15,7 @@ from extract_pyproject_metadata.inputs import (
     parse_inputs,
     parse_python_candidates,
 )
-from extract_pyproject_metadata.types import Inputs
+from extract_pyproject_metadata.types import Inputs, Lookup
 from tests.helpers import README_PATH
 
 
@@ -31,7 +31,7 @@ def test_parse_inputs() -> None:
     assert parse_inputs(raw) == Inputs(
         pyproject_path="sub/pyproject.toml",
         extra_values=["", "a"],
-        dependencies=["numpy@project"],
+        dependencies=[Lookup(text="numpy@project", name="numpy", source="project")],
         python_candidates=["3.12", "3.13"],
         strict=True,
     )
@@ -126,17 +126,30 @@ def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "raw",
+    ("entry", "expected"),
     [
-        "[]",
-        '["numpy", "NumPy"]',
-        '["numpy@project"]',
-        '["numpy@extra:x", "numpy@group:dev"]',
-        '["a@extra:with:colon", "a@group:Dev_Tools"]',
+        ("numpy", Lookup("numpy", "numpy", None)),
+        ("Foo_Bar", Lookup("Foo_Bar", "foo-bar", None)),
+        ("numpy@project", Lookup("numpy@project", "numpy", "project")),
+        ("Foo.Bar@project", Lookup("Foo.Bar@project", "foo-bar", "project")),
+        ("numpy@extra:x", Lookup("numpy@extra:x", "numpy", "extra:x")),
+        ("numpy@extra:Dev_Tools", Lookup("numpy@extra:Dev_Tools", "numpy", "extra:dev-tools")),
+        ("numpy@group:Dev..Tools", Lookup("numpy@group:Dev..Tools", "numpy", "group:dev-tools")),
+        ("a@extra:with:colon", Lookup("a@extra:with:colon", "a", "extra:with:colon")),
     ],
 )
-def test_parse_dependencies(raw: str) -> None:
-    assert parse_dependencies(raw) == json.loads(raw)
+def test_parse_dependencies(entry: str, expected: Lookup) -> None:
+    assert parse_dependencies(json.dumps([entry])) == [expected]
+
+
+def test_parse_dependencies_keeps_the_order_and_the_duplicates() -> None:
+    lookups = parse_dependencies('["b", "a", "b"]')
+
+    assert [lookup.text for lookup in lookups] == ["b", "a", "b"]
+
+
+def test_parse_dependencies_empty() -> None:
+    assert parse_dependencies("[]") == []
 
 
 @pytest.mark.parametrize(

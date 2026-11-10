@@ -7,8 +7,9 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, cast
 
+from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.types import Inputs
+from extract_pyproject_metadata.types import Inputs, Lookup
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -27,7 +28,7 @@ __all__ = [
 # The Python versions that ``python-candidates`` defaults to (and the default of the input).
 DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 
-# The scope of the requirements of ``[project].dependencies`` (see ``_scoped_requirements``).
+# The scope of the requirements of ``[project].dependencies`` (see ``collect_requirements``).
 PROJECT_SCOPE = "project"
 
 # The value of each input that is not given, by input name.
@@ -89,7 +90,7 @@ def parse_bool(value: str, name: str) -> bool:
     return lowered == "true"
 
 
-def parse_dependencies(raw: str) -> list[str]:
+def parse_dependencies(raw: str) -> list[Lookup]:
     """Parse the ``dependencies`` input: a JSON array of package names
     with an optional scope.
 
@@ -103,23 +104,31 @@ def parse_dependencies(raw: str) -> list[str]:
         raw: The value of the input.
 
     Returns:
-        The entries as written, in order, duplicates included.
+        The entries, in order, duplicates included. The names and the names of the scopes are
+        normalized per PEP 503.
 
     Raises:
         MetadataError: If ``raw`` is not a JSON array of strings, or an entry has a scope that is
             not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name).
     """
-    entries = parse_string_array(raw, "dependencies")
-    for entry in entries:
-        _, separator, scope = entry.partition("@")
-        kind, _, name = scope.partition(":")
-        if separator and scope != PROJECT_SCOPE and (kind not in {"extra", "group"} or not name):
+    lookups: list[Lookup] = []
+    for entry in parse_string_array(raw, "dependencies"):
+        name, separator, scope = entry.partition("@")
+        kind, _, scope_name = scope.partition(":")
+        if not separator:
+            source = None
+        elif scope == PROJECT_SCOPE:
+            source = PROJECT_SCOPE
+        elif kind in {"extra", "group"} and scope_name:
+            source = f"{kind}:{canonicalize_name(scope_name)}"
+        else:
             msg = (
                 f"dependencies entry {entry!r} has an invalid scope: it must be 'project', "
                 "'extra:<name>' or 'group:<name>' (for example 'pytest@group:dev')"
             )
             raise MetadataError(msg)
-    return entries
+        lookups.append(Lookup(text=entry, name=canonicalize_name(name), source=source))
+    return lookups
 
 
 def parse_python_candidates(raw: str) -> list[str]:

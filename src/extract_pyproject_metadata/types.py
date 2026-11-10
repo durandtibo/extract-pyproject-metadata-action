@@ -5,7 +5,41 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypedDict
 
-__all__ = ["Inputs", "Project", "Report"]
+__all__ = ["Inputs", "Lookup", "Project", "Report", "Requirement"]
+
+
+@dataclass(frozen=True)
+class Lookup:
+    """One entry of the ``dependencies`` input, parsed by ``parse_dependencies``.
+
+    Attributes:
+        text: The entry as written, which is its key in the outputs.
+        name: The package name, normalized per PEP 503.
+        source: The only place to search (``"project"``, ``"extra:<name>"`` or
+            ``"group:<name>"``, with the name normalized), or None to search every place.
+    """
+
+    text: str
+    name: str
+    source: str | None
+
+
+@dataclass(frozen=True)
+class Requirement:
+    """A requirement of a package, as declared in one place of the file.
+
+    Attributes:
+        name: The package name, normalized per PEP 503.
+        specifier: The version specifier, empty if there is none.
+        marker: The environment marker, empty if there is none.
+        source: The place that declares it (``"project"``, ``"extra:<name>"`` or
+            ``"group:<name>"``).
+    """
+
+    name: str
+    specifier: str
+    marker: str
+    source: str
 
 
 @dataclass(frozen=True)
@@ -14,7 +48,7 @@ class Inputs:
 
     pyproject_path: str
     extra_values: list[str]
-    dependencies: list[str]
+    dependencies: list[Lookup]
     python_candidates: list[str]
     strict: bool
 

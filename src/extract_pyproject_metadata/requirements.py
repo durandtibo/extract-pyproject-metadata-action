@@ -1,26 +1,23 @@
-"""Reading, indexing and looking up the requirements of a pyproject.toml:
+"""Reading and looking up the requirements of a pyproject.toml:
 ``[project].dependencies``, the extras and the dependency groups."""
 
 from __future__ import annotations
 
-import functools
 from typing import Any, cast
 
-from extract_pyproject_metadata._vendor.packaging.requirements import (
-    InvalidRequirement,
-    Requirement,
-)
+from extract_pyproject_metadata._vendor.packaging import requirements as pep508
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import PROJECT_SCOPE
+from extract_pyproject_metadata.types import Lookup, Requirement
 
 __all__ = [
-    "candidate_requirements",
+    "collect_requirements",
+    "find_requirements",
     "flatten_group",
-    "index_dependencies",
-    "requirements_from_index",
-    "specifiers_from_index",
+    "lookup_requirements",
+    "lookup_specifiers",
 ]
 
 # Limits that turn a pathological dependency-groups table into an error instead of a Python
@@ -146,65 +143,32 @@ def _dynamic_message(field: str, pyproject_path: str) -> str:
     )
 
 
-def _dynamic_dependency_fields(data: dict[str, Any]) -> list[str]:
-    """Return the dependency fields that only the build backend can
-    provide.
+def _gather(
+    data: dict[str, Any], dynamic: frozenset[str], pyproject_path: str
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """All requirement strings with the place they are declared in, in
+    search order.
 
-    A field is returned when it is listed in ``[project].dynamic`` and
-    has no static value in ``[project]``. Only ``dependencies`` and
-    ``optional-dependencies`` are checked, in this order.
-    """
-    project: object = data.get("project", {})
-    if not isinstance(project, dict):
-        return []
-    table = cast("dict[str, Any]", project)
-    dynamic: object = table.get("dynamic", [])
-    if not isinstance(dynamic, list):
-        return []
-    return [
-        field
-        for field in ("dependencies", "optional-dependencies")
-        if field in dynamic and field not in table
-    ]
-
-
-def candidate_requirements(
-    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
-) -> tuple[list[str], list[str]]:
-    """All requirement strings, in search order.
+    Args:
+        data: The parsed pyproject.toml.
+        dynamic: The fields of ``[project].dynamic``, as read by ``read_project``.
+        pyproject_path: Path of the file, used in the messages.
 
     Returns:
-        A tuple ``(requirements, warnings)``. ``warnings`` has one message per
-        dependency field that is dynamic (the build backend computes it, so it
-        cannot be read), per include-group cycle and per ``include-group`` that
-        names no group.
+        A tuple ``(requirements, warnings)``. ``warnings`` has one message per dependency
+        field that is dynamic (the build backend computes it, so it cannot be read), per
+        include-group cycle and per ``include-group`` that names no group. Each requirement
+        is a tuple ``(scope, requirement)``. ``scope`` is ``"project"`` for
+        ``[project].dependencies``, ``"extra:<name>"`` for an extra and ``"group:<name>"``
+        for a dependency group (the requirements that its ``include-group`` entries add
+        included), with the name normalized per PEP 503. Spellings of the same name share
+        one scope.
 
     Raises:
         MetadataError: If ``[project]``, ``[project].dependencies``,
             ``[project.optional-dependencies]``, ``[dependency-groups]`` or one
             of their values has the wrong type, or if a requirement of
             ``[project].dependencies`` or of an extra is not a string.
-    """
-    scoped, warnings = _scoped_requirements(data, pyproject_path)
-    return [raw for _, raw in scoped], warnings
-
-
-def _scoped_requirements(
-    data: dict[str, Any], pyproject_path: str = "pyproject.toml"
-) -> tuple[list[tuple[str, str]], list[str]]:
-    """All requirement strings with the place they are declared in, in
-    search order.
-
-    Returns:
-        A tuple ``(requirements, warnings)``, as for ``candidate_requirements``.
-        Each requirement is a tuple ``(scope, requirement)``. ``scope`` is
-        ``"project"`` for ``[project].dependencies``, ``"extra:<name>"`` for an extra
-        and ``"group:<name>"`` for a dependency group (the requirements that its
-        ``include-group`` entries add included), with the name normalized per PEP 503.
-        Spellings of the same name share one scope.
-
-    Raises:
-        MetadataError: Under the same conditions as ``candidate_requirements``.
     """
     project = get_table(data, "project", "[project]", pyproject_path)
     reqs = [
@@ -222,7 +186,9 @@ def _scoped_requirements(
         reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label, pyproject_path))
     groups = get_table(data, "dependency-groups", "[dependency-groups]", pyproject_path)
     warnings = [
-        _dynamic_message(field, pyproject_path) for field in _dynamic_dependency_fields(data)
+        _dynamic_message(field, pyproject_path)
+        for field in ("dependencies", "optional-dependencies")
+        if field in dynamic and field not in project
     ]
     # flatten_group reads every spelling of a group name (PEP 503), so each group is expanded
     # once, from the first spelling: expanding each spelling would repeat its requirements.
@@ -234,175 +200,117 @@ def _scoped_requirements(
         scope = f"group:{canonicalize_name(gname)}"
         reqs.extend((scope, raw) for raw in group_reqs)
         warnings.extend(group_warnings)
-    return reqs, list(dict.fromkeys(warnings))
+    return reqs, warnings
 
 
-@functools.cache
-def _parse_requirement(raw: str) -> Requirement | InvalidRequirement:
-    """Parse a requirement string, once per distinct string.
+def collect_requirements(
+    data: dict[str, Any], dynamic: frozenset[str], pyproject_path: str = "pyproject.toml"
+) -> tuple[list[Requirement], list[str]]:
+    """Read and parse every requirement of the file, in search order.
 
-    ``index_dependencies`` parses the requirements of each place twice (all the
-    places together, then each place alone): the cache makes each string parsed only once.
-
-    Args:
-        raw: The requirement string.
-
-    Returns:
-        The parsed requirement, or the ``InvalidRequirement`` that was raised
-        (returned and not raised, so that the cache keeps it too). The result
-        is shared and must not be modified.
-    """
-    try:
-        return Requirement(raw)
-    except InvalidRequirement as exc:
-        return exc
-
-
-# One requirement of a package: its specifier, its environment marker (None when there is
-# none) and the place that declares it ("project", "extra:<name>" or "group:<name>").
-_Entry = tuple[str, str | None, str]
-
-
-def _index_requirements(
-    scoped: list[tuple[str, str]], pyproject_path: str
-) -> tuple[dict[str, list[_Entry]], list[str]]:
-    """Parse requirement strings and group them by package.
-
-    Args:
-        scoped: The ``(scope, requirement)`` pairs, in search order, as returned by
-            ``_scoped_requirements``.
-        pyproject_path: Path of the file, used in the warning messages.
-
-    Returns:
-        A tuple ``(found, warnings)``. ``found`` maps the normalized name of each package
-        to the ``(specifier, marker, source)`` of each of its requirements, in order
-        (``marker`` is ``None`` when there is none, ``source`` is the scope). ``warnings``
-        has one message per requirement that cannot be parsed, which is ignored.
-    """
-    found: dict[str, list[_Entry]] = {}
-    warnings: list[str] = []
-    for scope, raw in scoped:
-        req = _parse_requirement(raw)
-        if isinstance(req, InvalidRequirement):
-            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {req}")
-            continue
-        marker = None if req.marker is None else str(req.marker)
-        found.setdefault(canonicalize_name(req.name), []).append(
-            (str(req.specifier), marker, scope)
-        )
-    return found, warnings
-
-
-def index_dependencies(
-    data: dict[str, Any], pyproject_path: str
-) -> tuple[dict[str, list[_Entry]], list[str]]:
-    """Index every requirement of the file by package, once for all the
-    lookups.
+    The order is ``[project].dependencies``, then each extra (file order), then each
+    dependency group (file order, ``include-group`` expanded).
 
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
-        pyproject_path: Path of the file ``data`` was read from, used only in
-            error and warning messages.
+        dynamic: The fields of ``[project].dynamic``, as read by ``read_project``.
+        pyproject_path: Path of the file, used in the messages.
 
     Returns:
-        A tuple ``(found, warnings)``. ``found`` is the index returned by
-        ``_index_requirements`` for the requirements of ``_scoped_requirements``
-        (in search order), keyed by normalized package name. It also has, for each
-        place that declares requirements, the same index of the requirements of that
-        place only under the key ``"<name>@<scope>"`` (for example ``"numpy@extra:x"``,
-        see ``_lookup_key``), for the entries of ``dependencies`` that have a scope.
-        ``warnings`` lists the warnings of both: dynamic dependency fields,
-        include-group problems and invalid requirements.
+        A tuple ``(requirements, warnings)``. ``warnings`` lists the dynamic dependency fields,
+        the include-group problems (without duplicates) and one message per requirement string
+        that cannot be parsed, which is skipped.
 
     Raises:
-        MetadataError: Under the same conditions as ``_scoped_requirements``.
+        MetadataError: If a table or a value has the wrong type, or an include-group limit is
+            exceeded (see ``_gather`` and ``flatten_group``).
     """
-    scoped, structure_warnings = _scoped_requirements(data, pyproject_path)
-    found, invalid_warnings = _index_requirements(scoped, pyproject_path)
-    for scope in dict.fromkeys(scope for scope, _ in scoped):
-        in_scope, _ = _index_requirements(
-            [(other, raw) for other, raw in scoped if other == scope], pyproject_path
+    scoped, warnings = _gather(data, dynamic, pyproject_path)
+    warnings = list(dict.fromkeys(warnings))
+    requirements: list[Requirement] = []
+    for scope, raw in scoped:
+        try:
+            parsed = pep508.Requirement(raw)
+        except pep508.InvalidRequirement as exc:
+            warnings.append(f"Ignoring invalid requirement {raw!r} in {pyproject_path}: {exc}")
+            continue
+        requirements.append(
+            Requirement(
+                name=canonicalize_name(parsed.name),
+                specifier=str(parsed.specifier),
+                marker="" if parsed.marker is None else str(parsed.marker),
+                source=scope,
+            )
         )
-        found.update({f"{key}@{scope}": matches for key, matches in in_scope.items()})
-    return found, [*structure_warnings, *invalid_warnings]
+    return requirements, warnings
 
 
-def _lookup_key(dependency: str) -> str:
-    """Return the key of the index of the requirements for an entry of
-    ``dependencies``.
+def find_requirements(requirements: list[Requirement], lookup: Lookup) -> list[Requirement]:
+    """Return the requirements of the package of ``lookup``, in search
+    order.
 
     Args:
-        dependency: An entry, as returned by ``parse_inputs``.
+        requirements: The requirements, as returned by ``collect_requirements``.
+        lookup: The entry to look up.
 
     Returns:
-        The normalized package name (PEP 503), followed by ``@`` and the normalized scope for
-        an entry with a scope, as ``index_dependencies`` stores them.
+        The requirements of that package in the place of the entry (everywhere when it has
+        none); empty if the package is not found.
     """
-    name, separator, scope = dependency.partition("@")
-    if not separator:
-        return canonicalize_name(name)
-    kind, colon, scope_name = scope.partition(":")
-    return f"{canonicalize_name(name)}@{kind}{colon}{canonicalize_name(scope_name)}"
+    return [
+        req
+        for req in requirements
+        if req.name == lookup.name and lookup.source in {None, req.source}
+    ]
 
 
-def specifiers_from_index(
-    found: dict[str, list[_Entry]],
-    index_warnings: list[str],
-    dependencies: list[str],
-    pyproject_path: str,
+def lookup_specifiers(
+    requirements: list[Requirement], lookups: list[Lookup], pyproject_path: str
 ) -> tuple[dict[str, str | None], list[str]]:
-    """Look up the specifier of each requested package in an index of
-    the requirements.
+    """Look up the specifier of each requested package.
 
     Args:
-        found: The index, as returned by ``index_dependencies``.
-        index_warnings: The warnings returned with the index. They are only
-            worth reporting when ``dependencies`` is not empty: an invalid
-            requirement may be the very entry that was meant to be found.
-        dependencies: Package names to look up, with their optional scope.
+        requirements: The requirements, as returned by ``collect_requirements``.
+        lookups: The entries to look up.
         pyproject_path: Path of the file, used in the warning messages.
 
     Returns:
-        A tuple ``(specifiers, warnings)``. ``specifiers`` maps each requested entry, as
-        written, to the specifier of the **first** requirement of the search order (the
-        environment markers are not evaluated), ``""`` if it has none, or ``None`` if the
-        package is not found. ``warnings`` has the ``warnings`` of the index (only when
-        ``dependencies`` is not empty) and one message per package that is not found.
+        A tuple ``(specifiers, warnings)``. ``specifiers`` maps each entry, as written, to the
+        specifier of the **first** requirement of the search order (the environment markers
+        are not evaluated), ``""`` if it has none, or ``None`` if the package is not found.
+        ``warnings`` has one message per package that is not found.
     """
-    warnings = list(index_warnings) if dependencies else []
-
     result: dict[str, str | None] = {}
-    for dep in dependencies:
-        matches = found.get(_lookup_key(dep))
+    warnings: list[str] = []
+    for lookup in lookups:
+        matches = find_requirements(requirements, lookup)
         if not matches:
-            result[dep] = None
-            warnings.append(f"{pyproject_path}: dependency {dep!r} not found")
+            result[lookup.text] = None
+            warnings.append(f"{pyproject_path}: dependency {lookup.text!r} not found")
             continue
-        result[dep] = matches[0][0]
+        result[lookup.text] = matches[0].specifier
     return result, warnings
 
 
-def requirements_from_index(
-    found: dict[str, list[_Entry]], dependencies: list[str]
+def lookup_requirements(
+    requirements: list[Requirement], lookups: list[Lookup]
 ) -> dict[str, list[dict[str, str]]]:
-    """List the requirements of each requested package in an index of
-    the requirements.
+    """List the requirements of each requested package.
 
     Args:
-        found: The index, as returned by ``index_dependencies``.
-        dependencies: Package names to look up, with their optional scope.
+        requirements: The requirements, as returned by ``collect_requirements``.
+        lookups: The entries to look up.
 
     Returns:
-        A dict that maps each requested entry, as written, to the list of all its
-        requirements, in search order (``[project].dependencies``, extras, then dependency
-        groups), each a dict with the ``specifier`` (``""`` if there is none), the environment
+        A dict that maps each entry, as written, to the list of all its requirements, in search
+        order, each a dict with the ``specifier`` (``""`` if there is none), the environment
         ``marker`` (``""`` if there is none) and the ``source`` that declares it (``project``,
         ``extra:<name>`` or ``group:<name>``). The list is empty if the package is not found.
     """
     return {
-        dep: [
-            {"specifier": specifier, "marker": marker or "", "source": source}
-            for specifier, marker, source in found.get(_lookup_key(dep), [])
+        lookup.text: [
+            {"specifier": req.specifier, "marker": req.marker, "source": req.source}
+            for req in find_requirements(requirements, lookup)
         ]
-        for dep in dependencies
+        for lookup in lookups
     }
