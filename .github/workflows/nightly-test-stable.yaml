@@ -1,0 +1,88 @@
+# Test the latest stable (published) version of the action, to catch what its users pick up:
+# a change of the runner images or of the Python versions that breaks the released tag.
+# Called from nightly.yaml. It only uses the inputs and outputs of that version (the current code is tested by
+# ci-test-local.yaml).  When a release is
+# made, update the pinned SHA and tag below (bot-pin-action.yaml keeps the SHA of the tag).
+
+name: Test Stable Action
+on:
+  workflow_call:
+    inputs:
+      test-matrix:
+        description: "JSON test matrix from lib-get-test-matrix.yaml, loaded once by the caller"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      max-parallel: 8
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
+        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 🧪 Test minimal pyproject.toml
+        id: test-minimal
+        uses: durandtibo/extract-pyproject-metadata-action@4661b78698e6ceb7e04cf60bbdd52addf85a2889 # ratchet:durandtibo/extract-pyproject-metadata-action@v0.2
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify minimal pyproject.toml
+        env:
+          NAME: ${{ steps.test-minimal.outputs.name }}
+          VERSION: ${{ steps.test-minimal.outputs.version }}
+          EXTRAS: ${{ steps.test-minimal.outputs.extras }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "$NAME"
+          assert_equal "version" "0.1.0" "$VERSION"
+          assert_equal "extras" "[]" "$EXTRAS"
+          print_success "minimal pyproject.toml test passed"
+
+      - name: 🧪 Test pyproject.toml with extras
+        id: test-extras
+        uses: durandtibo/extract-pyproject-metadata-action@4661b78698e6ceb7e04cf60bbdd52addf85a2889 # ratchet:durandtibo/extract-pyproject-metadata-action@v0.2
+        with:
+          pyproject-path: test-data/with-extras/pyproject.toml
+
+      - name: ✓ Verify extras
+        env:
+          NAME: ${{ steps.test-extras.outputs.name }}
+          VERSION: ${{ steps.test-extras.outputs.version }}
+          EXTRAS: ${{ steps.test-extras.outputs.extras }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "coola" "$NAME"
+          assert_equal "version" "1.2.3" "$VERSION"
+          assert_equal "extras" '["numpy","pandas"]' "$EXTRAS"
+          print_success "extras test passed"
+
+      - name: 🧪 Test missing version (should fail)
+        id: test-missing-version
+        uses: durandtibo/extract-pyproject-metadata-action@4661b78698e6ceb7e04cf60bbdd52addf85a2889 # ratchet:durandtibo/extract-pyproject-metadata-action@v0.2
+        with:
+          pyproject-path: test-data/missing-version/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify a missing version fails the step
+        env:
+          OUTCOME: ${{ steps.test-missing-version.outcome }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "failure" "$OUTCOME"
+          print_success "a missing version fails the step"

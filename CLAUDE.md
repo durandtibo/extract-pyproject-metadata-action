@@ -58,8 +58,8 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
-  `.venv/bin/pip install --group dev`, or `make install`
-  which runs `uv sync --group dev`) and run `.venv/bin/python`, `.venv/bin/pytest`,
+  `.venv/bin/pip install --group dev --group property`, or `make install`
+  which runs `uv sync --group dev --group property`) and run `.venv/bin/python`, `.venv/bin/pytest`,
   `.venv/bin/ruff check src scripts tests` (must pass) and `.venv/bin/pyright`
   (strict on `src` and `scripts`; must pass). There is no mypy and no `ty`.
 - The `Makefile` is the only task runner: `make help` lists the targets, for
@@ -131,7 +131,8 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   that changes. Use top-level `permissions: {}` or `contents: read`, the minimum permissions per
   job, and `timeout-minutes` on every job.
 - Files are prefixed by role: `ci-` (checks, reusable with `workflow_call` plus
-  `workflow_dispatch`, called from `ci.yaml`, the single entry point), `nightly-` (scheduled tests
+  `workflow_dispatch`, called from `ci.yaml`, the single entry point; the ones that take the `test-matrix` input of
+  `lib-get-test-matrix.yaml` have `workflow_call` only), `lib-` (shared helpers), `nightly-` (scheduled tests
   of the published action), `bot-` (scheduled automation), `release-`/`release.yaml`. Add a check
   as a new `ci-<name>.yaml` plus a job in `ci.yaml`. Put `make` targets in the steps rather than
   duplicating commands.
@@ -199,8 +200,9 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   the other jobs check what the golden files cannot see (failures, `strict`,
   what the action leaves behind). Pass values through `env:`, never interpolate
   them in `run:` (a test checks it). Add a case or a job for every new input or
-  output. There is no workflow that tests a released version: a release is an
-  immutable tag (`vX.Y.Z`) that is never moved or re-tested through a copy of a workflow.
+  output. `nightly-test-stable.yaml` (called from `nightly.yaml`) tests the latest
+  published tag, pinned by SHA, with the inputs and outputs of that version; update the pin
+  after each release. A tag is never moved.
 
 ## Reporting
 

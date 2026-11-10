@@ -1,0 +1,34 @@
+# Type checking workflow: pyright (strict on src and scripts).
+# Called from ci.yaml; can also be run by hand.
+
+name: Type Checking
+on:
+  workflow_call:
+  workflow_dispatch: # to trigger manually
+
+permissions:
+  contents: read
+
+jobs:
+  # pyright reads the packages from .venv (see [tool.pyright] in pyproject.toml)
+  type-checking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.11" # the oldest supported version
+
+      - name: Install dev dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install --group dev
+
+      # pyright reads the packages from .venv, so it runs with the interpreter of the venv.
+      - name: Run pyright
+        run: make types "PYTHON_RUN=.venv/bin/python -m"

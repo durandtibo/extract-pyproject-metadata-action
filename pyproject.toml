@@ -13,7 +13,6 @@ package = false
 dev = [
   "codespell>=2.4.3,<3.0",
   "coverage[toml]>=7.17.2,<8.0",
-  "hypothesis>=6.170.15,<7.0",
   "pre-commit>=4.7.0,<5.0",
   "pytest-cov>=7.1,<8.0",
   "pytest-timeout>=2.4,<3.0",
@@ -22,6 +21,9 @@ dev = [
   "pyyaml>=6.0.3,<7.0",
   "ruff>=0.17.4,<1.0",
 ]
+
+# Hypothesis has no wheels for free-threaded Python, so it is not in the dev group.
+property = ["hypothesis>=6.170.15,<7.0"]
 
 [tool.codespell]
 skip = "*.lock,./.git,./htmlcov,coverage.xml,./.venv,./.make,./src/extract_pyproject_metadata/_vendor"
