@@ -260,12 +260,13 @@ dependency tables:
 ```python
 @dataclass(frozen=True)
 class Project:
-    name: str                     # as written, validated (PEP 508)
-    version: str | None           # None when dynamic
+    name: str  # as written, validated (PEP 508)
+    version: str | None  # None when dynamic
     requires_python: str
     dynamic: frozenset[str]
-    extras: list[str]             # names only, PEP 685 normalised, sorted
+    extras: list[str]  # names only, PEP 685 normalised, sorted
     groups: list[str]
+
 
 def read_project(data: dict[str, Any]) -> tuple[Project, list[Warning]]: ...
 ```
@@ -279,21 +280,22 @@ def read_project(data: dict[str, Any]) -> tuple[Project, list[Warning]]: ...
 ```python
 @dataclass(frozen=True)
 class Requirement:
-    name: str          # canonical (PEP 503)
+    name: str  # canonical (PEP 503)
     specifier: str
-    marker: str        # "" if none
-    source: str        # "project", "extra:<n>", "group:<n>"
+    marker: str  # "" if none
+    source: str  # "project", "extra:<n>", "group:<n>"
+
 
 @dataclass(frozen=True)
-class Lookup:          # one entry of the `dependencies` input
-    text: str          # as written, the key of the result
-    name: str          # canonical
-    source: str | None # None: search everywhere
+class Lookup:  # one entry of the `dependencies` input
+    text: str  # as written, the key of the result
+    name: str  # canonical
+    source: str | None  # None: search everywhere
+
 
 def collect_requirements(data) -> tuple[list[Requirement], list[Warning]]: ...
 def find(requirements, lookup) -> list[Requirement]:
-    return [r for r in requirements
-            if r.name == lookup.name and lookup.source in (None, r.source)]
+    return [r for r in requirements if r.name == lookup.name and lookup.source in (None, r.source)]
 ```
 
 - `parse_dependencies` builds the `Lookup` list, so the `@` syntax is parsed once, in

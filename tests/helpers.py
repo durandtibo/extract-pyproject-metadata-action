@@ -4,6 +4,7 @@ builders of inputs."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -398,6 +399,13 @@ def run_run_sh(
             )
         )
         stub.chmod(0o755)
+    # Only the tools of the scripts are on PATH, so a real python3 of the machine is not found.
+    tools_dir = bin_dir / "tools"
+    tools_dir.mkdir(exist_ok=True)
+    for tool in ("bash", "dirname"):
+        link = tools_dir / tool
+        if not link.exists():
+            link.symlink_to(shutil.which(tool) or f"/usr/bin/{tool}")
     log = tmp_path / "calls.log"
     log.unlink(missing_ok=True)  # only the calls of this run
     process = subprocess.run(
@@ -405,7 +413,7 @@ def run_run_sh(
         capture_output=True,
         text=True,
         check=False,
-        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "STUB_LOG": str(log), **env},
+        env={"PATH": f"{bin_dir}:{tools_dir}", "STUB_LOG": str(log), **env},
     )
     calls = (
         [line.split("\x1f")[:-1] for line in log.read_text().splitlines()] if log.exists() else []
