@@ -8,24 +8,17 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-import extract_pyproject_metadata.requirements as requirements_module
-from extract_pyproject_metadata._vendor.packaging.requirements import (
-    InvalidRequirement,
-    Requirement,
-)
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.inputs import parse_dependencies
 from extract_pyproject_metadata.pyproject import load_pyproject, read_group_names
 from extract_pyproject_metadata.requirements import (
-    _dynamic_dependency_fields,
-    _index_requirements,
-    _lookup_key,
-    _scoped_requirements,
-    candidate_requirements,
+    collect_requirements,
+    find_requirements,
     flatten_group,
-    index_dependencies,
-    requirements_from_index,
-    specifiers_from_index,
+    lookup_requirements,
+    lookup_specifiers,
 )
+from extract_pyproject_metadata.types import Lookup, Requirement
 from tests.helpers import (
     DATA_WITH_REQUIREMENTS,
     DATA_WITH_SCOPES,
@@ -36,6 +29,7 @@ from tests.helpers import (
     _parse_error,
     chain_of_groups,
     diamond_of_groups,
+    dynamic_fields,
     extract,
     extract_dependency_requirements,
     extract_dependency_specifiers,
@@ -45,6 +39,21 @@ from tests.helpers import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def collect(data: dict, path: str = "p.toml") -> tuple[list[Requirement], list[str]]:
+    """Collect the requirements of parsed data."""
+    return collect_requirements(data, dynamic_fields(data), path)
+
+
+def spelled(requirements: list[Requirement]) -> list[str]:
+    """The name and specifier of each requirement."""
+    return [f"{req.name}{req.specifier}" for req in requirements]
+
+
+def placed(requirements: list[Requirement]) -> list[tuple[str, str]]:
+    """The source and the name and specifier of each requirement."""
+    return [(req.source, f"{req.name}{req.specifier}") for req in requirements]
 
 
 def test_dependency_include_group_only(tmp_path: Path) -> None:
@@ -95,10 +104,10 @@ def test_flatten_group_include_cycles_terminate(
     assert flatten_group(groups, name)[0] == expected
 
 
-def testcandidate_requirements_expands_the_spellings_of_a_group_once() -> None:
+def test_collect_requirements_expands_the_spellings_of_a_group_once() -> None:
     data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
 
-    assert candidate_requirements(data)[0] == ["a", "b", "c"]
+    assert spelled(collect(data)[0]) == ["a", "b", "c"]
 
 
 def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
@@ -266,7 +275,7 @@ def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warnin
 
 def test_flatten_group_missing_include_group_is_reported_once_per_group() -> None:
     groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
-    _, warnings = candidate_requirements({"dependency-groups": groups}, "p.toml")
+    _, warnings = collect({"dependency-groups": groups}, "p.toml")
 
     assert warnings == [
         "p.toml: [dependency-groups].a: include-group 'nope' does not match any group"
@@ -356,7 +365,7 @@ def test_group_names_must_be_a_table() -> None:
         read_group_names({"dependency-groups": []}, "p.toml")
 
 
-def testcandidate_requirements_search_order() -> None:
+def test_collect_requirements_search_order() -> None:
     data = {
         "project": {
             "dependencies": ["a>=1"],
@@ -365,7 +374,7 @@ def testcandidate_requirements_search_order() -> None:
         "dependency-groups": {"dev": ["d>=4"], "test": [{"include-group": "dev"}, "e>=5"]},
     }
 
-    assert candidate_requirements(data)[0] == [
+    assert spelled(collect(data)[0]) == [
         "a>=1",
         "b>=2",
         "c>=3",
@@ -375,7 +384,7 @@ def testcandidate_requirements_search_order() -> None:
     ]
 
 
-def test_scoped_requirements() -> None:
+def test_collect_requirements_sources() -> None:
     data = {
         "project": {
             "dependencies": ["a"],
@@ -384,37 +393,28 @@ def test_scoped_requirements() -> None:
         "dependency-groups": {"Dev_Tools": ["e", {"include-group": "lint"}], "lint": ["f"]},
     }
 
-    assert _scoped_requirements(data) == (
-        [
-            ("project", "a"),
-            ("extra:extra-one", "b"),
-            ("extra:two", "c"),
-            ("extra:two", "d"),
-            ("group:dev-tools", "e"),
-            ("group:dev-tools", "f"),
-            ("group:lint", "f"),
-        ],
-        [],
-    )
+    requirements, warnings = collect(data)
+
+    assert placed(requirements) == [
+        ("project", "a"),
+        ("extra:extra-one", "b"),
+        ("extra:two", "c"),
+        ("extra:two", "d"),
+        ("group:dev-tools", "e"),
+        ("group:dev-tools", "f"),
+        ("group:lint", "f"),
+    ]
+    assert warnings == []
 
 
-def test_scoped_requirements_share_a_scope_between_the_spellings_of_a_name() -> None:
+def test_collect_requirements_share_a_source_between_the_spellings_of_a_name() -> None:
     data = {"project": {"optional-dependencies": {"Foo_Bar": ["a"], "foo-bar": ["b"]}}}
 
-    assert _scoped_requirements(data)[0] == [("extra:foo-bar", "a"), ("extra:foo-bar", "b")]
+    assert placed(collect(data)[0]) == [("extra:foo-bar", "a"), ("extra:foo-bar", "b")]
 
 
-def test_scoped_requirements_empty() -> None:
-    assert _scoped_requirements({}) == ([], [])
-
-
-def test_scoped_requirements_wrong_type() -> None:
-    with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
-        _scoped_requirements({"project": {"dependencies": "a"}}, "p.toml")
-
-
-def testcandidate_requirements_empty() -> None:
-    assert candidate_requirements({}) == ([], [])
+def test_collect_requirements_empty() -> None:
+    assert collect({}) == ([], [])
 
 
 @pytest.mark.parametrize(
@@ -434,15 +434,15 @@ def testcandidate_requirements_empty() -> None:
         ),
     ],
 )
-def testcandidate_requirements_non_string_entries(data: dict, match: str) -> None:
+def test_collect_requirements_non_string_entries(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        candidate_requirements(data, "p.toml")
+        collect(data, "p.toml")
 
 
-def testcandidate_requirements_does_not_modify_the_data() -> None:
+def test_collect_requirements_does_not_modify_the_data() -> None:
     data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
-    assert candidate_requirements(data)[0] == ["a", "b"]
+    assert spelled(collect(data)[0]) == ["a", "b"]
     assert data == {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
 
@@ -459,25 +459,25 @@ def testcandidate_requirements_does_not_modify_the_data() -> None:
         ({"dependency-groups": 1}, r"\[dependency-groups\] must be a table"),
     ],
 )
-def testcandidate_requirements_wrong_types(data: dict, match: str) -> None:
+def test_collect_requirements_wrong_types(data: dict, match: str) -> None:
     with pytest.raises(MetadataError, match=match):
-        candidate_requirements(data)
+        collect(data)
 
 
-def testcandidate_requirements_reports_a_cycle_once() -> None:
+def test_collect_requirements_reports_a_cycle_once() -> None:
     data = {
         "dependency-groups": {
             "a": [{"include-group": "b"}, "x"],
             "b": [{"include-group": "a"}, "y"],
         }
     }
-    _, warnings = candidate_requirements(data, "p.toml")
+    _, warnings = collect(data, "p.toml")
 
     assert warnings == ["p.toml: [dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
 @pytest.mark.parametrize(
-    ("data", "expected"),
+    ("data", "fields"),
     [
         ({}, []),
         ({"project": {}}, []),
@@ -489,87 +489,51 @@ def testcandidate_requirements_reports_a_cycle_once() -> None:
             ["dependencies", "optional-dependencies"],
         ),
         ({"project": {"dynamic": ["dependencies"], "dependencies": ["a"]}}, []),
-        ({"project": {"dynamic": "dependencies"}}, []),
-        ({"project": 1}, []),
     ],
 )
-def test_dynamic_dependency_fields(data: dict, expected: list[str]) -> None:
-    assert _dynamic_dependency_fields(data) == expected
+def test_collect_requirements_warns_about_the_dynamic_fields(data: dict, fields: list[str]) -> None:
+    assert collect(data, "p.toml")[1] == [
+        f"p.toml: [project].{field} is dynamic, it cannot be read, so no requirement is found in it"
+        for field in fields
+    ]
 
 
-def test_parse_requirement_valid() -> None:
-    requirement = requirements_module._parse_requirement("Foo_Bar[x]>=1; python_version<'3.12'")
+def test_collect_requirements_parses_a_requirement() -> None:
+    data = {"project": {"dependencies": ["Foo_Bar[x]>=1; python_version<'3.12'"]}}
 
-    assert isinstance(requirement, Requirement)
-    assert (requirement.name, str(requirement.specifier)) == ("Foo_Bar", ">=1")
-
-
-def test_parse_requirement_invalid_is_returned_not_raised() -> None:
-    error = requirements_module._parse_requirement("bad requirement!!")
-
-    assert isinstance(error, InvalidRequirement)
+    assert collect(data)[0] == [
+        Requirement(
+            name="foo-bar", specifier=">=1", marker='python_version < "3.12"', source="project"
+        )
+    ]
 
 
-def test_parse_requirement_is_called_once_per_distinct_string() -> None:
-    parse = requirements_module._parse_requirement
-    parse.cache_clear()
+def test_collect_requirements_skips_an_invalid_requirement_with_a_warning() -> None:
+    requirements, warnings = collect({"project": {"dependencies": ["oops==", "a"]}}, "p.toml")
 
-    assert parse("numpy>=1") is parse("numpy>=1")
-    assert parse("bad!!") is parse("bad!!")
-    assert parse.cache_info().misses == 2
+    assert spelled(requirements) == ["a"]
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Ignoring invalid requirement 'oops==' in p.toml: ")
 
 
-def test_index_dependencies() -> None:
-    found, warnings = index_dependencies(DATA_WITH_REQUIREMENTS, "p.toml")
+def test_collect_requirements_of_the_file() -> None:
+    requirements, warnings = collect(DATA_WITH_REQUIREMENTS, "p.toml")
 
-    assert found == {
-        "numpy": [
-            (">=1.20", 'python_version < "3.12"', "project"),
-            (">=1.26", 'python_version >= "3.12"', "extra:x"),
-        ],
-        "tqdm": [("", None, "project")],
-        "pytest": [("", None, "group:dev")],
-        "numpy@project": [(">=1.20", 'python_version < "3.12"', "project")],
-        "tqdm@project": [("", None, "project")],
-        "numpy@extra:x": [(">=1.26", 'python_version >= "3.12"', "extra:x")],
-        "pytest@group:dev": [("", None, "group:dev")],
-    }
+    assert requirements == [
+        Requirement("numpy", ">=1.20", 'python_version < "3.12"', "project"),
+        Requirement("tqdm", "", "", "project"),
+        Requirement("numpy", ">=1.26", 'python_version >= "3.12"', "extra:x"),
+        Requirement("pytest", "", "", "group:dev"),
+    ]
     assert warnings == [
         "p.toml: [dependency-groups].dev: include-group 'missing' does not match any group",
         "Ignoring invalid requirement 'not valid!' in p.toml: " + str(_parse_error("not valid!")),
     ]
 
 
-def test_index_dependencies_empty() -> None:
-    assert index_dependencies({}, "p.toml") == ({}, [])
-
-
-def test_index_dependencies_wrong_type() -> None:
+def test_collect_requirements_wrong_type() -> None:
     with pytest.raises(MetadataError, match=r"^p.toml: \[project\].dependencies must be an array"):
-        index_dependencies({"project": {"dependencies": "numpy"}}, "p.toml")
-
-
-def test_index_requirements() -> None:
-    found, warnings = _index_requirements(
-        [
-            ("project", "Foo_Bar>=1; os_name == 'nt'"),
-            ("extra:a", "foo-bar<3"),
-            ("project", "oops=="),
-            ("group:dev", "x"),
-        ],
-        "p.toml",
-    )
-
-    assert found == {
-        "foo-bar": [(">=1", 'os_name == "nt"', "project"), ("<3", None, "extra:a")],
-        "x": [("", None, "group:dev")],
-    }
-    assert len(warnings) == 1
-    assert warnings[0].startswith("Ignoring invalid requirement 'oops==' in p.toml: ")
-
-
-def test_index_requirements_empty() -> None:
-    assert _index_requirements([], "p.toml") == ({}, [])
+        collect({"project": {"dependencies": "numpy"}}, "p.toml")
 
 
 def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None:
@@ -850,59 +814,62 @@ def test_dependency_static_value_wins_over_dynamic_without_warning() -> None:
     assert extract_dependency_specifiers(data, ["numpy"], "p.toml") == ({"numpy": ">=1"}, [])
 
 
-def test_specifiers_from_index() -> None:
-    found = {
-        "numpy": [(">=1", None, "project"), ("<2", None, "extra:x")],
-        "tqdm": [("", None, "project")],
-    }
+REQUIREMENTS = [
+    Requirement("numpy", ">=1", "python_version < '3.12'", "project"),
+    Requirement("tqdm", "", "", "project"),
+    Requirement("numpy", "<3", "", "extra:fast"),
+    Requirement("numpy", "", "", "group:dev"),
+]
 
-    assert specifiers_from_index(found, ["warning"], ["Numpy", "tqdm", "other"], "p.toml") == (
+
+def lookups(*entries: str) -> list[Lookup]:
+    """Parse entries of the ``dependencies`` input."""
+    return parse_dependencies(json.dumps(list(entries)))
+
+
+def test_lookup_specifiers() -> None:
+    assert lookup_specifiers(REQUIREMENTS, lookups("Numpy", "tqdm", "other"), "p.toml") == (
         {"Numpy": ">=1", "tqdm": "", "other": None},
-        ["warning", "p.toml: dependency 'other' not found"],
+        ["p.toml: dependency 'other' not found"],
     )
 
 
-def test_specifiers_from_index_uses_the_first_requirement_and_does_not_warn_on_a_conflict() -> None:
-    found = {"a": [("==2", None, "project"), ("==1", None, "group:dev"), ("==2", None, "extra:x")]}
+def test_lookup_specifiers_uses_the_first_requirement_and_does_not_warn_on_a_conflict() -> None:
+    requirements = [
+        Requirement("a", "==2", "", "project"),
+        Requirement("a", "==1", "", "group:dev"),
+        Requirement("a", "==2", "", "extra:x"),
+    ]
 
-    assert specifiers_from_index(found, [], ["a"], "p.toml") == ({"a": "==2"}, [])
-
-
-def test_specifiers_from_index_without_dependencies_ignores_the_index_warnings() -> None:
-    assert specifiers_from_index({}, ["warning"], [], "p.toml") == ({}, [])
-
-
-def test_requirements_from_index() -> None:
-    found = {
-        "numpy": [
-            (">=1", "python_version < '3.12'", "project"),
-            ("", None, "group:dev"),
-            ("<3", None, "extra:fast"),
-        ]
-    }
-
-    assert requirements_from_index(found, ["NumPy", "other"]) == {
-        "NumPy": [
-            {"specifier": ">=1", "marker": "python_version < '3.12'", "source": "project"},
-            {"specifier": "", "marker": "", "source": "group:dev"},
-            {"specifier": "<3", "marker": "", "source": "extra:fast"},
-        ],
-        "other": [],
-    }
+    assert lookup_specifiers(requirements, lookups("a"), "p.toml") == ({"a": "==2"}, [])
 
 
 @pytest.mark.parametrize(
-    ("dependency", "expected"),
+    ("entry", "expected"),
     [
-        ("numpy", "numpy"),
-        ("Foo_Bar", "foo-bar"),
-        ("Foo.Bar@project", "foo-bar@project"),
-        ("numpy@extra:Dev_Tools", "numpy@extra:dev-tools"),
-        ("numpy@group:Dev..Tools", "numpy@group:dev-tools"),
+        ("numpy", [REQUIREMENTS[0], REQUIREMENTS[2], REQUIREMENTS[3]]),
+        ("Numpy@project", [REQUIREMENTS[0]]),
+        ("numpy@extra:Fast", [REQUIREMENTS[2]]),
+        ("numpy@group:dev", [REQUIREMENTS[3]]),
+        ("numpy@extra:slow", []),
+        ("tqdm@group:dev", []),
+        ("other", []),
     ],
 )
-def test_lookup_key(dependency: str, expected: str) -> None:
-    assert _lookup_key(dependency) == expected
+def test_find_requirements(entry: str, expected: list[Requirement]) -> None:
+    assert find_requirements(REQUIREMENTS, lookups(entry)[0]) == expected
+
+
+def test_lookup_requirements() -> None:
+    assert lookup_requirements(REQUIREMENTS, lookups("NumPy", "numpy@extra:fast", "other")) == {
+        "NumPy": [
+            {"specifier": ">=1", "marker": "python_version < '3.12'", "source": "project"},
+            {"specifier": "<3", "marker": "", "source": "extra:fast"},
+            {"specifier": "", "marker": "", "source": "group:dev"},
+        ],
+        "numpy@extra:fast": [{"specifier": "<3", "marker": "", "source": "extra:fast"}],
+        "other": [],
+    }
 
 
 @pytest.mark.parametrize(
@@ -1001,10 +968,10 @@ def test_extract_dependency_requirements_wrong_type() -> None:
 
 
 def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
-    found, index_warnings = index_dependencies({"project": {"dependencies": ["a>=1"]}}, "p.toml")
+    requirements, _ = collect({"project": {"dependencies": ["a>=1"]}}, "p.toml")
 
-    specifiers, warnings = specifiers_from_index(
-        found, index_warnings, ["a", "b", "c@group:dev"], "custom.toml"
+    specifiers, warnings = lookup_specifiers(
+        requirements, lookups("a", "b", "c@group:dev"), "custom.toml"
     )
 
     assert specifiers == {"a": ">=1", "b": None, "c@group:dev": None}
@@ -1015,6 +982,6 @@ def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
 
 
 def test_no_warning_when_every_dependency_is_found() -> None:
-    found, index_warnings = index_dependencies({"project": {"dependencies": ["a>=1"]}}, "p.toml")
+    requirements, _ = collect({"project": {"dependencies": ["a>=1"]}}, "p.toml")
 
-    assert specifiers_from_index(found, index_warnings, ["a"], "p.toml") == ({"a": ">=1"}, [])
+    assert lookup_specifiers(requirements, lookups("a"), "p.toml") == ({"a": ">=1"}, [])

@@ -122,7 +122,7 @@ def test_readme_dependencies_table_lists_valid_entries_whose_key_is_the_entry() 
     entries = [entry for entry, _ in rows]
 
     assert entries == ["numpy", "numpy@project", "numpy@extra:fast", "numpy@group:dev"]
-    assert parse_dependencies(json.dumps(entries)) == entries
+    assert [lookup.text for lookup in parse_dependencies(json.dumps(entries))] == entries
     assert all(entry == key for entry, key in rows)
 
 

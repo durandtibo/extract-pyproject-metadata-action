@@ -12,9 +12,9 @@ from extract_pyproject_metadata.python_versions import (
     lowest_python_version,
 )
 from extract_pyproject_metadata.requirements import (
-    index_dependencies,
-    requirements_from_index,
-    specifiers_from_index,
+    collect_requirements,
+    lookup_requirements,
+    lookup_specifiers,
 )
 from extract_pyproject_metadata.types import Inputs, Report
 
@@ -52,11 +52,12 @@ def build_report(inputs: Inputs) -> Report:
     lookup_warnings: list[str] = []
     if inputs.dependencies:
         # The requirements of the file are read and parsed once, for both lookups.
-        found, index_warnings = index_dependencies(data, inputs.pyproject_path)
-        specifiers, lookup_warnings = specifiers_from_index(
-            found, index_warnings, inputs.dependencies, inputs.pyproject_path
+        found, found_warnings = collect_requirements(data, project.dynamic, inputs.pyproject_path)
+        specifiers, missing_warnings = lookup_specifiers(
+            found, inputs.dependencies, inputs.pyproject_path
         )
-        requirements = requirements_from_index(found, inputs.dependencies)
+        requirements = lookup_requirements(found, inputs.dependencies)
+        lookup_warnings = [*found_warnings, *missing_warnings]
     warnings.extend(python_warnings)
     warnings.extend(lookup_warnings)
     unique_warnings = list(dict.fromkeys(warnings))

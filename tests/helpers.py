@@ -2,6 +2,7 @@
 builders of inputs."""
 
 import argparse
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -14,13 +15,13 @@ from extract_pyproject_metadata._vendor.packaging.requirements import (
     Requirement,
 )
 from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
-from extract_pyproject_metadata.inputs import parse_string_array
+from extract_pyproject_metadata.inputs import parse_dependencies, parse_string_array
 from extract_pyproject_metadata.pyproject import load_pyproject
 from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.requirements import (
-    index_dependencies,
-    requirements_from_index,
-    specifiers_from_index,
+    collect_requirements,
+    lookup_requirements,
+    lookup_specifiers,
 )
 from extract_pyproject_metadata.types import Inputs, Report
 
@@ -67,20 +68,33 @@ def extract(path: Path, extra_values_json: str = "[]") -> dict:
     return extract_with_warnings(path, extra_values_json)[0]
 
 
+def dynamic_fields(data: dict) -> frozenset[str]:
+    """The fields of ``[project].dynamic`` of parsed data, empty if it is not a valid array."""
+    project = data.get("project")
+    dynamic = project.get("dynamic", []) if isinstance(project, dict) else []
+    return frozenset(dynamic) if isinstance(dynamic, list) else frozenset()
+
+
 def extract_dependency_specifiers(
     data: dict, dependencies: list[str], pyproject_path: str = "pyproject.toml"
 ) -> tuple[dict[str, str | None], list[str]]:
-    """Look up the specifiers of ``dependencies`` in parsed data, with the warnings."""
-    found, index_warnings = index_dependencies(data, pyproject_path)
-    return specifiers_from_index(found, index_warnings, dependencies, pyproject_path)
+    """Look up the specifiers of ``dependencies`` in parsed data, with the warnings (the
+    ones of the requirements, then the ones of the lookup)."""
+    dynamic = dynamic_fields(data)
+    requirements, warnings = collect_requirements(data, dynamic, pyproject_path)
+    result, lookup_warnings = lookup_specifiers(
+        requirements, parse_dependencies(json.dumps(dependencies)), pyproject_path
+    )
+    return result, [*(warnings if dependencies else []), *lookup_warnings]
 
 
 def extract_dependency_requirements(
     data: dict, dependencies: list[str], pyproject_path: str = "pyproject.toml"
 ) -> dict[str, list[dict[str, str]]]:
     """List all the requirements of ``dependencies`` in parsed data."""
-    found, _ = index_dependencies(data, pyproject_path)
-    return requirements_from_index(found, dependencies)
+    dynamic = dynamic_fields(data)
+    requirements, _ = collect_requirements(data, dynamic, pyproject_path)
+    return lookup_requirements(requirements, parse_dependencies(json.dumps(dependencies)))
 
 
 def specifiers(path: Path, dependencies_json: str) -> dict:
