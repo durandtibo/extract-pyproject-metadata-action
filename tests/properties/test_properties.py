@@ -119,7 +119,7 @@ def test_compatible_python_versions_is_a_subsequence_of_the_candidates(
 
     remaining = iter(candidates)
     assert all(version in remaining for version in versions)  # same order, no new value
-    assert all(isinstance(warning, str) for warning in warnings)
+    assert all(isinstance(warning.message, str) for warning in warnings)
     if candidates and not versions:
         assert len(warnings) == 1  # an empty python-versions is never silent
     else:

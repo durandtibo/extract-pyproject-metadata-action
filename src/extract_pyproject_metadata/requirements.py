@@ -10,7 +10,7 @@ from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import PROJECT_SCOPE
-from extract_pyproject_metadata.types import Lookup, Requirement
+from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 
 __all__ = [
     "collect_requirements",
@@ -29,7 +29,7 @@ _MAX_INCLUDE_DEPTH = 100
 _MAX_GROUP_EXPANSIONS = 10_000
 
 
-def _cycle_message(cycle: tuple[str, ...]) -> str:
+def _cycle_warning(cycle: tuple[str, ...]) -> ReportWarning:
     """Describe an include-group cycle, starting from its smallest group
     name.
 
@@ -39,7 +39,9 @@ def _cycle_message(cycle: tuple[str, ...]) -> str:
     start = cycle.index(min(cycle))
     ordered = (*cycle[start:], *cycle[:start])
     path = " -> ".join((*ordered, ordered[0]))
-    return f"[dependency-groups] has an include-group cycle: {path}"
+    return ReportWarning(
+        "include-group-cycle", f"[dependency-groups] has an include-group cycle: {path}"
+    )
 
 
 def flatten_group(  # noqa: C901 (one pass over the include-group tree)
@@ -47,7 +49,7 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     name: str,
     seen: tuple[str, ...] = (),
     budget: list[int] | None = None,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[ReportWarning]]:
     """Return requirement strings of a dependency group, expanding
     include-group.
 
@@ -75,7 +77,7 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     """
     key = canonicalize_name(name)
     if key in seen:
-        return [], [_cycle_message(seen[seen.index(key) :])]
+        return [], [_cycle_warning(seen[seen.index(key) :])]
     if len(seen) >= _MAX_INCLUDE_DEPTH:
         msg = (
             "[dependency-groups]: include-group entries are nested more than "
@@ -93,7 +95,7 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
         )
         raise MetadataError(msg)
     out: list[str] = []
-    warnings: list[str] = []
+    warnings: list[ReportWarning] = []
     for gname, entries in groups.items():
         if canonicalize_name(gname) != key:
             continue
@@ -111,7 +113,12 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
                 if not any(
                     canonicalize_name(group) == canonicalize_name(included) for group in groups
                 ):
-                    warnings.append(f"{label}: include-group {included!r} does not match any group")
+                    warnings.append(
+                        ReportWarning(
+                            "unknown-include-group",
+                            f"{label}: include-group {included!r} does not match any group",
+                        )
+                    )
                 included_reqs, included_warnings = flatten_group(
                     groups, included, (*seen, key), budget
                 )
@@ -126,15 +133,18 @@ def flatten_group(  # noqa: C901 (one pass over the include-group tree)
     return out, list(dict.fromkeys(warnings))
 
 
-def _dynamic_message(field: str) -> str:
+def _dynamic_warning(field: str) -> ReportWarning:
     """Describe a dependency field that is dynamic, so cannot be
     read."""
-    return f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it"
+    return ReportWarning(
+        "dynamic-dependencies",
+        f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it",
+    )
 
 
 def _gather(
     data: dict[str, Any], dynamic: frozenset[str]
-) -> tuple[list[tuple[str, str]], list[str]]:
+) -> tuple[list[tuple[str, str]], list[ReportWarning]]:
     """All requirement strings with the place they are declared in, in
     search order.
 
@@ -172,7 +182,7 @@ def _gather(
         reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label))
     groups = get_table(data, "dependency-groups", "[dependency-groups]")
     warnings = [
-        _dynamic_message(field)
+        _dynamic_warning(field)
         for field in ("dependencies", "optional-dependencies")
         if field in dynamic and field not in project
     ]
@@ -191,7 +201,7 @@ def _gather(
 
 def collect_requirements(
     data: dict[str, Any], dynamic: frozenset[str]
-) -> tuple[list[Requirement], list[str]]:
+) -> tuple[list[Requirement], list[ReportWarning]]:
     """Read and parse every requirement of the file, in search order.
 
     The order is ``[project].dependencies``, then each extra (file order), then each
@@ -217,7 +227,9 @@ def collect_requirements(
         try:
             parsed = pep508.Requirement(raw)
         except pep508.InvalidRequirement as exc:
-            warnings.append(f"Ignoring invalid requirement {raw!r}: {exc}")
+            warnings.append(
+                ReportWarning("invalid-requirement", f"Ignoring invalid requirement {raw!r}: {exc}")
+            )
             continue
         requirements.append(
             Requirement(
@@ -251,7 +263,7 @@ def find_requirements(requirements: list[Requirement], lookup: Lookup) -> list[R
 
 def lookup_specifiers(
     requirements: list[Requirement], lookups: list[Lookup]
-) -> tuple[dict[str, str | None], list[str]]:
+) -> tuple[dict[str, str | None], list[ReportWarning]]:
     """Look up the specifier of each requested package.
 
     Args:
@@ -265,12 +277,14 @@ def lookup_specifiers(
         ``warnings`` has one message per package that is not found.
     """
     result: dict[str, str | None] = {}
-    warnings: list[str] = []
+    warnings: list[ReportWarning] = []
     for lookup in lookups:
         matches = find_requirements(requirements, lookup)
         if not matches:
             result[lookup.text] = None
-            warnings.append(f"dependency {lookup.text!r} not found")
+            warnings.append(
+                ReportWarning("dependency-not-found", f"dependency {lookup.text!r} not found")
+            )
             continue
         result[lookup.text] = matches[0].specifier
     return result, warnings

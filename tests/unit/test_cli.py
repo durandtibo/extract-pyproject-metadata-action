@@ -23,6 +23,7 @@ from tests.helpers import (
     DEPS_TOML,
     GROUPS_TOML,
     _specifier_error,
+    messages,
     parse_args,
     parse_github_output,
     write_pyproject,
@@ -148,8 +149,13 @@ def test_main_dynamic_version_warning_in_json(
         "python_max": "3.15",
         "dependency_specifiers": {},
         "dependency_requirements": {},
-        "warnings": ["[project].version is dynamic, the version output is empty"],
-        "schema_version": 2,
+        "warnings": [
+            {
+                "code": "dynamic-version",
+                "message": "[project].version is dynamic, the version output is empty",
+            }
+        ],
+        "schema_version": 3,
     }
 
 
@@ -182,7 +188,7 @@ def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixtur
         "dependency_specifiers": {},
         "dependency_requirements": {},
         "warnings": [],
-        "schema_version": 2,
+        "schema_version": 3,
     }
 
 
@@ -262,7 +268,7 @@ def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert json.loads(captured.out)["warnings"] == ["dependency 'missing' not found"]
+    assert messages(json.loads(captured.out)["warnings"]) == ["dependency 'missing' not found"]
     assert captured.err == ""
 
 
@@ -305,7 +311,7 @@ def test_main_github_output_writes_outputs_and_annotations(
         "dependency-specifiers": '{"dup":">=1","nospec":"","missing":null}',
     }
     assert captured.out == (
-        f"::warning file={path}::dependency 'missing' not found\n"
+        f"::warning file={path},title=dependency-not-found::dependency 'missing' not found\n"
         "📦 name=p version=1 requires-python= "
         'python-versions=["3.11","3.12","3.13","3.14","3.15"] python-min=3.11 python-max=3.15 extras=["","a"] '
         'groups=["base","dev","other"] '
@@ -652,7 +658,7 @@ def test_main_include_group_cycle_warning_annotation(
 
     assert exit_code == 0
     assert captured.out.splitlines()[0] == (
-        f"::warning file={path}::[dependency-groups] has an include-group cycle: a -> a"
+        f"::warning file={path},title=include-group-cycle::[dependency-groups] has an include-group cycle: a -> a"
     )
 
 
@@ -671,7 +677,7 @@ def test_main_warning_annotation_escapes_the_file_property(
     escaped = str(path).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
     assert exit_code == 0
     assert captured.out.splitlines()[0] == (
-        f"::warning file={escaped}::[project].version is dynamic, the version output is empty"
+        f"::warning file={escaped},title=dynamic-version::[project].version is dynamic, the version output is empty"
     )
 
 
@@ -687,7 +693,7 @@ def test_main_warning_annotation_names_the_file(
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines()[0] == (
-        "::warning file=pyproject.toml::[project].version is dynamic, the version output is empty"
+        "::warning file=pyproject.toml,title=dynamic-version::[project].version is dynamic, the version output is empty"
     )
 
 
@@ -778,7 +784,10 @@ def test_main_missing_dependency_is_a_warning(
     assert parse_github_output(output.read_text(encoding="utf-8"))["dependency-specifiers"] == (
         '{"nospec":"","missing":null}'
     )
-    assert f"::warning file={path}::dependency 'missing' not found" in captured.out
+    assert (
+        f"::warning file={path},title=dependency-not-found::dependency 'missing' not found"
+        in captured.out
+    )
 
 
 def test_main_strict_fails_for_a_missing_dependency(
@@ -804,8 +813,8 @@ def test_main_strict_fails_for_a_missing_dependency(
     assert exit_code == 1
     assert captured.err == (
         f"::error file={path}::strict: true and there are 2 warning(s):"
-        f"%0A- dependency 'missing' not found"
-        f"%0A- dependency 'other' not found\n"
+        "%0A- dependency-not-found: dependency 'missing' not found"
+        "%0A- dependency-not-found: dependency 'other' not found\n"
     )
     assert captured.out == ""
     assert not output.exists()
@@ -832,7 +841,7 @@ def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
     exit_code = main(["extract_metadata.py", str(path), "[]", '["numpy"]'])
 
     assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["warnings"] == [
+    assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
         ("[project].dependencies is dynamic, it cannot be read, so no requirement is found in it"),
         "dependency 'numpy' not found",
     ]
@@ -852,7 +861,7 @@ def test_main_json_has_a_schema_version(tmp_path: Path, capsys: pytest.CaptureFi
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
     assert (
-        json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 2
+        json.loads(capsys.readouterr().out)["schema_version"] == report_module.SCHEMA_VERSION == 3
     )
 
 
@@ -885,7 +894,7 @@ def test_main_warns_when_no_python_version_is_allowed(
     )
 
     assert main(["extract_metadata.py", str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["warnings"] == [
+    assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
         (
             "no python-candidates version satisfies [project].requires-python ('>=4'): "
             "python-versions is empty, and a job matrix built from it is rejected by GitHub"
@@ -1006,7 +1015,7 @@ def test_main_invalid_requires_python_specifier_warns_and_gives_no_versions(
     assert exit_code == 0
     assert report["python_versions"] == []
     assert len(report["warnings"]) == 1
-    assert "requires-python is not a valid version specifier" in report["warnings"][0]
+    assert "requires-python is not a valid version specifier" in report["warnings"][0]["message"]
 
 
 def test_main_github_output_python_versions(tmp_path: Path) -> None:
@@ -1050,14 +1059,14 @@ def test_main_warnings_are_in_the_order_of_the_sources(
     warnings = json.loads(capsys.readouterr().out)["warnings"]
     assert len(warnings) == 3
     # The metadata, the Python versions, then the lookups.
-    assert warnings[:2] == [
+    assert [w["message"] for w in warnings[:2]] == [
         "[project].version is dynamic, the version output is empty",
         (
             f"[project].requires-python is not a valid version specifier, "
             f"the python-versions output is empty: {_specifier_error('python3')}"
         ),
     ]
-    assert warnings[2].startswith("Ignoring invalid requirement 'not valid!': ")
+    assert warnings[2]["message"].startswith("Ignoring invalid requirement 'not valid!': ")
 
 
 def test_main_dependency_requirements_with_a_scope(
@@ -1100,7 +1109,7 @@ def test_main_missing_dependency_names_the_entry_with_a_scope(
     path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
 
     assert main(["extract_metadata.py", str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 0
-    assert json.loads(capsys.readouterr().out)["warnings"] == [
+    assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
         "dependency 'tqdm@extra:fast' not found"
     ]
 

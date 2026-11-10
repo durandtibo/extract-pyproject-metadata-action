@@ -154,7 +154,8 @@ def emit_github_output(report: Report, pyproject_path: str, output_path: str) ->
     outputs = format_outputs(report)
     file = escape_annotation_property(pyproject_path)
     for warning in report["warnings"]:
-        print(f"::warning file={file}::{escape_annotation(warning)}")
+        title = escape_annotation_property(warning["code"])
+        print(f"::warning file={file},title={title}::{escape_annotation(warning['message'])}")
     print(format_summary(outputs))
     write_github_output(output_path, outputs)
 

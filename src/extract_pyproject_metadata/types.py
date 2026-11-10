@@ -3,9 +3,52 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Literal, TypedDict
 
-__all__ = ["Inputs", "Lookup", "Project", "Report", "Requirement"]
+__all__ = [
+    "Inputs",
+    "Lookup",
+    "Project",
+    "Report",
+    "ReportWarning",
+    "Requirement",
+    "WarningCode",
+    "WarningItem",
+]
+
+
+# The stable identifiers of the warnings; ``warning_codes.WARNING_CODES`` documents each.
+WarningCode = Literal[
+    "static-and-dynamic",
+    "dynamic-version",
+    "invalid-requires-python",
+    "no-python-version",
+    "invalid-requirement",
+    "include-group-cycle",
+    "unknown-include-group",
+    "dynamic-dependencies",
+    "dependency-not-found",
+]
+
+
+@dataclass(frozen=True)
+class ReportWarning:
+    """A suspicious but usable input.
+
+    Attributes:
+        code: The stable identifier of the kind of warning.
+        message: What is wrong, for a human (it may be reworded).
+    """
+
+    code: WarningCode
+    message: str
+
+
+class WarningItem(TypedDict):
+    """A warning in the report: the ``code`` and the ``message``."""
+
+    code: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -95,5 +138,5 @@ class Report(TypedDict):
     python_max: str
     dependency_specifiers: dict[str, str | None]
     dependency_requirements: dict[str, list[dict[str, str]]]
-    warnings: list[str]
+    warnings: list[WarningItem]
     schema_version: int

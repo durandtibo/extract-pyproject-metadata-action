@@ -68,6 +68,11 @@ def extract(path: Path, extra_values_json: str = "[]") -> dict:
     return extract_with_warnings(path, extra_values_json)[0]
 
 
+def messages(warnings: list) -> list[str]:
+    """The messages of warnings (``ReportWarning`` or the items of a report)."""
+    return [w["message"] if isinstance(w, dict) else w.message for w in warnings]
+
+
 def dynamic_fields(data: dict) -> frozenset[str]:
     """The fields of ``[project].dynamic`` of parsed data, empty if it is not a valid array."""
     project = data.get("project")
@@ -154,7 +159,7 @@ METADATA: Report = {
         "missing": [],
     },
     "warnings": [],
-    "schema_version": 2,
+    "schema_version": 3,
 }
 
 

@@ -21,8 +21,8 @@ from extract_pyproject_metadata.pyproject import (
     read_group_names,
     read_project,
 )
-from extract_pyproject_metadata.types import Project
-from tests.helpers import extract, extract_with_warnings, write_pyproject
+from extract_pyproject_metadata.types import Project, ReportWarning
+from tests.helpers import extract, extract_with_warnings, messages, write_pyproject
 
 
 def test_load_pyproject(tmp_path: Path) -> None:
@@ -283,7 +283,7 @@ def test_read_project_dynamic_version_is_empty_and_warns(tmp_path: Path) -> None
         "extras": [],
         "groups": [],
     }
-    assert warnings == ["[project].version is dynamic, the version output is empty"]
+    assert messages(warnings) == ["[project].version is dynamic, the version output is empty"]
 
 
 def test_read_project_static_version_wins_over_dynamic(tmp_path: Path) -> None:
@@ -294,7 +294,7 @@ def test_read_project_static_version_wins_over_dynamic(tmp_path: Path) -> None:
     metadata, warnings = extract_with_warnings(path)
 
     assert metadata["version"] == "1.2.3"
-    assert warnings == [
+    assert messages(warnings) == [
         (
             "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
@@ -316,7 +316,7 @@ def test_read_project_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -
 
     _, warnings = extract_with_warnings(path)
 
-    assert warnings == [
+    assert messages(warnings) == [
         (
             "[project].dependencies is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
@@ -335,7 +335,7 @@ def test_read_project_dynamic_fields_that_are_not_set_do_not_warn(tmp_path: Path
 
     _, warnings = extract_with_warnings(path)
 
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_read_project_missing_version_with_other_dynamic_fields(tmp_path: Path) -> None:
@@ -584,7 +584,10 @@ def test_required_name_dynamic() -> None:
 def test_static_and_dynamic_warnings() -> None:
     project = {"name": "a", "version": "1", "description": "d"}
 
-    assert _static_and_dynamic_warnings(project, ["version", "readme", "version", "name"]) == [
+    warnings = _static_and_dynamic_warnings(project, ["version", "readme", "version", "name"])
+
+    assert {w.code for w in warnings} == {"static-and-dynamic"}
+    assert messages(warnings) == [
         (
             "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
@@ -616,7 +619,11 @@ def test_required_version_dynamic_warns() -> None:
     assert _required_version({}, ["version"]) == (
         "",
         False,
-        ["[project].version is dynamic, the version output is empty"],
+        [
+            ReportWarning(
+                "dynamic-version", "[project].version is dynamic, the version output is empty"
+            )
+        ],
     )
 
 
@@ -752,7 +759,7 @@ def test_read_project_static_version_listed_as_dynamic_warns() -> None:
     project, warnings = read_project(data, [])
 
     assert project.version == "1.0"
-    assert warnings == [
+    assert messages(warnings) == [
         (
             "[project].version is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
@@ -766,7 +773,7 @@ def test_read_project_dynamic_version_warns() -> None:
     project, warnings = read_project(data, [])
 
     assert project.version is None
-    assert warnings == ["[project].version is dynamic, the version output is empty"]
+    assert messages(warnings) == ["[project].version is dynamic, the version output is empty"]
 
 
 @pytest.mark.parametrize(
@@ -814,7 +821,7 @@ def test_read_project_fields(tmp_path: Path) -> None:
         extras=["", "a", "b"],
         groups=["dev"],
     )
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_read_project_dynamic_version_is_none(tmp_path: Path) -> None:

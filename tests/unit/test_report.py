@@ -43,8 +43,8 @@ def test_build_report(tmp_path: Path) -> None:
             ],
             "missing": [],
         },
-        "warnings": ["dependency 'missing' not found"],
-        "schema_version": 2,
+        "warnings": [{"code": "dependency-not-found", "message": "dependency 'missing' not found"}],
+        "schema_version": 3,
     }
 
 
@@ -75,7 +75,7 @@ def test_build_report_strict_fails_on_warnings(tmp_path: Path) -> None:
 
     with pytest.raises(
         MetadataError,
-        match=r"^strict: true and there are 1 warning\(s\):\n- dependency 'missing' not found$",
+        match=r"^strict: true and there are 1 warning\(s\):\n- dependency-not-found: dependency 'missing' not found$",
     ):
         build_report(parse_inputs_args("--strict", "true", str(path), "[]", '["missing"]'))
 

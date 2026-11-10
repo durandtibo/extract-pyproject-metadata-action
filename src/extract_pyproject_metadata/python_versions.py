@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
+from extract_pyproject_metadata.types import ReportWarning
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,7 +24,7 @@ _PATCH_RELEASES = (*range(100), 9999)
 
 def compatible_python_versions(
     requires_python: str, candidates: list[str]
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[ReportWarning]]:
     """Select the candidate Python versions that ``requires-python``
     allows.
 
@@ -54,11 +55,11 @@ def compatible_python_versions(
     try:
         specifier = SpecifierSet(requires_python)
     except InvalidSpecifier as exc:
-        warning = (
+        message = (
             "[project].requires-python is not a valid version specifier, "
             f"the python-versions output is empty: {exc}"
         )
-        return [], [warning]
+        return [], [ReportWarning("invalid-requires-python", message)]
     versions = [
         candidate
         for candidate in candidates
@@ -66,12 +67,12 @@ def compatible_python_versions(
     ]
     if candidates and not versions:
         # GitHub rejects a matrix vector without values, far from the cause.
-        warning = (
+        message = (
             "no python-candidates version satisfies [project].requires-python "
             f"({requires_python!r}): python-versions is empty, and a job "
             "matrix built from it is rejected by GitHub"
         )
-        return versions, [warning]
+        return versions, [ReportWarning("no-python-version", message)]
     return versions, []
 
 

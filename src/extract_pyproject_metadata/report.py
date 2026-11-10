@@ -16,12 +16,12 @@ from extract_pyproject_metadata.requirements import (
     lookup_requirements,
     lookup_specifiers,
 )
-from extract_pyproject_metadata.types import Inputs, Report
+from extract_pyproject_metadata.types import Inputs, Report, ReportWarning
 
 __all__ = ["SCHEMA_VERSION", "build_report"]
 
 # The version of the JSON printed to stdout (the ``schema_version`` key of the report).
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def build_report(inputs: Inputs) -> Report:
@@ -49,7 +49,7 @@ def build_report(inputs: Inputs) -> Report:
     # the business of the action.
     specifiers: dict[str, str | None] = {}
     requirements: dict[str, list[dict[str, str]]] = {}
-    lookup_warnings: list[str] = []
+    lookup_warnings: list[ReportWarning] = []
     if inputs.dependencies:
         # The requirements of the file are read and parsed once, for both lookups.
         found, found_warnings = collect_requirements(data, project.dynamic)
@@ -74,11 +74,11 @@ def build_report(inputs: Inputs) -> Report:
         python_max=highest_python_version(python_versions),
         dependency_specifiers=specifiers,
         dependency_requirements=requirements,
-        warnings=unique_warnings,
+        warnings=[{"code": w.code, "message": w.message} for w in unique_warnings],
         schema_version=SCHEMA_VERSION,
     )
     if inputs.strict and unique_warnings:
-        listed = "".join(f"\n- {warning}" for warning in unique_warnings)
+        listed = "".join(f"\n- {w.code}: {w.message}" for w in unique_warnings)
         msg = f"strict: true and there are {len(unique_warnings)} warning(s):{listed}"
         raise MetadataError(msg)
     return report

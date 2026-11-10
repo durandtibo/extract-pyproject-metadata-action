@@ -23,10 +23,10 @@ characters are kept as they are, as in the action outputs):
      "extras": [...], "groups": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
      "dependency_specifiers": {...}, "dependency_requirements": {...},
-     "warnings": [...], "schema_version": 2}
+     "warnings": [...], "schema_version": 3}
 
-"warnings" lists human-readable messages about suspicious but non-fatal
-input.
+"warnings" lists the suspicious but non-fatal input as objects with a ``code`` (a stable
+identifier, see ``warning_codes.py``) and a ``message`` (for a human, it may be reworded).
 
 "schema_version" is the version of this JSON object: it increases when a key is
 renamed, removed or changes type, not when a key is added, so that a tool that
@@ -38,7 +38,7 @@ values may contain line breaks). They are ``name``, ``normalized-name``, ``file-
 ``version``, ``normalized-version``, ``requires-python``, ``python-versions``,
 ``python-min``, ``python-max``, ``extras``, ``groups``, ``dependency-specifiers`` and
 ``json`` (the JSON object that is printed without the option, in compact form). It also prints to stdout one
-``::warning file=<path>::`` workflow command per warning, where ``<path>`` is
+``::warning file=<path>,title=<code>::`` workflow command per warning, where ``<path>`` is
 the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line summary of the outputs. Warnings are printed on stdout
 because GitHub only parses workflow commands there.
@@ -208,7 +208,9 @@ def main(argv: list[str]) -> int:
         else:
             emit_github_output(report, args.pyproject_path, args.github_output)
         if summary_path is not None and report["warnings"]:
-            write_step_summary(summary_path, format_warning_summary(report["warnings"]))
+            write_step_summary(
+                summary_path, format_warning_summary([w["message"] for w in report["warnings"]])
+            )
     except MetadataError as exc:
         annotate = args.github_output is not None
         print(format_error(str(exc), args.pyproject_path, annotate), file=sys.stderr)

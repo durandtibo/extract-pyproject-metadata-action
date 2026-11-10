@@ -13,7 +13,8 @@ from extract_pyproject_metadata.python_versions import (
     highest_python_version,
     lowest_python_version,
 )
-from tests.helpers import CANDIDATES, extract, write_pyproject
+from extract_pyproject_metadata.types import ReportWarning
+from tests.helpers import CANDIDATES, extract, messages, write_pyproject
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -98,10 +99,11 @@ def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> 
     assert compatible_python_versions(requires_python, CANDIDATES) == (
         [],
         [
-            (
+            ReportWarning(
+                "no-python-version",
                 "no python-candidates version satisfies [project].requires-python "
                 f"({requires_python!r}): python-versions is empty, and a job "
-                "matrix built from it is rejected by GitHub"
+                "matrix built from it is rejected by GitHub",
             )
         ],
     )
@@ -110,7 +112,7 @@ def test_compatible_python_versions_none_allowed_warns(requires_python: str) -> 
 def test_compatible_python_versions_none_allowed_warning_message() -> None:
     _, warnings = compatible_python_versions(">=4", CANDIDATES)
 
-    assert warnings[0].startswith("no python-candidates version")
+    assert warnings[0].message.startswith("no python-candidates version")
 
 
 def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
@@ -127,7 +129,7 @@ def test_compatible_python_versions_invalid_specifier_warns(requires_python: str
 
     assert versions == []
     assert len(warnings) == 1
-    assert warnings[0].startswith(
+    assert warnings[0].message.startswith(
         "[project].requires-python is not a valid version specifier, "
         "the python-versions output is empty: "
     )
@@ -165,7 +167,7 @@ def test_compatible_python_versions_match_a_brute_force_search(requires_python: 
     versions, warnings = compatible_python_versions(requires_python, candidates)
 
     assert versions == expected
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 @pytest.mark.parametrize(

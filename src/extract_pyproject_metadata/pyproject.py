@@ -12,7 +12,7 @@ from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion, Version
 from extract_pyproject_metadata.checks import check_str, check_string_array, get_table
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.types import Project
+from extract_pyproject_metadata.types import Project, ReportWarning
 
 __all__ = ["UTF8_BOM", "load_pyproject", "read_extra_names", "read_group_names", "read_project"]
 
@@ -65,7 +65,7 @@ def load_pyproject(pyproject_path: str) -> dict[str, Any]:
 def read_project(
     data: dict[str, Any],
     extra_values: list[str],
-) -> tuple[Project, list[str]]:
+) -> tuple[Project, list[ReportWarning]]:
     """Read and validate the fields that the action outputs from a parsed
     pyproject.toml.
 
@@ -132,7 +132,9 @@ def _required_name(project: dict[str, Any], dynamic: list[str]) -> object:
         raise MetadataError(msg) from exc
 
 
-def _static_and_dynamic_warnings(project: dict[str, Any], dynamic: list[str]) -> list[str]:
+def _static_and_dynamic_warnings(
+    project: dict[str, Any], dynamic: list[str]
+) -> list[ReportWarning]:
     """Describe the fields that are set in ``[project]`` and also listed
     in ``dynamic``.
 
@@ -146,8 +148,11 @@ def _static_and_dynamic_warnings(project: dict[str, Any], dynamic: list[str]) ->
         One warning per such field, in the order of ``dynamic``, without duplicates.
     """
     return [
-        f"[project].{field} is set and also listed in [project].dynamic, "
-        "which PEP 621 forbids; the static value is used"
+        ReportWarning(
+            "static-and-dynamic",
+            f"[project].{field} is set and also listed in [project].dynamic, "
+            "which PEP 621 forbids; the static value is used",
+        )
         for field in dict.fromkeys(dynamic)
         if field in project
     ]
@@ -155,7 +160,7 @@ def _static_and_dynamic_warnings(project: dict[str, Any], dynamic: list[str]) ->
 
 def _required_version(
     project: dict[str, Any], dynamic: list[str]
-) -> tuple[object, bool, list[str]]:
+) -> tuple[object, bool, list[ReportWarning]]:
     """Return ``[project].version`` as written, or an empty string if it
     is dynamic.
 
@@ -177,7 +182,11 @@ def _required_version(
     if "version" not in dynamic:
         msg = "[project].version: missing"
         raise MetadataError(msg)
-    warnings = ["[project].version is dynamic, the version output is empty"]
+    warnings = [
+        ReportWarning(
+            "dynamic-version", "[project].version is dynamic, the version output is empty"
+        )
+    ]
     return "", False, warnings
 
 

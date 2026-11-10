@@ -25,6 +25,7 @@ RANKS = {
     "types": 0,
     "errors": 0,
     "inputs": 1,
+    "warning_codes": 1,
     "checks": 1,
     "pyproject": 2,
     "requirements": 4,

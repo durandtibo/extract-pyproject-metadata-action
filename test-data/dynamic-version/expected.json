@@ -21,7 +21,10 @@
   "dependency_specifiers": {},
   "dependency_requirements": {},
   "warnings": [
-    "[project].version is dynamic, the version output is empty"
+    {
+      "code": "dynamic-version",
+      "message": "[project].version is dynamic, the version output is empty"
+    }
   ],
-  "schema_version": 2
+  "schema_version": 3
 }

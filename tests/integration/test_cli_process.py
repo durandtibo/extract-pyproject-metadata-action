@@ -58,7 +58,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         "dependency_specifiers": {},
         "dependency_requirements": {},
         "warnings": [],
-        "schema_version": 2,
+        "schema_version": 3,
     }
 
 
@@ -146,8 +146,8 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
             "numpy": [{"specifier": ">=1.20", "marker": "", "source": "project"}],
             "pandas": [],
         },
-        "warnings": ["dependency 'pandas' not found"],
-        "schema_version": 2,
+        "warnings": [{"code": "dependency-not-found", "message": "dependency 'pandas' not found"}],
+        "schema_version": 3,
     }
 
 
@@ -161,7 +161,9 @@ def test_cli_end_to_end_missing_dependency_is_a_warning(tmp_path: Path) -> None:
 
     report = json.loads(result.stdout)
     assert report["dependency_specifiers"] == {"numpy": ">=1.20", "pandas": None}
-    assert report["warnings"] == ["dependency 'pandas' not found"]
+    assert report["warnings"] == [
+        {"code": "dependency-not-found", "message": "dependency 'pandas' not found"}
+    ]
 
 
 def test_cli_end_to_end_strict_fails_on_a_missing_dependency(tmp_path: Path) -> None:

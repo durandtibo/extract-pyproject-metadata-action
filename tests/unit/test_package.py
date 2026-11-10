@@ -27,6 +27,8 @@ def _public_names(path: Path) -> list[str]:
             names.append(node.name)
         elif isinstance(node, ast.Assign):
             names.extend(target.id for target in node.targets if isinstance(target, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.append(node.target.id)
     return sorted(name for name in names if not name.startswith("_"))
 
 

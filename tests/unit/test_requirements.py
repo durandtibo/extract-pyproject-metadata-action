@@ -18,7 +18,7 @@ from extract_pyproject_metadata.requirements import (
     lookup_requirements,
     lookup_specifiers,
 )
-from extract_pyproject_metadata.types import Lookup, Requirement
+from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 from tests.helpers import (
     DATA_WITH_REQUIREMENTS,
     DATA_WITH_SCOPES,
@@ -33,6 +33,7 @@ from tests.helpers import (
     extract,
     extract_dependency_requirements,
     extract_dependency_specifiers,
+    messages,
     specifiers,
     write_pyproject,
 )
@@ -156,14 +157,14 @@ def test_flatten_group_cycle_adds_a_warning() -> None:
     result, warnings = flatten_group(groups, "a")
 
     assert result == ["y", "x"]
-    assert warnings == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
+    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
 def test_flatten_group_self_include_adds_a_warning() -> None:
     result, warnings = flatten_group({"a": [{"include-group": "a"}, "x"]}, "a")
 
     assert result == ["x"]
-    assert warnings == ["[dependency-groups] has an include-group cycle: a -> a"]
+    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> a"]
 
 
 def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
@@ -174,7 +175,9 @@ def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
     }
     _, warnings = flatten_group(groups, "b")
 
-    assert warnings == ["[dependency-groups] has an include-group cycle: a -> b -> c -> a"]
+    assert messages(warnings) == [
+        "[dependency-groups] has an include-group cycle: a -> b -> c -> a"
+    ]
 
 
 def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
@@ -185,14 +188,16 @@ def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
     }
     _, warnings = flatten_group(groups, "a")
 
-    assert warnings == ["[dependency-groups] has an include-group cycle: b -> c -> b"]
+    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: b -> c -> b"]
 
 
 def test_flatten_group_cycle_uses_canonical_names() -> None:
     groups = {"My_Group": [{"include-group": "my-group"}]}
     _, warnings = flatten_group(groups, "My_Group")
 
-    assert warnings == ["[dependency-groups] has an include-group cycle: my-group -> my-group"]
+    assert messages(warnings) == [
+        "[dependency-groups] has an include-group cycle: my-group -> my-group"
+    ]
 
 
 def test_flatten_group_no_cycle_adds_no_warning() -> None:
@@ -200,14 +205,14 @@ def test_flatten_group_no_cycle_adds_no_warning() -> None:
     result, warnings = flatten_group(groups, "a")
 
     assert result == ["y", "y"]
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_flatten_group_follows_a_chain_up_to_the_depth_limit() -> None:
     result, warnings = flatten_group(chain_of_groups(100), "g0")
 
     assert result == ["numpy>=1"]
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_flatten_group_rejects_a_chain_deeper_than_the_limit() -> None:
@@ -227,7 +232,7 @@ def test_flatten_group_expands_a_diamond_within_the_budget() -> None:
     result, warnings = flatten_group(diamond_of_groups(10), "g0")
 
     assert result == ["numpy>=1"] * 1024
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_flatten_group_rejects_an_exponential_expansion() -> None:
@@ -251,21 +256,25 @@ def test_flatten_group_missing_include_group_adds_a_warning() -> None:
     result, warnings = flatten_group({"dev": [{"include-group": "tset"}, "x"]}, "dev")
 
     assert result == ["x"]
-    assert warnings == ["[dependency-groups].dev: include-group 'tset' does not match any group"]
+    assert messages(warnings) == [
+        "[dependency-groups].dev: include-group 'tset' does not match any group"
+    ]
 
 
 def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warning() -> None:
     result, warnings = flatten_group({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
 
     assert result == ["y"]
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_flatten_group_missing_include_group_is_reported_once_per_group() -> None:
     groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
     _, warnings = collect({"dependency-groups": groups})
 
-    assert warnings == ["[dependency-groups].a: include-group 'nope' does not match any group"]
+    assert messages(warnings) == [
+        "[dependency-groups].a: include-group 'nope' does not match any group"
+    ]
 
 
 def test_extract_metadata_groups_are_sorted(tmp_path: Path) -> None:
@@ -390,7 +399,7 @@ def test_collect_requirements_sources() -> None:
         ("group:dev-tools", "f"),
         ("group:lint", "f"),
     ]
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_collect_requirements_share_a_source_between_the_spellings_of_a_name() -> None:
@@ -459,7 +468,7 @@ def test_collect_requirements_reports_a_cycle_once() -> None:
     }
     _, warnings = collect(data)
 
-    assert warnings == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
+    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
 @pytest.mark.parametrize(
@@ -479,7 +488,10 @@ def test_collect_requirements_reports_a_cycle_once() -> None:
 )
 def test_collect_requirements_warns_about_the_dynamic_fields(data: dict, fields: list[str]) -> None:
     assert collect(data)[1] == [
-        f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it"
+        ReportWarning(
+            "dynamic-dependencies",
+            f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it",
+        )
         for field in fields
     ]
 
@@ -499,7 +511,7 @@ def test_collect_requirements_skips_an_invalid_requirement_with_a_warning() -> N
 
     assert spelled(requirements) == ["a"]
     assert len(warnings) == 1
-    assert warnings[0].startswith("Ignoring invalid requirement 'oops==': ")
+    assert warnings[0].message.startswith("Ignoring invalid requirement 'oops==': ")
 
 
 def test_collect_requirements_of_the_file() -> None:
@@ -511,7 +523,7 @@ def test_collect_requirements_of_the_file() -> None:
         Requirement("numpy", ">=1.26", 'python_version >= "3.12"', "extra:x"),
         Requirement("pytest", "", "", "group:dev"),
     ]
-    assert warnings == [
+    assert messages(warnings) == [
         "[dependency-groups].dev: include-group 'missing' does not match any group",
         "Ignoring invalid requirement 'not valid!': " + str(_parse_error("not valid!")),
     ]
@@ -574,7 +586,7 @@ def test_dependency_no_duplicate_adds_no_warning(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, DEPS_TOML)
     _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["nospec"])
 
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
@@ -585,10 +597,10 @@ def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
 
     assert result == {"good": ">=1", "dev-pkg": ">=2", "missing": None}
     assert len(warnings) == 4
-    assert warnings[0].startswith("Ignoring invalid requirement 'bad requirement!!': ")
-    assert warnings[1].startswith("Ignoring invalid requirement 'also bad>>': ")
-    assert warnings[2].startswith("Ignoring invalid requirement 'oops==': ")
-    assert warnings[3] == "dependency 'missing' not found"
+    assert warnings[0].message.startswith("Ignoring invalid requirement 'bad requirement!!': ")
+    assert warnings[1].message.startswith("Ignoring invalid requirement 'also bad>>': ")
+    assert warnings[2].message.startswith("Ignoring invalid requirement 'oops==': ")
+    assert warnings[3] == ReportWarning("dependency-not-found", "dependency 'missing' not found")
 
 
 def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
@@ -598,7 +610,7 @@ def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [])
 
     assert result == {}
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 @pytest.mark.parametrize("value", ["nope", '{"a": 1}', "[1]"])
@@ -694,7 +706,7 @@ def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["x", "y"])
 
     assert result == {"x": ">=1", "y": ">=2"}
-    assert warnings == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
+    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
 def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
@@ -704,7 +716,7 @@ def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [])
 
     assert result == {}
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None:
@@ -718,7 +730,9 @@ def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["x"])
 
     assert result == {"x": ">=1"}
-    assert warnings == ["[dependency-groups].dev: include-group 'tset' does not match any group"]
+    assert messages(warnings) == [
+        "[dependency-groups].dev: include-group 'tset' does not match any group"
+    ]
 
 
 def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requested(
@@ -727,7 +741,7 @@ def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requeste
     path = write_pyproject(tmp_path, '[dependency-groups]\ndev = [{include-group = "tset"}]\n')
     _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [])
 
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
@@ -735,7 +749,7 @@ def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["numpy"])
 
     assert result == {"numpy": ">=1.20"}
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
@@ -743,7 +757,7 @@ def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["mixed"])
 
     assert result == {"mixed": ">=1"}
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path: Path) -> None:
@@ -753,7 +767,7 @@ def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path
     )
     _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["a"])
 
-    assert warnings == []
+    assert messages(warnings) == []
 
 
 def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
@@ -762,7 +776,7 @@ def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
     result, warnings = extract_dependency_specifiers(data, ["numpy"])
 
     assert result == {"numpy": None}
-    assert warnings == [
+    assert messages(warnings) == [
         "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
         "dependency 'numpy' not found",
     ]
@@ -773,7 +787,7 @@ def test_dependency_dynamic_fields_add_one_warning_each() -> None:
 
     _, warnings = extract_dependency_specifiers(data, ["numpy"])
 
-    assert warnings == [
+    assert messages(warnings) == [
         "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
         "[project].optional-dependencies is dynamic, it cannot be read, so no requirement is found in it",
         "dependency 'numpy' not found",
@@ -808,7 +822,7 @@ def lookups(*entries: str) -> list[Lookup]:
 def test_lookup_specifiers() -> None:
     assert lookup_specifiers(REQUIREMENTS, lookups("Numpy", "tqdm", "other")) == (
         {"Numpy": ">=1", "tqdm": "", "other": None},
-        ["dependency 'other' not found"],
+        [ReportWarning("dependency-not-found", "dependency 'other' not found")],
     )
 
 
@@ -947,7 +961,7 @@ def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
     specifiers, warnings = lookup_specifiers(requirements, lookups("a", "b", "c@group:dev"))
 
     assert specifiers == {"a": ">=1", "b": None, "c@group:dev": None}
-    assert warnings == [
+    assert messages(warnings) == [
         "dependency 'b' not found",
         "dependency 'c@group:dev' not found",
     ]

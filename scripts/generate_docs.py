@@ -4,7 +4,8 @@ Usage: generate_docs.py [--check]
 
 Rewrites the blocks between ``<!-- NAME:start -->`` and ``<!-- NAME:end -->``
 of the README: ``inputs`` and ``outputs`` (the tables of ``action.yaml``) and
-``candidates`` (the default of ``python-candidates``, defined in the code).
+``warnings`` (the codes of ``warning_codes.py``) and ``candidates`` (the default of
+``python-candidates``, defined in the code).
 With ``--check``, writes nothing and exits with 1 when the README is not up
 to date. It is a development tool: it needs PyYAML, the action does not.
 """
@@ -22,6 +23,7 @@ ROOT_PATH = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_PATH / "src"))
 
 from extract_pyproject_metadata.inputs import DEFAULT_PYTHON_CANDIDATES  # noqa: E402
+from extract_pyproject_metadata.warning_codes import WARNING_CODES  # noqa: E402
 
 ACTION_PATH = ROOT_PATH / "action.yaml"
 README_PATH = ROOT_PATH / "README.md"
@@ -63,6 +65,12 @@ def render_outputs(action: dict[str, Any]) -> str:
     return format_table(["Name", "Description"], rows)
 
 
+def render_warnings() -> str:
+    """Return the table of the warning codes."""
+    rows = [[f"`{code}`", when, effect] for code, (when, effect) in WARNING_CODES.items()]
+    return format_table(["Code", "When", "Effect"], rows)
+
+
 def render_candidates() -> str:
     """Return the default ``python-candidates``, as code."""
     return f"`{DEFAULT_PYTHON_CANDIDATES}`"
@@ -87,6 +95,7 @@ def generate(readme: str, action: dict[str, Any]) -> str:
     """Return the README with its generated blocks up to date."""
     readme = replace_block(readme, "inputs", render_inputs(action))
     readme = replace_block(readme, "outputs", render_outputs(action))
+    readme = replace_block(readme, "warnings", render_warnings())
     return replace_block(readme, "candidates", render_candidates(), table=False)
 
 
