@@ -212,23 +212,20 @@ def env_from_args(*argv: str) -> dict[str, str]:
 
 
 def run_main(argv: list[str], environ: dict[str, str] | None = None) -> int:
-    """Run ``main`` on the environment built by ``env_from_args``. The job summary file is
-    the ``GITHUB_STEP_SUMMARY`` of the test (``monkeypatch.setenv``), if any."""
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    base = {"GITHUB_STEP_SUMMARY": summary} if summary else {}
-    return extract_metadata_module.main({**base, **env_from_args(*argv), **(environ or {})})
+    """Run ``main`` on the environment built by ``env_from_args``."""
+    return extract_metadata_module.main({**env_from_args(*argv), **(environ or {})})
 
 
 def run_script(
     argv: list[str], flags: tuple[str, ...] = ("-I",), check: bool = False
 ) -> subprocess.CompletedProcess[str]:
     """Start ``scripts/extract_metadata.py`` in a new process, with the environment built by
-    ``env_from_args`` (and the variables of the test without ``INPUT_*`` and the files of
+    ``env_from_args`` (and the variables of the test without ``INPUT_*`` and the file of
     GitHub). ``flags`` are the options of the interpreter."""
     base = {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith("INPUT_") and key not in {"GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY"}
+        if not key.startswith("INPUT_") and key != "GITHUB_OUTPUT"
     }
     return subprocess.run(
         [sys.executable, *flags, str(SCRIPT_PATH)],

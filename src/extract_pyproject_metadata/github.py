@@ -1,5 +1,5 @@
-"""The action outputs (``GITHUB_OUTPUT``), the workflow commands and the
-one-line summary."""
+"""The outputs of the action (``GITHUB_OUTPUT``), the workflow commands (the
+annotations) and the one-line log summary, with the escaping of their values."""
 
 from __future__ import annotations
 
@@ -9,11 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.output.escaping import (
-    escape_annotation,
-    escape_annotation_property,
-    single_line,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -22,10 +17,13 @@ if TYPE_CHECKING:
 
 __all__ = [
     "emit_github_output",
+    "escape_annotation",
+    "escape_annotation_property",
     "format_error",
+    "format_log_line",
     "format_outputs",
-    "format_summary",
     "new_delimiter",
+    "single_line",
     "write_github_output",
 ]
 
@@ -74,7 +72,7 @@ def new_delimiter() -> str:
     return f"ghadelimiter_{uuid.uuid4()}"
 
 
-# The outputs shown in the summary line, in order (the others are derived from these).
+# The outputs shown in the log line, in order (the others are derived from these).
 _SUMMARY_FIELDS = (
     "name",
     "version",
@@ -88,8 +86,8 @@ _SUMMARY_FIELDS = (
 )
 
 
-def format_summary(outputs: dict[str, str]) -> str:
-    """Build the one-line summary of the outputs that is printed in the
+def format_log_line(outputs: dict[str, str]) -> str:
+    """Build the one-line log line of the outputs that is printed in the
     log.
 
     Args:
@@ -156,7 +154,7 @@ def emit_github_output(report: Report, pyproject_path: str, output_path: str) ->
     for warning in report["warnings"]:
         title = escape_annotation_property(warning["code"])
         print(f"::warning file={file},title={title}::{escape_annotation(warning['message'])}")
-    print(format_summary(outputs))
+    print(format_log_line(outputs))
     write_github_output(output_path, outputs)
 
 
@@ -178,3 +176,27 @@ def format_error(message: str, pyproject_path: str, annotate: bool) -> str:
         return f"{pyproject_path}: {message}"
     file = escape_annotation_property(pyproject_path)
     return f"::error file={file}::{escape_annotation(message)}"
+
+
+def escape_annotation(message: str) -> str:
+    """Escape a message for use in a ``::warning::`` workflow command.
+
+    Same escaping as ``@actions/core``: without it a newline would end the
+    command and the rest of the message would be parsed as another command.
+    """
+    return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def escape_annotation_property(value: str) -> str:
+    """Escape a property value (such as ``file``) of a workflow command.
+
+    Same escaping as ``@actions/core``: like ``escape_annotation``, plus
+    ``:`` and ``,``, which delimit properties.
+    """
+    return escape_annotation(value).replace(":", "%3A").replace(",", "%2C")
+
+
+def single_line(value: str) -> str:
+    """Escape backslashes and line breaks so ``value`` stays on one log
+    line."""
+    return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")

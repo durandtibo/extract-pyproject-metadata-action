@@ -44,13 +44,8 @@ They are ``name``, ``normalized-name``, ``file-name``,
 ``json`` (the JSON object that is printed without the variable, in compact form). It also
 prints to stdout one ``::warning file=<path>,title=<code>::`` workflow command per warning,
 where ``<path>`` is the pyproject path, so that GitHub attaches the annotation to the file,
-followed by a one-line summary of the outputs. Warnings are printed on stdout
+followed by a one-line log line of the outputs. Warnings are printed on stdout
 because GitHub only parses workflow commands there.
-
-When there are warnings, or when the run fails, it also appends them (or the error
-message) as a short Markdown list to the file named by the ``GITHUB_STEP_SUMMARY``
-environment variable (the job summary of GitHub), if it is set. Nothing is written
-otherwise.
 
 With ``INPUT_STRICT=true``, any warning is an error instead: the outputs are not
 written and the message lists the warnings. A requested dependency that is not
@@ -65,7 +60,7 @@ Exits with 1 and a message ``<field>: <problem>`` on stderr (with ``GITHUB_OUTPU
 ``::error file=<path>::`` workflow command, so that GitHub shows an error annotation on the
 file) if an input is invalid, the file is missing, cannot be read, is not UTF-8 or is not
 valid TOML, a field that is read has the wrong type or is missing, ``INPUT_STRICT=true`` and
-there is a warning, or the outputs or the job summary cannot be written.
+there is a warning, or the outputs cannot be written.
 
 An argument on the command line (which the action never passes) is a usage error: the
 message goes to stderr (as an ``::error::`` workflow command with ``GITHUB_OUTPUT``) and the
@@ -74,22 +69,14 @@ exit code is 2.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import sys
 from typing import TYPE_CHECKING
 
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.github import emit_github_output, escape_annotation, format_error
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS, parse_inputs
-from extract_pyproject_metadata.output.escaping import escape_annotation
-from extract_pyproject_metadata.output.github import emit_github_output, format_error
-from extract_pyproject_metadata.output.summary import (
-    format_error_summary,
-    format_warning_summary,
-    resolve_summary_path,
-    write_step_summary,
-)
 from extract_pyproject_metadata.report import build_report
 
 if TYPE_CHECKING:
@@ -159,28 +146,18 @@ def main(environ: Mapping[str, str] | None = None, arguments: Sequence[str] = ()
         return _usage_error(arguments, annotate=github_output is not None)
 
     pyproject_path = environ.get(env_name("pyproject-path"), DEFAULT_INPUTS["pyproject-path"])
-    summary_path: str | None = None
     try:
         inputs = read_inputs(environ)
-        summary_path = resolve_summary_path(environ)
         report = build_report(inputs)
         if github_output is None:
             # Like the action outputs, keep non-ASCII characters as they are.
             print(json.dumps(report, ensure_ascii=False))
         else:
             emit_github_output(report, inputs.pyproject_path, github_output)
-        if summary_path is not None and report["warnings"]:
-            write_step_summary(
-                summary_path, format_warning_summary([w["message"] for w in report["warnings"]])
-            )
     except MetadataError as exc:
         print(
             format_error(str(exc), pyproject_path, annotate=github_output is not None),
             file=sys.stderr,
         )
-        if summary_path is not None:
-            # The error is already reported: a summary that cannot be written is not worth another.
-            with contextlib.suppress(MetadataError):
-                write_step_summary(summary_path, format_error_summary(str(exc)))
         return 1
     return 0

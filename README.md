@@ -159,7 +159,7 @@ default it is:
 Scalars are plain strings; arrays and objects are compact JSON strings for `fromJSON`.
 The `json` output is the whole result with real JSON values (`fromJSON(...json).extras`),
 plus `dependency_requirements`, the `warnings` (items `{"code", "message"}`) and the `schema_version` (`3`). The step logs a
-one-line `📦` summary of the outputs, with line breaks escaped. The line shows `name`,
+one-line `📦` log line of the outputs, with line breaks escaped. The line shows `name`,
 `version`, `requires-python`, `python-versions`, `python-min`, `python-max`, `extras`,
 `groups`, `dependency-specifiers`.
 
@@ -248,7 +248,7 @@ Python traceback. It happens when:
   array of strings, a `dependencies` scope is not `project`, `extra:<name>` or
   `group:<name>`, a candidate is not `major.minor`, or `strict` is not a boolean;
 - `strict` is `true` and there is a warning (no output is written);
-- the outputs (`$GITHUB_OUTPUT`) or the job summary cannot be written.
+- the outputs (`$GITHUB_OUTPUT`) cannot be written.
 
 Fields that the action does not output (`description`, `license`, `authors`,
 `[build-system]`, ...) are not read and not validated.

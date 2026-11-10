@@ -11,7 +11,7 @@ import pytest
 import extract_pyproject_metadata.report as report_module
 from extract_pyproject_metadata.cli import env_name, main, read_inputs
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.output.github import (
+from extract_pyproject_metadata.github import (
     format_error,
 )
 from extract_pyproject_metadata.pyproject import load_pyproject
@@ -68,34 +68,6 @@ def test_main_returns_one_when_the_outputs_cannot_be_written(
 
     assert exit_code == 1
     assert "::error file=" in capsys.readouterr().err
-
-
-def test_main_returns_one_when_the_job_summary_cannot_be_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n'
-    )  # a warning, so the summary is written
-
-    exit_code = run_main([str(path), "[]"])
-
-    assert exit_code == 1
-    assert "GITHUB_STEP_SUMMARY: cannot write" in capsys.readouterr().err
-
-
-def test_main_reports_the_error_once_when_the_job_summary_cannot_be_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
-    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
-
-    exit_code = run_main([str(path), "[]"])
-
-    assert exit_code == 1
-    err = capsys.readouterr().err
-    assert "[project].name: missing" in err
-    assert "GITHUB_STEP_SUMMARY: cannot write" not in err
 
 
 def test_main_json_keeps_non_ascii_characters(
@@ -313,85 +285,6 @@ def test_main_invalid_strict_returns_one(
 
     assert run_main(["--strict", "maybe", str(path), "[]"]) == 1
     assert "strict: must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
-
-
-def test_main_summary_lists_the_warnings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    exit_code = run_main(
-        [
-            "--github-output",
-            str(tmp_path / "out"),
-            str(path),
-            "[]",
-            '["missing"]',
-        ]
-    )
-
-    assert exit_code == 0
-    text = summary.read_text(encoding="utf-8")
-    assert text.startswith("### ⚠️ Project metadata\n\n- <code>")
-    assert "dependency &#39;missing&#39; not found</code>\n" in text
-    capsys.readouterr()
-
-
-def test_main_summary_reports_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nversion = "1"\n')
-
-    exit_code = run_main([str(path), "[]"])
-
-    assert exit_code == 1
-    text = summary.read_text(encoding="utf-8")
-    assert text.startswith("### ❌ Project metadata\n")
-    assert "name&#58; missing" in text
-    assert "&#91;project&#93;&#46;name" in text
-    assert "[project].name: missing" in capsys.readouterr().err
-
-
-def test_main_summary_lists_the_warnings_of_a_strict_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    exit_code = run_main(["--strict", "true", str(path), "[]"])
-
-    assert exit_code == 1
-    text = summary.read_text(encoding="utf-8")
-    assert text.startswith("### ❌ Project metadata\n")
-    assert "there are 1 warning&#40;s&#41;&#58;</code>\n- <code>" in text
-    assert "<code>&#45;" not in text
-    assert "[project].version is dynamic" not in text  # escaped, not raw
-
-
-def test_main_summary_writes_nothing_without_warnings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    summary = tmp_path / "summary.md"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert run_main([str(path), "[]"]) == 0
-    assert not summary.exists()
-
-
-def test_main_summary_writes_nothing_outside_a_workflow(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    assert run_main([str(path), "[]"]) == 0
-    assert json.loads(capsys.readouterr().out)["name"] == "a"
 
 
 @pytest.mark.parametrize(
@@ -1041,7 +934,7 @@ def test_main_github_output_multiline_requires_python_cannot_inject_commands(
     assert not any(line.startswith("::error") for line in captured.out.splitlines())
     assert (
         len(captured.out.splitlines()) == 2
-    )  # the warning for the invalid specifier, then the summary
+    )  # the warning for the invalid specifier, then the log line
     assert "requires-python=x\\n::error::boom\\nversion=hacked " in captured.out
 
 

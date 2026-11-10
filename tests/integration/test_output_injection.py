@@ -1,9 +1,8 @@
 """Tests that a hostile value from ``pyproject.toml`` cannot forge
 outputs or workflow commands.
 
-The values of the file reach three places: ``$GITHUB_OUTPUT``, the log
-(workflow commands read from stdout) and the job summary
-(``$GITHUB_STEP_SUMMARY``, Markdown). Each test builds a value that
+The values of the file reach two places: ``$GITHUB_OUTPUT`` and the log
+(workflow commands read from stdout). Each test builds a value that
 tries to end its container and start something else, then reads the
 result back.
 """
@@ -15,13 +14,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from extract_pyproject_metadata.inputs import parse_inputs
-from extract_pyproject_metadata.output.github import (
+from extract_pyproject_metadata.github import (
+    format_log_line,
     format_outputs,
-    format_summary,
     write_github_output,
 )
-from extract_pyproject_metadata.output.summary import format_warning_summary
+from extract_pyproject_metadata.inputs import parse_inputs
 from extract_pyproject_metadata.report import build_report
 from tests.helpers import run_main
 
@@ -120,13 +118,10 @@ def hostile_pyproject(tmp_path: Path) -> Path:
 
 
 def test_stdout_has_only_the_workflow_commands_of_the_script(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = hostile_pyproject(tmp_path)
     output = tmp_path / "output"
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary"))
 
     status = run_main(["--github-output", str(output), str(path), "[]"])
 
@@ -163,26 +158,7 @@ def test_the_log_line_of_a_hostile_pyproject_is_a_single_line(tmp_path: Path) ->
     path = hostile_pyproject(tmp_path)
     outputs = format_outputs(build_report(_inputs(path)))
 
-    summary = format_summary(outputs)
+    line = format_log_line(outputs)
 
-    assert "\n" not in summary
-    assert "\r" not in summary
-
-
-def test_the_job_summary_of_a_hostile_pyproject_stays_a_list_of_warnings(tmp_path: Path) -> None:
-    path = hostile_pyproject(tmp_path)
-    report = build_report(_inputs(path))
-
-    markdown = format_warning_summary([w["message"] for w in report["warnings"]])
-
-    lines = markdown.splitlines()
-    assert report["warnings"]
-    assert lines[:2] == ["### ⚠️ Project metadata", ""]
-    items = lines[2:]
-    assert len(items) == len(report["warnings"])
-    for item in items:
-        assert item.startswith("- <code>")
-        assert item.endswith("</code>")
-        assert "<script" not in item
-        assert "::" not in item
-    assert not any(line.startswith("::") for line in lines)
+    assert "\n" not in line
+    assert "\r" not in line

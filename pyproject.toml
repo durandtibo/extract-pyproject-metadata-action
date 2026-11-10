@@ -143,7 +143,7 @@ extend-exclude = [".venv", "src/extract_pyproject_metadata/_vendor"]
 "test-data/**" = ["D", "INP001"]
 # The command line writes its result and its errors to stdout and stderr.
 "src/extract_pyproject_metadata/cli.py" = ["T201"]
-"src/extract_pyproject_metadata/output/github.py" = ["T201"]
+"src/extract_pyproject_metadata/github.py" = ["T201"]
 # Ignore all directories named `tests`.
 "tests/**" = [
   "D",       # pydocstyle
