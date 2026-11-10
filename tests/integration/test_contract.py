@@ -10,7 +10,8 @@ import pytest
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import DEFAULT_PYTHON_CANDIDATES, parse_dependencies
+from extract_pyproject_metadata.inputs import parse_dependencies
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Report
 from tests.helpers import (

@@ -11,10 +11,15 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 __all__ = [
+    "DEFAULT_PYTHON_CANDIDATES",
     "compatible_python_versions",
     "highest_python_version",
     "lowest_python_version",
 ]
+
+# The Python versions that ``python-candidates`` defaults to (and the default of the input). Add
+# the new minor version every October: ``maintenance.yaml`` opens an issue when it is missing.
+DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 
 # The patch numbers that ``compatible_python_versions`` tries for each "major.minor" candidate: every
 # real release (CPython patch numbers stay below 100) and a very late one, for the specifiers that

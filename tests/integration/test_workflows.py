@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS
-from tests.helpers import ROOT_PATH
+from tests.helpers import PACKAGE_PATH, ROOT_PATH
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -94,6 +94,17 @@ def test_ci_runs_every_night_through_the_nightly_workflow_only() -> None:
 
 def test_the_shared_matrix_workflow_is_gone() -> None:
     assert not (WORKFLOWS_PATH / "lib-get-test-matrix.yaml").exists()
+
+
+def test_the_maintenance_workflow_reads_the_default_candidates_where_they_are_defined() -> None:
+    text = (WORKFLOWS_PATH / "maintenance.yaml").read_text(encoding="utf-8")
+    module = (PACKAGE_PATH / "python_versions.py").read_text(encoding="utf-8")
+
+    assert (
+        "from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES" in text
+    )
+    assert "DEFAULT_PYTHON_CANDIDATES = " in module
+    assert not (WORKFLOWS_PATH / "packaging-update.yaml").exists()
 
 
 def test_the_local_workflow_repeats_the_defaults_of_the_inputs() -> None:

@@ -1,0 +1,73 @@
+# Weekly checks that need the network. Each one opens an issue (once) when something is to update:
+#   - packaging: PyPI has a newer release than the vendored one in
+#     src/extract_pyproject_metadata/_vendor (see its README.md). Run
+#     `make vendor-packaging VERSION=x.y`.
+#   - python: a released CPython minor version (3.11 or later) is not in the default of
+#     `python-candidates` (DEFAULT_PYTHON_CANDIDATES in src/extract_pyproject_metadata/python_versions.py).
+
+name: Maintenance
+on:
+  schedule:
+    - cron: "30 9 * * 1" # Every Monday at 9:30 AM UTC
+  workflow_dispatch: # to trigger manually
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  packaging:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Compare the vendored version with the latest release
+        id: compare
+        run: |
+          vendored="$(sed -n 's/^- `packaging` \([^,]*\),.*/\1/p' src/extract_pyproject_metadata/_vendor/README.md)"
+          latest="$(curl -fsS https://pypi.org/pypi/packaging/json | jq -r .info.version)"
+          echo "vendored=$vendored" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "vendored: $vendored, latest: $latest"
+
+      - name: Open an issue when a newer release exists
+        if: steps.compare.outputs.vendored != steps.compare.outputs.latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VENDORED: ${{ steps.compare.outputs.vendored }}
+          LATEST: ${{ steps.compare.outputs.latest }}
+        run: |
+          title="Update the vendored packaging to $LATEST"
+          if [ -z "$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')" ]; then
+            gh issue create --title "$title" \
+              --body "packaging $LATEST is released, the vendored copy is $VENDORED. Run \`make vendor-packaging VERSION=$LATEST\`, then the tests."
+          fi
+
+  python:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: List the released versions that are not in the default python-candidates
+        id: missing
+        run: |
+          known="$(python3 -c 'import sys; sys.path.insert(0, "src"); from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES as c; print(c)')"
+          missing="$(curl -fsS https://endoflife.date/api/python.json | jq -c --argjson known "$known" --arg today "$(date -u +%F)" '[.[] | select(.releaseDate <= $today) | .cycle | select((split(".") | map(tonumber)) >= [3, 11]) | select(. as $v | $known | index($v) | not)]')"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          echo "default: $known, released and missing: $missing"
+
+      - name: Open an issue when a version is missing
+        if: steps.missing.outputs.missing != '[]'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MISSING: ${{ steps.missing.outputs.missing }}
+        run: |
+          title="Add the Python versions $MISSING to the default python-candidates"
+          if [ -z "$(gh issue list --state open --search "Add the Python versions in:title" --json number --jq '.[0].number')" ]; then
+            gh issue create --title "$title" \
+              --body "These Python versions are released and missing from DEFAULT_PYTHON_CANDIDATES (src/extract_pyproject_metadata/python_versions.py): $MISSING. Add them, run \`make docs\`, update the matrix of the workflows, and release."
+          fi

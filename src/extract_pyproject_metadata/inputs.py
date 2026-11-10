@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.types import Inputs, Lookup
 
 if TYPE_CHECKING:
@@ -16,7 +17,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_INPUTS",
-    "DEFAULT_PYTHON_CANDIDATES",
     "PROJECT_SCOPE",
     "parse_bool",
     "parse_dependencies",
@@ -24,9 +24,6 @@ __all__ = [
     "parse_python_candidates",
     "parse_string_array",
 ]
-
-# The Python versions that ``python-candidates`` defaults to (and the default of the input).
-DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 
 # The scope of the requirements of ``[project].dependencies`` (see ``collect_requirements``).
 PROJECT_SCOPE = "project"
