@@ -127,9 +127,9 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   finds Python 3.11 or later and starts the script), not inline in
   `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
 - Start each workflow with a comment saying what it does and when it runs, and update it when
-  that changes. Set `permissions` at the job level (also on jobs that call a reusable workflow),
-  never at the workflow level, with the minimum permissions per job, and `timeout-minutes` on
-  every job.
+  that changes. Set `permissions` on every job (also on jobs that call a reusable workflow) with the
+  minimum permissions per job, and `timeout-minutes` on every job. The workflow level is either
+  absent or `permissions: {}`, never a grant.
 - Check workflow changes with `actionlint` when available.
 - Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
   runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
@@ -158,8 +158,9 @@ Files are prefixed by role:
 
 Conventions:
 
-- Set `permissions` on every job (including jobs that call a reusable workflow), never at the
-  workflow level. A test checks it.
+- Set `permissions` on every job (including jobs that call a reusable workflow). The workflow
+  level has no `permissions`, or only `permissions: {}` (it grants nothing), never a grant. A test
+  checks it.
 - Each `ci-*` check is a `workflow_call` workflow that also has `workflow_dispatch`, so it can be
   run alone (the ones that take the `test-matrix` input have `workflow_call` only). Add a check as
   a new `ci-<name>.yaml` plus a job in `ci.yaml`.

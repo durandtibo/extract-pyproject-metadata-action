@@ -47,6 +47,8 @@ on:
         default: "0"
         type: string
 
+permissions: {}
+
 jobs:
   cancel-stale-runs:
     runs-on: ubuntu-slim
