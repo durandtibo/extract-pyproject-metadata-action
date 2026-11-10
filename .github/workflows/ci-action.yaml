@@ -1,4 +1,4 @@
-name: Test Local Action
+name: Test Action
 
 # The integration test of the current code of the action, `uses: ./` (it can only run on GitHub;
 # nightly-test-released.yaml tests the published version). It checks the wiring: the

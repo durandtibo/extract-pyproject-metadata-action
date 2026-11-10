@@ -1,7 +1,7 @@
 # Test the latest stable (published) version of the action, to catch what its users pick up:
 # a change of the runner images or of the Python versions that breaks the released tag.
 # Called from nightly.yaml. It only uses the inputs and outputs of that version (the current code is tested by
-# ci-test-action.yaml).  When a release is
+# ci-action.yaml).  When a release is
 # made, update the pinned SHA and tag below (bot-pin-action.yaml keeps the SHA of the tag).
 
 name: Test Stable Action

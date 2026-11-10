@@ -1,9 +1,10 @@
-# Unit and integration tests of the Python code, with the coverage gate. The property-based
-# tests need hypothesis (no free-threaded wheels, `property` group): see ci-test-python-properties.yaml.
+# Tests of the Python code. `test`: the unit and integration tests, with the coverage gate. `properties`:
+# the Hypothesis tests of tests/properties/ (hypothesis has no free-threaded wheels and is in the
+# `property` group, not in `dev`), on ubuntu-latest and the standard (non-free-threaded) Python versions.
 # Runs on the OS and Python versions of the shared matrix (3.11 is the oldest: tomllib).
 # Called from ci.yaml with the shared matrix of lib-get-test-matrix.yaml.
 
-name: Unit Tests
+name: Python Tests
 on:
   workflow_call:
     inputs:
@@ -13,7 +14,7 @@ on:
         type: string
 
 jobs:
-  unit:
+  test:
     permissions:
       contents: read
     runs-on: ${{ matrix.os }}
@@ -40,3 +41,30 @@ jobs:
 
       - name: Run the tests
         run: make test PYTHON_RUN=
+
+  properties:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      max-parallel: 8
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJson(inputs.test-matrix).python_versions_standard }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dev and property dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --group dev --group property
+
+      - name: Run the property-based tests
+        run: make test-properties PYTHON_RUN=

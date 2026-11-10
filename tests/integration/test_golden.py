@@ -4,7 +4,7 @@
 A case is a directory with a ``pyproject.toml``, an optional
 ``inputs.json`` (the action inputs of the case, by input name) and the
 ``expected.json`` (the value of the ``json`` output). The workflow
-``ci-test-action.yaml`` runs the same cases through the real action. To
+``ci-action.yaml`` runs the same cases through the real action. To
 create or update the golden files, run ``UPDATE_GOLDEN=1 pytest
 tests/integration/test_golden.py`` and review the diff.
 """

@@ -1,26 +1,21 @@
-# Nightly workflow, the only scheduled one for the checks.
-# Runs the CI (to catch changes of the runner images and of the dependencies) and the test of
-# the latest published version of the action (nightly-test-released.yaml).
+# Nightly workflow testing the latest published version of the action, to catch regressions in
+# what consumers pick up (nightly-test-released.yaml). The current code is tested nightly by ci.yaml.
 
-name: Nightly
+name: Nightly Tests
 on:
   schedule:
     - cron: "20 9 * * *" # Run nightly at 9:20 AM UTC
   workflow_dispatch: # to trigger manually
 
 jobs:
-  ci:
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yaml
-
   # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
   get-matrix:
     permissions:
       contents: read
     uses: ./.github/workflows/lib-get-test-matrix.yaml
 
-  released:
+  # Test the latest released action
+  test-released:
     needs: get-matrix
     permissions:
       contents: read

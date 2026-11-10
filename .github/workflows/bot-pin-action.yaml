@@ -11,6 +11,8 @@ on:
     - cron: "0 8 * * 3" # Run every Wednesday at 8:00 AM UTC
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   pin:
     runs-on: ubuntu-slim

@@ -100,10 +100,9 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 - In the PR description, say what was changed, what was deliberately not
   changed, and any behaviour change (for example a changed input, default or
   output of the action).
-- Releases are made by pushing a tag `vX.Y.Z` (never from a PR): `.github/workflows/release.yaml`
-  creates the GitHub release from `release-notes/vX.Y.Z.md` and moves no tag: workflows pin the
-  exact tag (`@v0.3.0`). The checklist is in
-  the README. Do not create or move tags.
+- Releases are made by hand with a tag `vX.Y.Z` (never from a PR) and a GitHub release; there is
+  no release workflow. Workflows pin the exact tag (`@v0.3.0`). The checklist is in the README.
+  Do not create or move tags.
 - When a PR conflicts with `main`, merge `origin/main` into the branch and resolve the
   conflicts (do not rebase and force-push). Check what `main` already contains before choosing
   a side; most conflicts are two PRs appending tests to the same file: keep both.
@@ -128,9 +127,9 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   finds Python 3.11 or later and starts the script), not inline in
   `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
 - Start each workflow with a comment saying what it does and when it runs, and update it when
-  that changes. Set `permissions` at the job level (also on jobs that call a reusable workflow),
-  never at the workflow level, with the minimum permissions per job, and `timeout-minutes` on
-  every job.
+  that changes. Set `permissions` on every job (also on jobs that call a reusable workflow) with the
+  minimum permissions per job, and `timeout-minutes` on every job. The workflow level is either
+  absent or `permissions: {}`, never a grant.
 - Check workflow changes with `actionlint` when available.
 - Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
   runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
@@ -139,32 +138,33 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 
 Files are prefixed by role:
 
-- `ci.yaml`: entry point for pull requests, pushes to `main` and manual runs. It holds no steps,
+- `ci.yaml`: entry point for pull requests, pushes to `main`, a nightly schedule and manual runs. It holds no steps,
   only jobs that call the reusable `ci-*.yaml` workflows below.
   - `ci-lint.yaml`: ruff, pre-commit hooks and the generated README tables.
   - `ci-type-checking.yaml`: pyright.
-  - `ci-test-python.yaml`: the Python tests (unit, integration) on the OS and Python matrix.
-  - `ci-test-python-properties.yaml`: the property-based tests, on the standard Python versions.
-  - `ci-test-action.yaml`: runs the action from this checkout (`uses: ./`), i.e. the version not
+  - `ci-python.yaml`: the Python tests: unit and integration on the OS and Python matrix, and the
+    property-based tests (job `properties`) on the standard Python versions.
+  - `ci-action.yaml`: runs the action from this checkout (`uses: ./`), i.e. the version not
     released yet.
 - `ci-verify-workflows.yaml`: lints the workflow files themselves. It has its own triggers and is
   not called from `ci.yaml`.
 - `nightly.yaml`: scheduled entry point that calls `nightly-test-released.yaml`, which tests the
-  latest released action. It is not part of `ci.yaml`.
+  latest released action. It is not part of `ci.yaml` (which runs nightly too, for the current code).
+- `security-*.yaml`: dependency review and OSSF Scorecard.
 - `lib-get-test-matrix.yaml`: reusable workflow that loads the shared OS matrix once; callers pass
   it down through the `test-matrix` input.
 - `bot-*.yaml`: scheduled automation that opens PRs or acts on runs (format files, pin actions,
   sync `.make/`, cancel stale runs).
-- `release.yaml`: creates the GitHub release from a pushed tag.
 
 Conventions:
 
-- Set `permissions` on every job (including jobs that call a reusable workflow), never at the
-  workflow level. A test checks it.
+- Set `permissions` on every job (including jobs that call a reusable workflow). The workflow
+  level has no `permissions`, or only `permissions: {}` (it grants nothing), never a grant. A test
+  checks it.
 - Each `ci-*` check is a `workflow_call` workflow that also has `workflow_dispatch`, so it can be
   run alone (the ones that take the `test-matrix` input have `workflow_call` only). Add a check as
   a new `ci-<name>.yaml` plus a job in `ci.yaml`.
-- Name test workflows by what they test: `ci-test-action` tests the action, `ci-test-python` tests
+- Name test workflows by what they test: `ci-action` tests the action, `ci-python` tests
   the Python code, `nightly-test-released` tests the published action.
 - Put `make` targets in the steps rather than duplicating commands, so local runs and CI match.
 
@@ -220,7 +220,7 @@ Conventions:
   every case without GitHub; `UPDATE_GOLDEN=1 pytest tests/integration/test_golden.py`
   rewrites the files (review the diff). Adding a case is adding a directory (it is checked by `test_golden.py`; add it to the
   `golden` matrix only if it covers a new input or output).
-- The integration workflow `.github/workflows/ci-test-action.yaml` (`uses: ./`)
+- The integration workflow `.github/workflows/ci-action.yaml` (`uses: ./`)
   checks only the wiring: the `golden` job runs the real action on three
   cases (`minimal`, `readme-example`, `python-candidates-none`: a three-item matrix) and
   compares the `json` output with `expected.json` (`scripts/compare_json.py`); a test checks that
