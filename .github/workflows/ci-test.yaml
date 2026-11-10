@@ -1,4 +1,5 @@
-# Unit, integration and property-based tests of the Python code, with the coverage gate.
+# Unit and integration tests of the Python code, with the coverage gate. The property-based
+# tests need hypothesis (no free-threaded wheels, `property` group): see ci-test-properties.yaml.
 # Runs on the OS and Python versions of the shared matrix (3.11 is the oldest: tomllib).
 # Called from ci.yaml with the shared matrix of lib-get-test-matrix.yaml.
 

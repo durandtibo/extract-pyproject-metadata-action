@@ -15,7 +15,7 @@ PYTHON_RUN ?= uv run
 
 .PHONY: install
 install: install-uv ## Install the dependencies and the dev group in .venv
-	uv sync --group dev
+	uv sync --group dev --group property
 
 .PHONY: format
 format: format-python format-yaml format-makefile format-shell format-toml format-markdown ## Format all files
@@ -39,6 +39,10 @@ types: ## Check the types of the package and the script (pyright, strict)
 .PHONY: test
 test: ## Run the tests with the coverage gate
 	$(PYTHON_RUN) pytest -q --cov
+
+.PHONY: test-properties
+test-properties: ## Run the property-based tests (needs the property group)
+	$(PYTHON_RUN) pytest -q tests/properties
 
 .PHONY: docs
 docs: ## Generate the tables of README.md from action.yaml

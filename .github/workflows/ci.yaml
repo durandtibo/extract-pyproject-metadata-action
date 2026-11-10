@@ -6,6 +6,7 @@
 # - ci-lint.yaml: ruff, pre-commit, generated README tables.
 # - ci-type-checking.yaml: pyright.
 # - ci-test.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
+# - ci-test-properties.yaml: the property-based tests, on the standard Python versions.
 # - ci-test-local.yaml: the integration test of the current code of the action (`uses: ./`).
 # - ci-verify-workflows.yaml: lints the workflows.
 # The test of the published action is nightly-test-stable.yaml (called from nightly.yaml).
@@ -39,6 +40,13 @@ jobs:
   unit:
     needs: get-matrix
     uses: ./.github/workflows/ci-test.yaml
+    with:
+      test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
+
+  # The property-based tests (hypothesis has no free-threaded wheels): standard versions only
+  properties:
+    needs: get-matrix
+    uses: ./.github/workflows/ci-test-properties.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 

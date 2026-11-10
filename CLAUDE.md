@@ -58,8 +58,8 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 ## Environment
 
 - Use a virtual environment in `.venv` (`python -m venv .venv`, then
-  `.venv/bin/pip install --group dev`, or `make install`
-  which runs `uv sync --group dev`) and run `.venv/bin/python`, `.venv/bin/pytest`,
+  `.venv/bin/pip install --group dev --group property`, or `make install`
+  which runs `uv sync --group dev --group property`) and run `.venv/bin/python`, `.venv/bin/pytest`,
   `.venv/bin/ruff check src scripts tests` (must pass) and `.venv/bin/pyright`
   (strict on `src` and `scripts`; must pass). There is no mypy and no `ty`.
 - The `Makefile` is the only task runner: `make help` lists the targets, for

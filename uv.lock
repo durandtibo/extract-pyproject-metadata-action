@@ -178,7 +178,6 @@ source = { virtual = "." }
 dev = [
     { name = "codespell" },
     { name = "coverage" },
-    { name = "hypothesis" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
@@ -187,6 +186,9 @@ dev = [
     { name = "pyyaml" },
     { name = "ruff" },
 ]
+property = [
+    { name = "hypothesis" },
+]
 
 [package.metadata]
 
@@ -194,7 +196,6 @@ dev = [
 dev = [
     { name = "codespell", specifier = ">=2.4.3,<3.0" },
     { name = "coverage", extras = ["toml"], specifier = ">=7.17.2,<8.0" },
-    { name = "hypothesis", specifier = ">=6.170.15,<7.0" },
     { name = "pre-commit", specifier = ">=4.7.0,<5.0" },
     { name = "pyright", specifier = ">=1.1.414,<2.0" },
     { name = "pytest", specifier = ">=9.2.0,<10.0" },
@@ -203,6 +204,7 @@ dev = [
     { name = "pyyaml", specifier = ">=6.0.3,<7.0" },
     { name = "ruff", specifier = ">=0.17.4,<1.0" },
 ]
+property = [{ name = "hypothesis", specifier = ">=6.170.15,<7.0" }]
 
 [[package]]
 name = "filelock"

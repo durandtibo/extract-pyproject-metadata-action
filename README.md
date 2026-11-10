@@ -270,7 +270,7 @@ the `json` output.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install --group dev
+.venv/bin/pip install --group dev --group property
 .venv/bin/pytest -q --cov
 ```
 

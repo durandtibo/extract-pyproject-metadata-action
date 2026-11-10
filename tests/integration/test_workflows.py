@@ -6,6 +6,7 @@ import importlib.util
 import json
 import re
 import sys
+import tomllib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,6 +23,7 @@ WORKFLOWS_PATH = ROOT_PATH / ".github" / "workflows"
 ACTION_PATH = ROOT_PATH / "action.yaml"
 LOCAL_PATH = WORKFLOWS_PATH / "ci-test-local.yaml"
 MAKEFILE_PATH = ROOT_PATH / "Makefile"
+PYPROJECT_PATH = ROOT_PATH / "pyproject.toml"
 
 
 def load_script(name: str) -> ModuleType:
@@ -111,6 +113,7 @@ def test_ci_only_calls_the_reusable_workflows() -> None:
     assert sorted(job["uses"] for job in jobs.values()) == [
         "./.github/workflows/ci-lint.yaml",
         "./.github/workflows/ci-test-local.yaml",
+        "./.github/workflows/ci-test-properties.yaml",
         "./.github/workflows/ci-test.yaml",
         "./.github/workflows/ci-type-checking.yaml",
         "./.github/workflows/ci-verify-workflows.yaml",
@@ -168,9 +171,27 @@ def test_the_matrix_jobs_use_the_shared_matrix(name: str) -> None:
         assert matrix["python-version"] == "${{ fromJson(inputs.test-matrix).python_versions }}"
 
 
+def test_the_property_tests_run_on_the_standard_python_versions_only() -> None:
+    job = load_workflow("ci-test-properties.yaml")["jobs"]["properties"]
+
+    assert job["strategy"]["matrix"] == {
+        "python-version": "${{ fromJson(inputs.test-matrix).python_versions_standard }}"
+    }
+    assert "pip install --group dev --group property" in job["steps"][-2]["run"]
+    assert job["steps"][-1]["run"] == "make test-properties PYTHON_RUN="
+
+
+def test_hypothesis_is_in_the_property_group_only() -> None:
+    groups = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))["dependency-groups"]
+
+    assert not [name for name in groups["dev"] if name.startswith("hypothesis")]
+    assert [name.split(">")[0] for name in groups["property"]] == ["hypothesis"]
+
+
 @pytest.mark.parametrize(
     ("name", "caller"),
     [
+        ("ci-test-properties.yaml", "ci.yaml"),
         ("ci-test.yaml", "ci.yaml"),
         ("ci-test-local.yaml", "ci.yaml"),
         ("nightly-test-stable.yaml", "nightly.yaml"),
