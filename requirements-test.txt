@@ -1,6 +1,7 @@
 -r scripts/requirements.txt
 pytest>=9.2.0
 pytest-cov>=7.0.0
+pytest-timeout>=2.4.0
 ruff>=0.14.0
 hypothesis>=6.100.0
 ty>=0.0.99
