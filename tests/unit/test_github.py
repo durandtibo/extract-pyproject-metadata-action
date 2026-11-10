@@ -80,7 +80,7 @@ def test_format_outputs_json_is_the_whole_report_in_compact_form() -> None:
     assert result.startswith(
         '{"name":"coola","normalized_name":"coola","file_name":"coola","version":"1.2.3",'
     )
-    assert result.endswith('"warnings":[],"schema_version":3}')
+    assert result.endswith('"warnings":[],"schema_version":1}')
     assert json.loads(result) == METADATA
 
 
@@ -161,7 +161,7 @@ def test_format_outputs_normalized_version() -> None:
         dependency_specifiers={},
         dependency_requirements={},
         warnings=[],
-        schema_version=3,
+        schema_version=1,
     )
 
     outputs = format_outputs(report)

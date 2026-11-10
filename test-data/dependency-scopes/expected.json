@@ -63,5 +63,5 @@
       "message": "dependency 'numpy@group:dev' not found"
     }
   ],
-  "schema_version": 3
+  "schema_version": 1
 }

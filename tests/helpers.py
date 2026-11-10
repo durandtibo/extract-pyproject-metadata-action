@@ -161,7 +161,7 @@ METADATA: Report = {
         "missing": [],
     },
     "warnings": [],
-    "schema_version": 3,
+    "schema_version": 1,
 }
 
 
