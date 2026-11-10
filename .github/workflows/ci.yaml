@@ -20,25 +20,32 @@ on:
   workflow_dispatch: # to trigger manually
   workflow_call: # the release workflow runs the checks first
 
-permissions:
-  contents: read
-
 jobs:
   # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
   get-matrix:
+    permissions:
+      contents: read
     uses: ./.github/workflows/lib-get-test-matrix.yaml
 
   lint:
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci-lint.yaml
 
   verify-workflows:
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci-verify-workflows.yaml
 
   types:
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci-type-checking.yaml
 
   unit:
     needs: get-matrix
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci-test-python.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
@@ -46,6 +53,8 @@ jobs:
   # The property-based tests (hypothesis has no free-threaded wheels): standard versions only
   properties:
     needs: get-matrix
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci-test-python-properties.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
@@ -53,6 +62,8 @@ jobs:
   # Test the action from the current repository code (dev version)
   action:
     needs: get-matrix
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci-test-action.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

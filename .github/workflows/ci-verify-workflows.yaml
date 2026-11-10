@@ -6,11 +6,10 @@ on:
   workflow_call:
   workflow_dispatch: # to trigger manually
 
-permissions:
-  contents: read
-
 jobs:
   verify-workflows:
+    permissions:
+      contents: read
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:

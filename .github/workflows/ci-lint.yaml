@@ -6,11 +6,10 @@ on:
   workflow_call:
   workflow_dispatch: # to trigger manually
 
-permissions:
-  contents: read
-
 jobs:
   lint:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

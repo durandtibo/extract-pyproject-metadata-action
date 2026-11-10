@@ -16,12 +16,11 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-
 jobs:
   # A smoke test of the contract: the main inputs and outputs, on Linux and macOS.
   smoke:
+    permissions:
+      contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
@@ -99,6 +98,8 @@ jobs:
   # `python-candidates-none` (a warning). The list is explicit: a test checks that the cases
   # exist and that, together, they set every input and fill every output of action.yaml.
   golden:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -143,6 +144,8 @@ jobs:
 
   # What the golden files cannot see: failures, strict, and what the action leaves behind.
   wiring:
+    permissions:
+      contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
@@ -259,6 +262,8 @@ jobs:
 
   # Only Python 3.11 or later is supported: the action must fail with an explicit error
   test-old-python:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

@@ -45,7 +45,8 @@ def test_the_release_runs_the_checks_first_and_only_it_can_write() -> None:
 
     assert jobs["checks"]["uses"] == "./.github/workflows/ci.yaml"
     assert jobs["release"]["needs"] == "checks"
-    assert RELEASE["permissions"] == {"contents": "read"}
+    assert "permissions" not in RELEASE
+    assert jobs["checks"]["permissions"] == {"contents": "read"}
     assert jobs["release"]["permissions"] == {"contents": "write"}
 
 

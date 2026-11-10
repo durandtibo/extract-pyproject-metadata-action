@@ -8,19 +8,22 @@ on:
     - cron: "20 9 * * *" # Run nightly at 9:20 AM UTC
   workflow_dispatch: # to trigger manually
 
-permissions:
-  contents: read
-
 jobs:
   ci:
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci.yaml
 
   # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
   get-matrix:
+    permissions:
+      contents: read
     uses: ./.github/workflows/lib-get-test-matrix.yaml
 
   released:
     needs: get-matrix
+    permissions:
+      contents: read
     uses: ./.github/workflows/nightly-test-released.yaml
     with:
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

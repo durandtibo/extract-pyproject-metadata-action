@@ -13,11 +13,10 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-
 jobs:
   properties:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
