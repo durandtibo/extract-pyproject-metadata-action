@@ -1,7 +1,6 @@
 # Main CI workflow: lint, types, unit tests, and the integration test of the action.
 # Runs on pull requests, pushes to main and manual dispatch; nightly.yaml runs it every night.
-# The integration test (ci-test-local.yaml) is a reusable workflow because
-# nightly-test-stable.yaml is generated from it.
+# The integration test of the action is ci-test-local.yaml (`uses: ./`).
 
 name: CI
 on:
@@ -42,9 +41,6 @@ jobs:
         env:
           SKIP: pyright
         run: pre-commit run --all-files --show-diff-on-failure
-
-      - name: Check that nightly-test-stable.yaml is generated from ci-test-local.yaml
-        run: make workflows-check
 
       - name: Check that the tables of README.md are generated from action.yaml
         run: make docs-check PYTHON_RUN=

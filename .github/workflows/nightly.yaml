@@ -1,6 +1,5 @@
 # Nightly workflow, the only scheduled one.
-# Runs the CI (to catch changes of the runner images and of the dependencies) and the integration
-# tests of the latest release of the action (nightly-test-stable.yaml, generated).
+# Runs the CI (to catch changes of the runner images and of the dependencies).
 
 name: Nightly
 on:
@@ -14,6 +13,3 @@ permissions:
 jobs:
   ci:
     uses: ./.github/workflows/ci.yaml
-
-  test-stable:
-    uses: ./.github/workflows/nightly-test-stable.yaml

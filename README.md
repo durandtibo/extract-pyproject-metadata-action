@@ -271,9 +271,8 @@ python -m venv .venv
 ```
 
 `make help` lists the targets: `make check` (lint, types, tests with the 100 % coverage
-gate), `make docs` (regenerates the tables of this file from `action.yaml`), `make workflows`
-(regenerates `nightly-test-stable.yaml`); `make docs-check` and `make workflows-check` fail when
-the generated files are out of date, as the CI does. `test-data/<case>/` holds the golden cases: a
+gate), `make docs` (regenerates the tables of this file from `action.yaml`); `make docs-check`
+fails when they are out of date, as the CI does. `test-data/<case>/` holds the golden cases: a
 `pyproject.toml`, the `inputs.json` and the `expected.json` (the `json` output), checked by
 `tests/integration/test_golden.py` and, with the real action, by `ci-test-local.yaml`, which can
 only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
@@ -282,6 +281,5 @@ removed or changes type.
 To release: update the default `python-candidates` in `python_versions.py` (every October; `maintenance.yaml` opens an issue), check
 that `packaging` is current (`make vendor-packaging`), run `make check` and `make docs`,
 write `release-notes/vX.Y.Z.md`, and push the tag `vX.Y.Z`. `release.yaml` then runs the
-checks and creates the GitHub release (no tag is moved: workflows pin `@vX.Y.Z`). Afterwards set `STABLE_REF` in
-`scripts/generate_workflows.py` to the new tag and run `make workflows`. Set `STABLE_REF` only **after**
-the tag exists: the stable job needs the tag to resolve.
+checks and creates the GitHub release. Tags are immutable: a published tag is never moved or
+deleted, a fix is a new version, and workflows pin the exact tag (`@vX.Y.Z`).

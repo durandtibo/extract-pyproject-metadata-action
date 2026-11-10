@@ -3,10 +3,8 @@ name: Test Local Action
 # The integration test of the action (it can only run on GitHub). It checks the wiring: the
 # inputs reach the action and the outputs come back. The logic is covered by tests/.
 #
-# - `stable` only uses what the latest release has: scripts/generate_workflows.py copies it
-#   to nightly-test-stable.yaml, where the action is the latest release.
-# - Every other job is marked `local-only` (it tests something added after the latest
-#   release) and stays here. Add a job there for every new input or output.
+# - `smoke` runs the action on a few simple files, on the oldest and the newest Python.
+# - Add a job or a golden case (test-data/) for every new input or output.
 # - Values go through `env:`, never interpolated in `run:`.
 
 on:
@@ -16,8 +14,8 @@ permissions:
   contents: read
 
 jobs:
-  # What the latest release does: a smoke test of the stable contract.
-  stable:
+  # A smoke test of the contract: the main inputs and outputs, on Linux and macOS.
+  smoke:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
@@ -88,7 +86,6 @@ jobs:
 
   # The list of the cases is the list of the directories of test-data/ with an expected.json.
   cases:
-    # local-only
     runs-on: ubuntu-slim
     timeout-minutes: 2
     outputs:
@@ -108,7 +105,6 @@ jobs:
   # and compares the json output with its expected.json. tests/integration/test_golden.py
   # checks the same files without GitHub.
   golden:
-    # local-only
     needs: cases
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -153,7 +149,6 @@ jobs:
 
   # What the golden files cannot see: failures, strict, and what the action leaves behind.
   wiring:
-    # local-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
@@ -269,7 +264,6 @@ jobs:
 
   # Only Python 3.11 or later is supported: the action must fail with an explicit error
   test-old-python:
-    # local-only
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
