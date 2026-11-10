@@ -1,4 +1,4 @@
-"""The typed dictionaries of the metadata and of the JSON report."""
+"""The types of the metadata and of the JSON report: frozen dataclasses and typed dictionaries."""
 
 from __future__ import annotations
 
