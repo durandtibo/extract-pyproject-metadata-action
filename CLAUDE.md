@@ -1,5 +1,7 @@
 # Instructions for coding agents
 
+Guidance for coding agents working in this repository.
+
 ## Repository
 
 This repository is a GitHub composite action (`action.yaml`) that reads the
@@ -61,7 +63,9 @@ module above it:
 - The `Makefile` is the only task runner: `make help` lists the targets, for
   example `make check` (ruff, format check, pyright, tests with the coverage gate),
   `make test`, `make fix`, `make format` and `make lint`. They run in the
-  environment (`uv run`). `.make/` is shared with other repositories and synced
+  environment (`uv run`). Run `make fix`/`make format` and `make check` before committing, and
+  fix what they report: ignoring an issue (`noqa`, `type: ignore`, a `cast` that hides the
+  problem, a changed rule set) is not fixing it. `.make/` is shared with other repositories and synced
   by a bot: do not edit it here.
 - `pyproject.toml` holds the tool configuration and the `dev` group; the repository
   is not a Python distribution (`[tool.uv] package = false`) and the action has no
@@ -84,6 +88,10 @@ module above it:
 
 - One branch and one pull request per logical change. Branch from an up to date
   `main`, and do not commit or push to `main`.
+- When several PRs depend on each other, stack them: branch each PR from the branch of the
+  previous one and open it with that branch as its base. Keep each PR small and reviewable on its
+  own. Once a PR of the stack is merged, retarget the next one to `main` and merge `origin/main`
+  into it.
 - Name the branch `<type>/<short-description>` in lowercase kebab-case, with one
   of these types: `feat`, `bugfix`, `hotfix`, `docs`, `refactor`, `perf`,
   `test`, `chore`, `ci`.
@@ -94,8 +102,9 @@ module above it:
   creates the GitHub release from `release-notes/vX.Y.Z.md` and moves no tag: workflows pin the
   exact tag (`@v0.3.0`). The checklist is in
   the README. Do not create or move tags.
-- When a PR conflicts with `main`, merge `origin/main` into the branch (do not
-  rebase and force-push).
+- When a PR conflicts with `main`, merge `origin/main` into the branch and resolve the
+  conflicts (do not rebase and force-push). Check what `main` already contains before choosing
+  a side; most conflicts are two PRs appending tests to the same file: keep both.
 - Update `README.md` when inputs, outputs or failure modes change. The tables of inputs and
   outputs and the default `python-candidates` are generated from `action.yaml` and the code:
   run `make docs` (CI fails on a diff). Every YAML and TOML block of the README is a fixture
@@ -111,15 +120,31 @@ module above it:
 - Pass inputs to shell and Python through `env:`, never by interpolating
   `${{ inputs.* }}` in `run:`.
 - Every `run:` step sets `shell: bash` (required in composite actions).
-- Pin every third-party action to a commit SHA or the major tag already used in
-  the repository's workflows; do not use a branch.
+- Pin every third-party action to a commit SHA with a `# ratchet:<owner>/<repo>@<tag>` comment
+  (`bot-pin-action.yaml` maintains them); never a tag or a branch.
 - Keep the logic in `src/extract_pyproject_metadata/` and `scripts/run.sh` (which
   finds Python 3.11 or later and starts the script), not inline in
   `action.yaml`. Invalid input must fail with a clear message on stderr and a non-zero exit.
+- Start each workflow with a comment saying what it does and when it runs, and update it when
+  that changes. Use top-level `permissions: {}` or `contents: read`, the minimum permissions per
+  job, and `timeout-minutes` on every job.
+- Files are prefixed by role: `ci-` (checks, reusable with `workflow_call` plus
+  `workflow_dispatch`, called from `ci.yaml`, the single entry point), `nightly-` (scheduled tests
+  of the published action), `bot-` (scheduled automation), `release-`/`release.yaml`. Add a check
+  as a new `ci-<name>.yaml` plus a job in `ci.yaml`. Put `make` targets in the steps rather than
+  duplicating commands.
+- Check workflow changes with `actionlint` when available.
 - Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
   runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
 
 ## Python script
+
+- Match the surrounding code: comment density, naming and docstring style. Look at a few
+  neighbouring files first, and do not introduce a new convention or reformat code you do not
+  otherwise change.
+- Keep new options keyword-only (`*`).
+- Keep docstrings and documentation up to date whenever the behaviour, signature or options of
+  the code change.
 
 - Keep `from __future__ import annotations`, type hints and docstrings on every
   function, including private ones. Update the module docstring when the
@@ -145,6 +170,15 @@ module above it:
   The import path of `src/` is the `pythonpath` of `pyproject.toml`.
 - Build `pyproject.toml` contents with `tmp_path` and `write_pyproject`; no
   network, no sleeps.
+- Add the missing tests to keep the 100% coverage gate. Do not use `# pragma: no cover` to skip a
+  line that can be tested.
+- Import at the top of the test module, not inside a test body.
+- Seed random data; no unseeded randomness in tests.
+- When a test patches a collaborator, it only proves the logic against the stand-in. Every
+  patched behaviour needs a test in `tests/integration/` that exercises the real thing.
+- Test the edge cases too: empty and duplicate inputs, boundary values, error conditions (type
+  and message), and that inputs are not mutated.
+- When expecting a number, write the final value, not the arithmetic that produces it.
 - One behaviour per test, with `pytest.mark.parametrize` for the same check on
   several values. Every `pytest.raises` defines `match`.
 - Cover typical inputs, edge cases (empty, duplicates, missing keys), and error
@@ -168,6 +202,6 @@ module above it:
 
 ## Reporting
 
-- Report faithfully: say which tests were run, which were not, and that the
-  workflows and CI were not awaited.
+- Report faithfully: say which checks were run (`make check`, `pytest`), which were not, and that
+  the workflows and CI were not awaited.
 - Mention failures that already exist on `main` instead of hiding them.
