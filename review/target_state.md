@@ -13,7 +13,7 @@ Structure: the **properties** (1), the **measured state** and the **findings** (
 tooling** (6), what is **deliberately left out** (7), the **migration plan** (8), the
 **expected result** (9) and the **decisions** to take (10).
 
-Breaking changes are accepted. The release that carries them is `v1.0.0` (see 6.3).
+Breaking changes are accepted. All of them ship in `v0.3.0`, which is not tagged yet (see 6.3); callers pin the exact tag `@v0.3.0`.
 
 ---
 
@@ -74,7 +74,7 @@ What is left is **internal duplication** and **a few contract gaps**, not scope.
 | G6  | **The Markdown job summary repeats the annotations.** GitHub already lists every `::warning` and `::error` on the run page. `output/summary.py` (102 lines, a numeric-character-reference escaper, 90 lines of tests, the `GITHUB_STEP_SUMMARY` handling in `main`) produces a second copy of the same list and a second place where escaping can go wrong.                                                                                  | P11, P2    |
 | G7  | **Warnings are free text.** The README table is keyed by "Message contains" fragments (`' not found`), the tests match substrings, and a workflow that reads `fromJSON(...json).warnings` can only do the same. Two rows (`dynamic dependencies` and `dynamic optional-dependencies`) are one case. A reworded message silently breaks the docs.                                                                                               | P8, P10    |
 | G8  | **The error format is not uniform, and the README promises one.** The README says `<file>: <field> <problem>`. The code produces `pyproject.toml not found at: x`, `x is not valid TOML`, `x is missing required key [project].name`, `x: [project].version is not a valid ...`, and input errors with no file at all (`strict must be 'true' or 'false'`). The file name is also in the text and in the annotation.                              | P7, P12    |
-| G9  | **`v0.x` with a moving `v0.3` tag.** Every minor release makes the callers edit `@v0.3` to `@v0.4`, and `STABLE_REF` in `generate_workflows.py` is edited by hand after every release. The interface has been stable and documented, which is what `v1` means.                                                                                                                                                                              | P12, P11   |
+| G9  | **Moving tags.** The README pins `@v0.3`, a tag that `release.yaml` moves at every patch release, so the code a caller runs can change without an edit on their side, and the release workflow needs a force-push step. The pin should be the exact, immutable tag (`@v0.3.0`).                                                                                                                                                                              | P12, P11   |
 | G10 | **Tests are 2.9 times the source.** Most of the weight is one test per message and per argparse path (`test_cli.py` 1,217 lines for a 220-line module). The golden cases already assert whole outputs; the error paths could be one table-driven test per module.                                                                                                                                                                              | P11        |
 | G11 | **The workflows still carry indirection that the platform replaces.** `bot-cancel-stale-queued-runs.yaml` (59 lines, hourly) does what `concurrency` does and no workflow uses `concurrency`. `lib-get-test-matrix.yaml` and a shared config action are used to build a matrix of two Pythons and three systems. `ci.yaml` and `nightly.yaml` both run on a schedule, ten minutes apart.                                                       | P11        |
 | G12 | **`python-candidates` goes stale every October** and nothing warns. It is one list in `inputs.py` (good), but the only reminder is a README checklist line. A new Python minor is missing from `python-versions` until a release.                                                                                                                                                                                                                | P5, P12    |
@@ -356,8 +356,8 @@ exception.
 | `ci.yaml`             | `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`. The matrix is written in the file: systems `[ubuntu-latest, macos-latest, windows-latest]`, Pythons `["3.11", "3.14"]` (oldest and newest, kept in step with the default candidates by a comment and the maintenance check). No `schedule`. |
 | `nightly.yaml`        | The only scheduled workflow: calls `ci.yaml` (to catch changes of the runner images and of the dependencies) and the generated stable copy.                                                                                    |
 | `ci-test-local.yaml`  | Unchanged in design (golden matrix plus wiring jobs).                                                                                                                                                                            |
-| `nightly-test-stable.yaml` | Generated; `STABLE_REF` becomes `v1` and never changes again (6.3).                                                                                                                                                         |
-| `release.yaml`        | On `vX.Y.Z`: run `ci.yaml`, create the release from `release-notes/vX.Y.Z.md`, move `vX.Y` **and** `vX`.                                                                                                                         |
+| `nightly-test-stable.yaml` | Generated; `STABLE_REF` is the exact tag of the latest release (`v0.3.0`), edited at each release as today.                                                                                                                                                         |
+| `release.yaml`        | On `vX.Y.Z`: run `ci.yaml`, create the release from `release-notes/vX.Y.Z.md`. No moving tag: the "move the minor tag" step is deleted.                                                                                                                         |
 | `maintenance.yaml`    | Renamed from `packaging-update.yaml`: new `packaging` release, and the new-Python check of 3.8.                                                                                                                                  |
 | Bots                  | Delete `bot-cancel-stale-queued-runs.yaml` and `lib-get-test-matrix.yaml`. Keep `bot-sync-shared-makefile.yaml` (it serves other repositories), `bot-pin-action.yaml` and `bot-format-files.yaml` while no other mechanism pins or formats. |
 
@@ -372,10 +372,11 @@ writes the warnings table from `warnings.py` (3.3). `.make/` is not edited.
 
 ### 6.3 Versioning (fixes G9)
 
-Release the target as **`v1.0.0`**, with `v1` and `v1.0` moved by `release.yaml`. The
-README uses `@v1`. After this, a breaking change is `v2`, and the nightly stable job no
-longer needs a manual `STABLE_REF` edit. The release notes list every breaking change with
-its replacement (the tables of 8 are the notes).
+Release the target as **`v0.3.0`**: the steps of 8 land before the tag is pushed, and
+`release-notes/v0.3.0.md` is extended with their breaking changes and replacements. Callers
+pin the exact tag, `@v0.3.0` (README, recipes and `tests/examples/*.yaml`). `release.yaml`
+creates the release and moves nothing, so a tag never changes after it is published. A
+later breaking change is a new minor (`v0.4.0`) while the action is `0.x`.
 
 ---
 
@@ -406,10 +407,10 @@ marks a change of behaviour that the release notes must list.
 | 7    | `refactor/remove-job-summary`           | Delete `output/summary.py`, the summary handling in `main` and its tests; flatten `output/` into `github.py` (G6).                                                                   | B (job summary) |
 | 8    | `ci/concurrency-and-matrix`             | `concurrency`, inline matrix, one scheduled workflow, delete the cancel bot and `lib-get-test-matrix`, ungate `hypothesis` (G11, G13).                                               |          |
 | 9    | `ci/maintenance-python-check`           | Rename the workflow, add the new-Python check, move the default candidates to `python_versions.py` (G12).                                                                             |          |
-| 10   | `chore/release-v1`                      | Release notes, `release.yaml` moves `vX`, README `@v1`, `STABLE_REF = v1`; tag `v1.0.0` (G9). The tag is pushed by the owner.                                                       | B (version) |
+| 10   | `chore/release-v0.3.0`                  | Extend `release-notes/v0.3.0.md`, README and examples pin `@v0.3.0`, `release.yaml` no longer moves a tag, `STABLE_REF = v0.3.0` (G9). The tag is pushed by the owner.            |          |
 
 Steps 1 and 8 to 9 are worth doing even if the rest is rejected. Steps 2 to 4 only change
-the inside. Steps 5 to 7 change what a caller can see and are the reason for `v1`.
+the inside. Steps 5 to 7 change what a caller can see and are breaking, and go into `v0.3.0`.
 
 ---
 
@@ -426,7 +427,7 @@ the inside. Steps 5 to 7 change what a caller can see and are the reason for `v1
 | Workflows                       | 11 files, 942 lines                    | 9 files, about 780 lines                            |
 | Run with `dependencies: []`     | reads and validates all requirement tables | reads none                                      |
 | Run time                        | about 100 ms                           | about 90 ms (fewer imports, no argparse)            |
-| Caller pin                      | `@v0.3`, edited at every minor         | `@v1`                                               |
+| Caller pin                      | `@v0.3`, a tag that moves              | `@v0.3.0`, an immutable tag                         |
 
 ---
 
@@ -443,7 +444,7 @@ Each has a recommendation; the migration plan assumes they are accepted.
 3. **Structured warnings** (step 5). *Recommended:* yes. Cost: `schema_version` 3 and a
    changed `warnings` item; nobody can depend on the message text today, since it is not
    documented as stable.
-4. **Call the result `v1.0.0`** (step 10). *Recommended:* yes, after steps 1 to 9.
-   Alternative: `v0.4.0` and keep the manual edits at each minor.
+4. **Ship everything in `v0.3.0` and pin the exact tag** (step 10). *Decided by the owner:*
+   no `v1`, no moving `v0.3` tag; the pin is `@v0.3.0`.
 5. **Network check for new Python versions in CI** (step 9). *Recommended:* yes, as an
    issue opener only. Alternative: keep the README reminder.
