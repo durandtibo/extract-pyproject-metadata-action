@@ -9,15 +9,14 @@ individual parsers are tested in ``tests/unit``.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.helpers import SCRIPT_PATH
+from tests.helpers import run_script as start_script
 
 if TYPE_CHECKING:
+    import subprocess
     from pathlib import Path
 
 VALID = '[project]\nname = "coola"\nversion = "1.2.3"\n'
@@ -34,13 +33,7 @@ def run_script(
     path = tmp_path / "pyproject.toml"
     path.write_text(content, encoding="utf-8")
     argv = [arg.replace("{path}", str(path)) for arg in args]
-    return subprocess.run(
-        [sys.executable, "-I", str(SCRIPT_PATH), *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
+    return start_script(argv)
 
 
 @pytest.mark.parametrize(

@@ -1,10 +1,11 @@
 """Helpers shared by the test modules: paths, fixtures files and
 builders of inputs."""
 
-import argparse
 import json
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -186,14 +187,62 @@ def parse_github_output(text: str) -> dict[str, str]:
     return outputs
 
 
-def parse_args(*argv: str) -> argparse.Namespace:
-    """Parse a command line like ``main`` does."""
-    return extract_metadata_module._build_parser("extract_metadata.py").parse_args(list(argv))
+OPTION_VARIABLES = {
+    "--strict": "INPUT_STRICT",
+    "--python-candidates": "INPUT_PYTHON_CANDIDATES",
+    "--github-output": "GITHUB_OUTPUT",
+}
+POSITIONAL_VARIABLES = ("INPUT_PYPROJECT_PATH", "INPUT_EXTRA_VALUES", "INPUT_DEPENDENCIES")
+
+
+def env_from_args(*argv: str) -> dict[str, str]:
+    """Build the environment of the program from a short form that the tests use: options
+    ``--strict``, ``--python-candidates`` and ``--github-output`` followed by their value, then
+    the path of the file, the extra values and the dependencies (the last is optional)."""
+    environ: dict[str, str] = {}
+    positional: list[str] = []
+    items = iter(argv)
+    for item in items:
+        if item in OPTION_VARIABLES:
+            environ[OPTION_VARIABLES[item]] = next(items)
+        elif item != "--":
+            positional.append(item)
+    environ.update(zip(POSITIONAL_VARIABLES, positional, strict=False))
+    return environ
+
+
+def run_main(argv: list[str], environ: dict[str, str] | None = None) -> int:
+    """Run ``main`` on the environment built by ``env_from_args``. The job summary file is
+    the ``GITHUB_STEP_SUMMARY`` of the test (``monkeypatch.setenv``), if any."""
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    base = {"GITHUB_STEP_SUMMARY": summary} if summary else {}
+    return extract_metadata_module.main({**base, **env_from_args(*argv), **(environ or {})})
+
+
+def run_script(
+    argv: list[str], flags: tuple[str, ...] = ("-I",), check: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """Start ``scripts/extract_metadata.py`` in a new process, with the environment built by
+    ``env_from_args`` (and the variables of the test without ``INPUT_*`` and the files of
+    GitHub). ``flags`` are the options of the interpreter."""
+    base = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("INPUT_") and key not in {"GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY"}
+    }
+    return subprocess.run(
+        [sys.executable, *flags, str(SCRIPT_PATH)],
+        capture_output=True,
+        text=True,
+        check=check,
+        timeout=60,
+        env={**base, **env_from_args(*argv)},
+    )
 
 
 def parse_inputs_args(*argv: str) -> Inputs:
-    """Parse a command line like ``main`` does and validate the inputs."""
-    return extract_metadata_module.parse_cli_inputs(parse_args(*argv))
+    """Validate the inputs of a short command line (see ``env_from_args``)."""
+    return extract_metadata_module.read_inputs(env_from_args(*argv))
 
 
 def chain_of_groups(length: int) -> dict[str, list]:
@@ -328,13 +377,12 @@ exit "${STUB_SCRIPT_STATUS:-0}"
 
 
 def run_run_sh(
-    tmp_path: Path, args: list[str], *, pythons: tuple[str, ...] = ("python3",), **env: str
+    tmp_path: Path, *, pythons: tuple[str, ...] = ("python3",), **env: str
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """Run ``run.sh`` with stand-ins for the interpreters ``pythons`` on ``PATH``.
 
     Args:
         tmp_path: The directory of the test.
-        args: The arguments of ``run.sh``.
         pythons: The names of the interpreters that exist (``python3``, ``python``).
         env: The environment variables of the run: ``STUB_VERSION_STATUS_<NAME>`` (the status of
             the version check of an interpreter, in capitals) and ``STUB_SCRIPT_STATUS``.
@@ -356,7 +404,7 @@ def run_run_sh(
     log = tmp_path / "calls.log"
     log.unlink(missing_ok=True)  # only the calls of this run
     process = subprocess.run(
-        ["/bin/bash", str(RUN_PATH), *args],
+        ["/bin/bash", str(RUN_PATH)],
         capture_output=True,
         text=True,
         check=False,

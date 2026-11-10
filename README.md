@@ -257,7 +257,11 @@ Fields that the action does not output (`description`, `license`, `authors`,
 
 The logic is in `src/extract_pyproject_metadata/`, started by `scripts/run.sh`;
 `action.yaml` only wires inputs and outputs. The modules and the import rules are in
-`CLAUDE.md`. `packaging` is vendored (`make vendor-packaging VERSION=x.y`).
+`CLAUDE.md`. `packaging` is vendored (`make vendor-packaging VERSION=x.y`). The program
+reads the inputs from the environment (`INPUT_PYPROJECT_PATH`, `INPUT_EXTRA_VALUES`,
+`INPUT_DEPENDENCIES`, `INPUT_PYTHON_CANDIDATES`, `INPUT_STRICT`): a local run is
+`INPUT_PYPROJECT_PATH=path/to/pyproject.toml python scripts/extract_metadata.py`, which prints
+the `json` output.
 
 ```bash
 python -m venv .venv

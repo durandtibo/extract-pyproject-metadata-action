@@ -7,15 +7,14 @@ never a Python traceback or a run that never ends.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.helpers import SCRIPT_PATH
+from tests.helpers import run_script as start_script
 
 if TYPE_CHECKING:
+    import subprocess
     from pathlib import Path
 
 HEADER = '[project]\nname = "a"\nversion = "1"\n'
@@ -28,13 +27,7 @@ def run_script(
     with a time limit."""
     path = tmp_path / "pyproject.toml"
     path.write_text(content, encoding="utf-8")
-    return subprocess.run(
-        [sys.executable, "-I", str(SCRIPT_PATH), str(path), "[]", dependencies],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
+    return start_script([str(path), "[]", dependencies])
 
 
 def groups_toml(groups: dict[str, list[str]]) -> str:

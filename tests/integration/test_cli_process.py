@@ -6,7 +6,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import runpy
-import subprocess
 import sys
 from typing import TYPE_CHECKING
 
@@ -16,6 +15,7 @@ from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     SCRIPT_PATH,
     parse_github_output,
+    run_script,
     write_pyproject,
 )
 
@@ -36,12 +36,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
         """,
     )
 
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), str(path), '[""]'],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    result = run_script([str(path), '[""]'], flags=(), check=True)
 
     assert json.loads(result.stdout) == {
         "name": "coola",
@@ -65,12 +60,7 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
 def test_cli_end_to_end_error_exit_code(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist.toml"
 
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), str(missing), "[]"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = run_script([str(missing), "[]"], flags=(), check=False)
 
     assert result.returncode == 1
     assert "not a file" in result.stderr
@@ -83,11 +73,8 @@ def test_cli_end_to_end_github_output(tmp_path: Path) -> None:
     )
     output = tmp_path / "github_output"
 
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), "--github-output", str(output), "--", str(path), '[""]'],
-        capture_output=True,
-        text=True,
-        check=True,
+    result = run_script(
+        ["--github-output", str(output), "--", str(path), '[""]'], flags=(), check=True
     )
 
     outputs = parse_github_output(output.read_text(encoding="utf-8"))
@@ -122,12 +109,7 @@ def test_cli_end_to_end_with_dependencies(tmp_path: Path) -> None:
         '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n',
     )
 
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), str(path), "[]", '["numpy", "pandas"]'],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    result = run_script([str(path), "[]", '["numpy", "pandas"]'], flags=(), check=True)
 
     assert json.loads(result.stdout) == {
         "name": "coola",
@@ -155,9 +137,7 @@ def test_cli_end_to_end_missing_dependency_is_a_warning(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n'
     )
-    command = [sys.executable, str(SCRIPT_PATH), "--", str(path), "[]", '["numpy", "pandas"]']
-
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    result = run_script([str(path), "[]", '["numpy", "pandas"]'], flags=(), check=True)
 
     report = json.loads(result.stdout)
     assert report["dependency_specifiers"] == {"numpy": ">=1.20", "pandas": None}
@@ -171,11 +151,8 @@ def test_cli_end_to_end_strict_fails_on_a_missing_dependency(tmp_path: Path) -> 
         tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\ndependencies = ["numpy>=1.20"]\n'
     )
 
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), "--strict", "true", "--", str(path), "[]", '["pandas"]'],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_script(
+        ["--strict", "true", "--", str(path), "[]", '["pandas"]'], flags=(), check=False
     )
 
     assert result.returncode == 1
@@ -186,12 +163,7 @@ def test_cli_end_to_end_strict_fails_on_a_missing_dependency(tmp_path: Path) -> 
 def test_script_runs_with_stripped_docstrings(tmp_path: Path) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    result = subprocess.run(
-        [sys.executable, "-OO", str(SCRIPT_PATH), str(path), "[]"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = run_script([str(path), "[]"], flags=("-OO",), check=False)
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["name"] == "coola"
@@ -202,9 +174,9 @@ def test_running_the_script_as_main_exits_with_the_code_of_main(
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
     output = tmp_path / "github_output"
-    monkeypatch.setattr(
-        sys, "argv", ["extract_metadata.py", "--github-output", str(output), str(path), "[]"]
-    )
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
 
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
@@ -217,7 +189,9 @@ def test_running_the_script_as_main_exits_with_the_code_of_main(
 def test_running_the_script_as_main_exits_with_one_on_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(sys, "argv", ["extract_metadata.py", str(tmp_path / "missing.toml"), "[]"])
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(tmp_path / "missing.toml"))
 
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
@@ -230,7 +204,9 @@ def test_running_the_package_with_dash_m_exits_with_the_code_of_main(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
-    monkeypatch.setattr(sys, "argv", ["__main__.py", str(path), "[]"])
+    monkeypatch.setattr(sys, "argv", ["__main__.py"])
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
 
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("extract_pyproject_metadata", run_name="__main__")

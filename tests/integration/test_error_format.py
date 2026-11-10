@@ -4,15 +4,14 @@ without the name of the file."""
 from __future__ import annotations
 
 import re
-import subprocess
-import sys
 from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.helpers import SCRIPT_PATH
+from tests.helpers import run_script as start_script
 
 if TYPE_CHECKING:
+    import subprocess
     from pathlib import Path
 
 # An input name, "pyproject-path", or a TOML path such as "[project].version" or
@@ -49,9 +48,7 @@ def run(tmp_path: Path, content: str | None, args: list[str]) -> subprocess.Comp
     if content is not None:
         path.write_text(content, encoding="utf-8")
     argv = [arg.replace("{path}", str(path)) for arg in args]
-    return subprocess.run(
-        [sys.executable, "-I", str(SCRIPT_PATH), *argv], capture_output=True, text=True, check=False
-    )
+    return start_script(argv)
 
 
 @pytest.mark.parametrize(("content", "args", "field"), CASES)

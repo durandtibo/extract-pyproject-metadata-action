@@ -26,11 +26,12 @@ module above it:
    `python_versions`.
 4. `output/` (`escaping`, `github`, `summary`): action outputs, workflow
    commands and job summary. It only depends on `types` and `errors`.
-5. `report` (`build_report`) wires 2 to 4 together; `cli` (argument parser and
-   `main`) is the top.
+5. `report` (`build_report`) wires 2 to 4 together; `cli` (`main`: reads the
+   inputs from the environment, `INPUT_*` and `GITHUB_OUTPUT`) is the top.
 
-- The core never sees `argparse`: `cli` maps the command line to `Inputs`
-  (`parse_cli_inputs`), and `build_report(inputs)` takes plain values.
+- The program has no command line: `cli.main(environ)` reads the inputs of the action from
+  the variables `INPUT_PYPROJECT_PATH`, `INPUT_EXTRA_VALUES`, ... (`read_inputs`), and
+  `build_report(inputs)` takes plain values. `GITHUB_OUTPUT` set means a workflow run.
 - Put a new function in the module of its concern; create a module (and its
   test module) instead of growing one past a few hundred lines. A constant
   lives in the module that uses it.

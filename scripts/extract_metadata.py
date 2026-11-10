@@ -8,6 +8,7 @@ This file is the entry point of ``scripts/run.sh``. The logic is in
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -16,4 +17,4 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from extract_pyproject_metadata.cli import main
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(os.environ, sys.argv[1:]))
