@@ -15,5 +15,12 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yaml
 
+  # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
+  get-matrix:
+    uses: ./.github/workflows/lib-get-test-matrix.yaml
+
   stable:
+    needs: get-matrix
     uses: ./.github/workflows/nightly-test-stable.yaml
+    with:
+      test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

@@ -1,11 +1,15 @@
 # Unit, integration and property-based tests of the Python code, with the coverage gate.
-# Runs on Linux and macOS, on every default python-candidate (3.11 is the oldest: tomllib).
-# Called from ci.yaml; can also be run by hand.
+# Runs on the OS and Python versions of the shared matrix (3.11 is the oldest: tomllib).
+# Called from ci.yaml with the shared matrix of lib-get-test-matrix.yaml.
 
 name: Unit Tests
 on:
   workflow_call:
-  workflow_dispatch: # to trigger manually
+    inputs:
+      test-matrix:
+        description: "JSON test matrix from lib-get-test-matrix.yaml, loaded once by the caller"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,11 +19,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10 # macOS cells are slow
     strategy:
+      max-parallel: 8
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        # Every default python-candidate (3.11 is the oldest: tomllib); a test checks the list
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
+        python-version: ${{ fromJson(inputs.test-matrix).python_versions_standard }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7

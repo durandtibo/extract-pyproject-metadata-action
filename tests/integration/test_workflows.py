@@ -12,9 +12,6 @@ import pytest
 import yaml
 
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS
-from extract_pyproject_metadata.python_versions import (
-    DEFAULT_PYTHON_CANDIDATES,
-)
 from tests.helpers import PACKAGE_PATH, ROOT_PATH
 
 if TYPE_CHECKING:
@@ -117,11 +114,16 @@ def test_ci_only_calls_the_reusable_workflows() -> None:
         "./.github/workflows/ci-test.yaml",
         "./.github/workflows/ci-type-checking.yaml",
         "./.github/workflows/ci-verify-workflows.yaml",
+        "./.github/workflows/lib-get-test-matrix.yaml",
     ]
 
 
-def test_the_shared_matrix_workflow_is_gone() -> None:
-    assert not (WORKFLOWS_PATH / "lib-get-test-matrix.yaml").exists()
+def test_the_shared_matrix_workflow_reads_the_workflow_config_action() -> None:
+    text = (WORKFLOWS_PATH / "lib-get-test-matrix.yaml").read_text(encoding="utf-8")
+
+    assert "uses: durandtibo/workflow-config-action@" in text
+    assert "python_versions_standard" in text
+    assert "os_unix" in text
 
 
 def test_the_maintenance_workflow_reads_the_default_candidates_where_they_are_defined() -> None:
@@ -149,18 +151,40 @@ def python_matrices(workflow: dict) -> list[list[str]]:
     ]
 
 
-def test_the_unit_matrix_is_every_default_candidate() -> None:
-    assert python_matrices(load_workflow("ci-test.yaml")) == [json.loads(DEFAULT_PYTHON_CANDIDATES)]
+MATRIX_WORKFLOWS = ["ci-test.yaml", "ci-test-local.yaml", "nightly-test-stable.yaml"]
 
 
-def test_the_action_matrices_are_the_oldest_and_the_newest_candidate() -> None:
-    candidates = json.loads(DEFAULT_PYTHON_CANDIDATES)
-    oldest_and_newest = [candidates[0], candidates[-1]]
-
-    matrices = python_matrices(load_workflow("ci-test-local.yaml"))
+@pytest.mark.parametrize("name", MATRIX_WORKFLOWS)
+def test_the_matrix_jobs_use_the_shared_matrix(name: str) -> None:
+    matrices = [
+        job["strategy"]["matrix"]
+        for job in load_workflow(name)["jobs"].values()
+        if "os" in job.get("strategy", {}).get("matrix", {})
+    ]
 
     assert matrices
-    assert all(matrix == oldest_and_newest for matrix in matrices)
+    for matrix in matrices:
+        assert matrix["os"] == "${{ fromJson(inputs.test-matrix).os_matrix }}"
+        assert (
+            matrix["python-version"]
+            == "${{ fromJson(inputs.test-matrix).python_versions_standard }}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "caller"),
+    [
+        ("ci-test.yaml", "ci.yaml"),
+        ("ci-test-local.yaml", "ci.yaml"),
+        ("nightly-test-stable.yaml", "nightly.yaml"),
+    ],
+)
+def test_the_callers_pass_the_shared_matrix(name: str, caller: str) -> None:
+    jobs = load_workflow(caller)["jobs"]
+    job = next(job for job in jobs.values() if job.get("uses", "").endswith(f"/{name}"))
+
+    assert job["needs"] == "get-matrix"
+    assert job["with"] == {"test-matrix": "${{ needs.get-matrix.outputs.test_matrix }}"}
 
 
 def test_ci_runs_the_checks_through_make() -> None:

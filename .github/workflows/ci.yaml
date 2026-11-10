@@ -2,6 +2,7 @@
 # check can also be run on its own (workflow_dispatch). nightly.yaml runs it every night.
 # Runs on pull requests, pushes to main, manual dispatch and from the release workflow.
 #
+# - lib-get-test-matrix.yaml: the shared OS and Python matrix (durandtibo/workflow-config-action).
 # - ci-lint.yaml: ruff, pre-commit, generated README tables.
 # - ci-type-checking.yaml: pyright.
 # - ci-test.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
@@ -22,6 +23,10 @@ permissions:
   contents: read
 
 jobs:
+  # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
+  get-matrix:
+    uses: ./.github/workflows/lib-get-test-matrix.yaml
+
   lint:
     uses: ./.github/workflows/ci-lint.yaml
 
@@ -32,8 +37,14 @@ jobs:
     uses: ./.github/workflows/ci-type-checking.yaml
 
   unit:
+    needs: get-matrix
     uses: ./.github/workflows/ci-test.yaml
+    with:
+      test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
 
   # Test the action from the current repository code (dev version)
   action:
+    needs: get-matrix
     uses: ./.github/workflows/ci-test-local.yaml
+    with:
+      test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}

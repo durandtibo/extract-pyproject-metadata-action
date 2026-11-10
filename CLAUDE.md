@@ -131,7 +131,8 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   that changes. Use top-level `permissions: {}` or `contents: read`, the minimum permissions per
   job, and `timeout-minutes` on every job.
 - Files are prefixed by role: `ci-` (checks, reusable with `workflow_call` plus
-  `workflow_dispatch`, called from `ci.yaml`, the single entry point), `nightly-` (scheduled tests
+  `workflow_dispatch`, called from `ci.yaml`, the single entry point; the ones that take the `test-matrix` input of
+  `lib-get-test-matrix.yaml` have `workflow_call` only), `lib-` (shared helpers), `nightly-` (scheduled tests
   of the published action), `bot-` (scheduled automation), `release-`/`release.yaml`. Add a check
   as a new `ci-<name>.yaml` plus a job in `ci.yaml`. Put `make` targets in the steps rather than
   duplicating commands.
