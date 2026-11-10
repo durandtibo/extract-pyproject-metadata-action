@@ -18,7 +18,14 @@ from extract_pyproject_metadata.checks import (
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.types import Project, ReportWarning
 
-__all__ = ["UTF8_BOM", "load_pyproject", "read_extra_names", "read_group_names", "read_project"]
+__all__ = [
+    "UTF8_BOM",
+    "load_pyproject",
+    "read_extra_names",
+    "read_group_names",
+    "read_groups",
+    "read_project",
+]
 
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
@@ -232,6 +239,24 @@ def read_extra_names(project: dict[str, Any], extra_values: list[str]) -> list[s
     return list(unique_extras.values())
 
 
+def read_groups(table: dict[str, Any]) -> dict[str, list[tuple[str, object]]]:
+    """Group the entries of ``[dependency-groups]`` by normalized name.
+
+    Args:
+        table: The ``[dependency-groups]`` table.
+
+    Returns:
+        A dict that maps each normalized group name (PEP 503) to the ``(name, value)`` pairs of
+        every spelling of it, as written in the file. The keys are in the order of the first
+        spelling of each group. The values are not checked here: the requirements of a group are
+        checked when it is expanded.
+    """
+    groups: dict[str, list[tuple[str, object]]] = {}
+    for name, value in table.items():
+        groups.setdefault(canonicalize_name(name), []).append((name, value))
+    return groups
+
+
 def read_group_names(data: dict[str, Any]) -> list[str]:
     """Return the names of ``[dependency-groups]``, sorted by normalized
     name.
@@ -247,8 +272,5 @@ def read_group_names(data: dict[str, Any]) -> list[str]:
     Raises:
         MetadataError: If ``[dependency-groups]`` is not a table.
     """
-    dependency_groups = get_table(data, "dependency-groups", "[dependency-groups]")
-    unique_groups: dict[str, str] = {}
-    for group in sorted(dependency_groups, key=canonicalize_name):
-        unique_groups.setdefault(canonicalize_name(group), group)
-    return list(unique_groups.values())
+    groups = read_groups(get_table(data, "dependency-groups", "[dependency-groups]"))
+    return [groups[key][0][0] for key in sorted(groups)]

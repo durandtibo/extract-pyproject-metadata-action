@@ -17,6 +17,7 @@ from extract_pyproject_metadata.pyproject import (
     load_pyproject,
     read_extra_names,
     read_group_names,
+    read_groups,
     read_project,
 )
 from extract_pyproject_metadata.types import Project, ReportWarning
@@ -821,3 +822,24 @@ def test_read_project_dynamic_version_is_none(tmp_path: Path) -> None:
     project, _ = read_project(load_pyproject(str(path)), [])
 
     assert project.version is None
+
+
+def test_read_groups_merges_the_spellings_in_file_order() -> None:
+    table = {"Dev": ["a"], "other": ["x"], "dev": ["b"], "DEV": ["c"]}
+
+    assert read_groups(table) == {
+        "dev": [("Dev", ["a"]), ("dev", ["b"]), ("DEV", ["c"])],
+        "other": [("other", ["x"])],
+    }
+
+
+def test_read_groups_does_not_check_the_values() -> None:
+    assert read_groups({"a": "x"}) == {"a": [("a", "x")]}
+
+
+def test_read_groups_does_not_change_the_table() -> None:
+    table = {"Dev": ["a"], "dev": ["b"]}
+
+    read_groups(table)
+
+    assert table == {"Dev": ["a"], "dev": ["b"]}

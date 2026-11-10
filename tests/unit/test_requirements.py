@@ -10,7 +10,7 @@ import pytest
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_dependencies
-from extract_pyproject_metadata.pyproject import load_pyproject, read_group_names
+from extract_pyproject_metadata.pyproject import load_pyproject, read_group_names, read_groups
 from extract_pyproject_metadata.requirements import (
     _Expansion,
     collect_requirements,
@@ -18,7 +18,6 @@ from extract_pyproject_metadata.requirements import (
     flatten_group,
     lookup_requirements,
     lookup_specifiers,
-    read_groups,
 )
 from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 from tests.helpers import (
@@ -260,27 +259,6 @@ def test_expansion_reads_the_groups_by_normalized_name() -> None:
     assert expansion.expand("DEV") == ["a", "b"]
     assert expansion.expand("other-group") == ["c"]
     assert expansion.expand("missing") == []
-
-
-def test_read_groups_merges_the_spellings_in_file_order() -> None:
-    table = {"Dev": ["a"], "other": ["x"], "dev": ["b"], "DEV": ["c"]}
-
-    assert read_groups(table) == {
-        "dev": [("Dev", ["a"]), ("dev", ["b"]), ("DEV", ["c"])],
-        "other": [("other", ["x"])],
-    }
-
-
-def test_read_groups_does_not_check_the_values() -> None:
-    assert read_groups({"a": "x"}) == {"a": [("a", "x")]}
-
-
-def test_read_groups_does_not_change_the_table() -> None:
-    table = {"Dev": ["a"], "dev": ["b"]}
-
-    read_groups(table)
-
-    assert table == {"Dev": ["a"], "dev": ["b"]}
 
 
 def test_flatten_group_expands_every_spelling_of_the_group() -> None:
