@@ -1,429 +1,342 @@
 # Target state of `extract-pyproject-metadata-action`
 
-Review date: 2026-11-10. Reviewed commit: `e92a16a` (`main`). Target release: **`v0.3.0`**
-(not tagged yet; the latest tag is `v0.2`). Windows is out of scope, by decision of the
-maintainer.
+Review date: 2026-11-10. Reviewed commit: `57e2857` (`main`, clean). Target release:
+**`v0.3.0`** (not tagged yet; the latest tag is `v0.2`). Windows is out of scope and
+`STABLE_REF` / floating tags stay removed: both are decisions of the maintainer and are not
+reopened here.
 
-This document **replaces** the previous review (`e66a1f2`, still in the git history). That
-round is implemented: the interface is small (5 inputs, 13 outputs), the entry point reads
-the environment, the warnings have codes, the requirement tables are read only on demand,
-the job summary is gone, the tag is exact. This round judges the result. What is left is
-mostly **unfinished cleanup, a few contract gaps, and drift between the code, the CI and
-the release text**, not scope.
+This file **replaces** the previous review (still in the git history). That round is
+implemented: 5 inputs, 13 outputs, a typed package with a layered import graph, stable warning
+codes, exact-tag releases. This round judges the result against the properties below. What is
+left is **not scope**: it is one contract drift, some code that has no user, some CI cost that
+buys nothing, and a few places where the interface can be made simpler for the caller.
 
-Two recommendations of the previous review are **withdrawn** because `CLAUDE.md` forbids
-them: `concurrency` in the workflows, and deleting
-`bot-cancel-stale-queued-runs.yaml` (see 7).
+Because `v0.3.0` is not tagged, every change below ships in it and breaks nobody who used a
+release (`v0.2` has `pyproject-path`, `extra-values`, `name`, `version`, `extras` only).
 
-Structure: the **properties** (1), the **measured state** (2), the **findings** (3), the
-**target behaviour** (4), the **target architecture** (5), the **tests** (6), **CI, release
-and tooling** (7), what is **deliberately not changed** (8), the **migration plan** (9), the
-**expected result** (10) and the **decisions** (11).
-
-Breaking changes are accepted, and all of them ship in `v0.3.0`: the action had no `json`
-output, no `file-name`, no `python-versions`, no `strict` and no `dependencies` input in any
-released version (`v0.2` has `pyproject-path`, `extra-values`, `name`, `version`,
-`extras`), so nothing below breaks a caller of `v0.3.0` that did not exist before.
+Structure: **1** properties, **2** measured state, **3** findings, **4** target behaviour,
+**5** target code, **6** tests, **7** CI and release, **8** what does not change, **9**
+migration plan, **10** decisions for the maintainer.
 
 ---
 
 ## 1. Properties of the action
 
-The design is judged by these properties. They come from `README.md`, `CLAUDE.md` and
-`action.yaml`, made explicit, ordered and checkable. When two conflict, the lower number
-wins. "How to check" is what a maintainer or a test does to verify the property.
+They come from `README.md`, `CLAUDE.md` and `action.yaml`, made explicit and ordered. When two
+conflict, the lower number wins. Every proposal below is judged against them.
 
-| #   | Property                       | Meaning                                                                                                                                                                                                  | How to check                                                                                                           |
-| --- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| P1  | **Single purpose**             | Read a `pyproject.toml` and expose the values that drive a workflow: what to build (name, version), what to test (extras, groups, Python versions), what to install (specifiers).                        | Every output answers one of these three questions; a new output must say which.                                        |
-| P2  | **Read-only and safe**         | Never runs project code or a build backend. Writes only `$GITHUB_OUTPUT`. A value from the file or from an input can never become shell code, a workflow command or Markdown.                            | `test_output_injection.py`; inputs go through `env:`; no `${{ }}` in a `run:` (a test checks it).                      |
-| P3  | **Zero setup**                 | Needs only Python >= 3.11 on `PATH`. No network, no install, no change to the caller's Python, nothing left in the workspace. Same behaviour on Linux and macOS. Windows is not supported.              | `run.sh` has no install branch; `-I -B`; the CI matrix has both systems; a "leaves nothing behind" job.                |
-| P4  | **Fast**                       | Adds well under a second to a job.                                                                                                                                                                       | Measured 60 to 90 ms per run (20 ms is the bare interpreter). Keep it under 250 ms on a runner.                        |
-| P5  | **Deterministic**              | Same file and inputs give the same outputs. Order is the file order or a documented sort. Nothing depends on the runner but the interpreter.                                                             | Golden files; property tests.                                                                                          |
-| P6  | **Reads only what it outputs** | A field that no output needs is neither read nor validated. The requirement tables are read only when `dependencies` is not empty.                                                                       | A broken `description`, or a broken `dependencies` with `dependencies: []`, still works (tested).                      |
-| P7  | **Fails loudly, early**        | Invalid input fails with **one** message `<field>: <problem>` and an `::error file=...` annotation. Inputs are validated **completely** before the file is read: a value that cannot match is an error. Never a traceback. | One error format, tested once per field; process tests check exit code and stderr. Finding N3 is a breach of this.    |
-| P8  | **Warns, never hides**         | Suspicious but usable input is a warning with a stable **code**. `strict` turns every warning into a failure. No silent fallback.                                                                        | Every code has a row in the README (generated) and a golden or unit case.                                              |
-| P9  | **Small surface**              | Few inputs and outputs, each with one meaning and a safe default. Everything else is in the structured `json` output. A released name is never reused for another meaning.                               | 5 inputs, 13 outputs today; the target does not grow them.                                                             |
-| P10 | **Single source**              | Each fact (an input, an output, a default, a warning, the supported Python versions) is defined once; docs, workflows and tests are generated from it or checked against it.                             | `make docs`, `make workflows`, `test_contract.py` fail on a diff. Finding N2 is a breach of this.                      |
-| P11 | **Easy to maintain**           | Small modules, one-way imports, strict typing, no suppressed lint (`noqa`, `type: ignore`), one task runner used by the CI. One behaviour is asserted by one test.                                       | Layer test; `make check` with no suppression in `src/` and `scripts/`; no two tests with the same assertion.           |
-| P12 | **Honest docs**                | The README and the release notes describe the current contract only, with no history of unreleased states, and every example in the README is run by a test.                                             | `test_readme.py`; release notes describe `v0.2` to `v0.3.0` only. Findings N1 and N14 are breaches of this.            |
-
-Changes from the previous review: P3 says "nothing left in the workspace" and names the
-job that checks it; P6 is now implemented, not a goal; P7 gains "validated completely";
-P9 gains "a released name is never reused"; P10 adds the Python versions; P11 drops the
-"tests below 1.5 times the source" ratio (never reachable under the rules of `CLAUDE.md`)
-for "one behaviour, one test"; P12 covers the release notes.
+| #   | Property                    | Meaning                                                                                                                                                                  | How it is checked                                                          |
+| --- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| P1  | **Single purpose**          | Read a `pyproject.toml` and expose what drives a workflow: what to build (name, version), what to test (extras, groups, Python versions), what to install (specifiers). | A new output must say which of the three questions it answers.             |
+| P2  | **Read-only and safe**      | Never runs project code or a build backend; writes only `$GITHUB_OUTPUT`. A value from the file or an input cannot become shell code, a workflow command or Markdown.    | `test_output_injection.py`; inputs go through `env:`; no `${{ }}` in `run:`. |
+| P3  | **Zero install, no network** | Needs only a Python >= 3.11 on `PATH`. Nothing is installed or downloaded; `packaging` is vendored.                                                                      | `run.sh` installs nothing; `test_run_sh.py`; the vendored copy is hashed.  |
+| P4  | **Deterministic and immutable** | The same tag and the same inputs give the same outputs, whatever the date. A tag is never moved; callers pin `@vX.Y.Z`. No default that depends on the clock or the network. | `release.yaml` never moves a tag; golden cases.                            |
+| P5  | **Strict, clear failures**  | Invalid input fails before anything is written, with one `<field>: <problem>` message, an `::error` annotation and never a traceback. Suspicious input is a coded warning; `strict` makes it fatal. | `test_error_format.py`, `test_warnings.py`, `test_limits.py`.              |
+| P6  | **Small, stable interface** | Few inputs and outputs, scalars as plain strings, collections as JSON for `fromJSON`; `json` has a `schema_version`. A rename or a type change is breaking.              | `test_contract.py` (`action.yaml` against README and code).                |
+| P7  | **Simple and fast**         | Standard library plus vendored `packaging`; no clever code a reader must decode; a run is far below the cost of starting the runner.                                     | Measured in 2.                                                             |
+| P8  | **Maintainable**            | One concern per module, imports go one way, 100 % coverage, docs generated from `action.yaml`, one task runner (`make`).                                                | `test_layers.py`, `make check`, `make docs-check`, CI.                     |
+| P9  | **Linux and macOS only**    | No Windows code, matrix cell, test or doc.                                                                                                                               | `CLAUDE.md`.                                                               |
 
 ---
 
 ## 2. Measured state
 
-| Measure                         | Value                                                                                                                        |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Tests                           | 1,054 pass in 10 s, coverage 100 % (488 statements, 102 branches)                                                            |
-| Source, without `_vendor/`      | 1,682 lines in 13 modules (`requirements` 314, `pyproject` 292, `github` 202, `inputs` 178, `cli` 163, `types` 142)           |
-| Vendored `packaging` 26.3       | 12,716 lines (the whole package, pristine)                                                                                   |
-| Tests                           | 6,336 lines, 3.8 times the source (`test_cli` 1,069, `test_requirements` 973, `test_pyproject` 832, `helpers` 421)           |
-| Workflows                       | 10 files, 867 lines (`ci-test-local` 298, `ci` 109, `nightly-test-stable` 89, `bot-pin-action` 79)                           |
-| Interface                       | 5 inputs, 13 outputs, 9 warning codes, `schema_version` 3                                                                    |
-| README                          | 284 lines, tables generated                                                                                                  |
-| Golden cases                    | 16 directories in `test-data/` (15 with `expected.json`)                                                                     |
-| Run time (macOS, Python 3.14)   | 60 to 90 ms with `-I -B`; 20 ms for `python -c pass`. The import of `cli` is 30 ms, half of it `packaging.tags` through `utils`. |
-| `python-versions` computation   | 0.13 ms for 5 candidates (505 `contains` calls): not a cost                                                                  |
-| Suppressions in `src/`, `scripts/` | 1 `noqa: C901` (`flatten_group`), 1 `type: ignore` (`extract_metadata.py`), 2 `noqa: E402`, 2 `noqa: S310` (scripts)       |
+All measured on 2026-11-10, Python 3.14.7, macOS, on `57e2857`.
 
-Probes run on the current code (not on the tests):
+| What                          | Value                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Package (without `_vendor`)   | 13 modules, 1,745 lines (`requirements.py` 368, `pyproject.py` 254, `github.py` 202, `inputs.py` 183)  |
+| Tests                         | 6,147 lines (3.5x the package), **1,043 tests, 12.5 s**, 100 % coverage gate, all green                |
+| Run of the action             | **~160 ms** per run (10 runs: 1.63 s): ~70 ms for the two interpreter probes of `run.sh`, ~50 ms for the imports (26 ms of them is the vendored `packaging.tags`, pulled in by `packaging.utils`), the rest is the work |
+| Interface                     | 5 inputs, 13 outputs, 9 warning codes, `schema_version` 1                                              |
+| CI cost of one run            | `unit` 10 jobs, `smoke` 4, `golden` one job **per case** (18 cases), `wiring` 1, `test-old-python` 1, plus lint/types/verify: **~38 jobs**, run again every night |
+| Vendored `packaging` 26.3     | 28 tracked files, SHA-256 recorded, used for `Version`, `SpecifierSet`, `Requirement`, `canonicalize_name` |
 
-| Input                                              | Result today                                                                 | Verdict                    |
-| -------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------- |
-| `dependencies: '[""]'`                             | succeeds, key `""`, warning `dependency-not-found`                           | silent fallback (N3)       |
-| `dependencies: '["not a name!"]'`                  | succeeds, warning `dependency-not-found`                                     | silent fallback (N3)       |
-| `python-candidates: '["03.012","3.12"]'`           | accepted; `python_min` and `python_max` are `"03.012"`                       | not canonical (N3)         |
-| a positional argument to the program              | exit 2 and a message that names the variables                                | good, keep (8)             |
-| `[project] dependencies = [1]`, `dependencies: []` | succeeds                                                                     | P6 holds                   |
+Conclusion: P7 is met. 160 ms is nothing next to a runner's checkout and `setup-python`. The
+~35 ms that a merged interpreter probe would save, and the 26 ms of `packaging.tags`, are **not**
+worth any code (see 8).
 
 ---
 
 ## 3. Findings
 
-| ID  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Property |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| N1  | **The release notes contradict the code.** `release-notes/v0.3.0.md` ends with "Linux, macOS and Windows runners are supported" (Windows is out of scope, finally). It also lists "Removed" inputs and outputs (`fail-on-missing`, `installer`, `python-matrix`, `description`, ...) that **no released version ever had**: `v0.2` has two inputs and three outputs. A reader of the GitHub release cannot tell what changed for them.                          | P12      |
-| N2  | **The Python versions are defined in four places that nothing ties together.** `DEFAULT_PYTHON_CANDIDATES` has `3.11` to `3.15`; the `unit` matrix of `ci.yaml` stops at `3.14`; `ci-test-local.yaml` and the generated `nightly-test-stable.yaml` say "the oldest and the newest supported version" and use `3.14`. 3.15 is released (October 2026) and in the default list, but no job runs on it. `maintenance.yaml` only opens an issue about the list.   | P10, P5  |
-| N3  | **Input validation has three gaps.** (a) A `dependencies` entry that is not a valid package name (`""`, `"not a name!"`, `"@project"`) is accepted and reported as `dependency-not-found`, a misleading warning for a typo. (b) `python-candidates` accepts `"03.012"` and returns it as written. (c) `parse_dependencies` validates the scope but not the name.                                                                                              | P7       |
-| N4  | **`flatten_group` suppresses the complexity rule.** `requirements.py:47` has `# noqa: C901`, which `CLAUDE.md` forbids ("ignoring an issue is not fixing it"). The function also threads a mutable `budget` list, rescans every group and re-normalizes every name for each entry (O(groups) per `include-group`), carries three `cast`s, and `_gather` repeats the first-spelling logic that `read_group_names` has.                                           | P11      |
-| N5  | **`pyproject.py` reads name and version in two steps each, through `object`.** `_required_name` then `_valid_name`, `_required_version` then `_valid_version`; the first returns `(object, bool, warnings)` and the second takes the `bool` back. The types are erased between the two calls and the reader must follow four functions for two fields.                                                                                                         | P11      |
-| N6  | **A warning has two types.** `ReportWarning` (dataclass) and `WarningItem` (`TypedDict`) hold the same two strings, and `report.py` converts by hand. (The codes are listed twice, in `WarningCode` and in `WARNING_CODES`, but `test_warnings.py:106` ties them: keep.)                                                                                                                                                                                       | P11      |
-| N7  | **Two entry points repeat the same call, and only one is correct.** `scripts/extract_metadata.py` reconfigures stdout and stderr to UTF-8 (with `# type: ignore[union-attr]`, forbidden by `CLAUDE.md`); `__main__.py`, used by `python -m extract_pyproject_metadata` in the README, does not. Both call `main(os.environ, sys.argv[1:])`.                                                                                                                      | P11, P3  |
-| N8  | **`schema_version` is `3`, but versions 1 and 2 never shipped.** `json` appears for the first time in `v0.3.0`. The number only has a meaning for a reader who has seen an earlier shape. It sits in the README, the golden files (15), `report.py`, the program docstring and the release notes.                                                                                                                                                              | P12, P9  |
-| N9  | **The CI does not use the task runner.** `CLAUDE.md`: "Put `make` targets in the steps rather than duplicating commands". `ci.yaml` runs `pip install --group dev`, `pre-commit`, `pyright` and `pytest` directly, so the flags of the CI and of `make check` can drift (`--cov-report=term-missing` only in the CI).                                                                                                                                          | P11, P10 |
-| N10 | **The tests are 3.8 times the source, with duplicated assertions.** `test_cli.py` has 71 tests for a 163-line module: one test per output and per format (`test_main_github_output_python_max`, `_python_min`, `_groups`, `_normalized_name`, `_requires_python`, plus the same in `_json`), which the 16 golden cases and `test_report.py` already assert on whole outputs. `tests/helpers.py` is imported with a private name (`_specifier_error`).              | P11      |
-| N11 | **Stale references.** `tests/test_layers.py` talks about an `output` sub-package that no longer exists; `CLAUDE.md` lists the layers without `warning_codes`; `STABLE_REF` is `@v0.2`, so `nightly-test-stable.yaml` runs the old action until the release (a planned step, but not in the checklist as a check).                                                                                                                                              | P12      |
+Ordered by value. "Fix" points to the section of the target.
 
-Findings N1 to N11 are verified on the code (probes in 2, line numbers in the text).
+| #   | Finding                                                                                                                                                                                                                                                                                                                                                                                                                  | Property | Fix |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | --- |
+| F1  | **Layering drift.** `CLAUDE.md` puts `inputs` at rank 1 and `python_versions` at rank 3 and says a module never imports a module above it, but `inputs.py` imports `python_versions` (`DEFAULT_PYTHON_CANDIDATES`), and `tests/test_layers.py` gives `python_versions` rank 1. The test is right, the document is wrong. A reader who follows `CLAUDE.md` gets the wrong graph.                                         | P8       | 5.1 |
+| F2  | **Three entry points, one is dead.** `scripts/extract_metadata.py` (used by `run.sh`), `__main__.py` (`python -m ...`, which only works with `src` on the path) and `cli.run()`. `main()` also accepts `arguments` only to reject them with exit code 2 and its own message, for a command line that the action never passes and no documented user has. The cli docstring says `python -m`, the README says the script. | P7, P8   | 5.2 |
+| F3  | **`python-versions` is in the order of the input**, so `python-min` is a function of a sort that the caller must trust, and `python-versions[0]` is not the minimum. The outputs `python-min` and `python-max` need `lowest_/highest_python_version` and a key function to compensate.                                                                                                                                        | P6, P7   | 4.2 |
+| F4  | **Hand-written `include-group` expansion** (`_Expansion`, `_enter`, `_include`, `_cycle_warning`, two limits: ~150 of the 368 lines of `requirements.py` and a third of its 1,015 test lines) while the vendored `packaging` 26.3 ships `packaging.dependency_groups.DependencyGroupResolver` (PEP 735: normalization, includes, cycles). The vendored module is unused.                                                    | P7, P8   | 5.3 |
+| F5  | **The `golden` job starts one runner per case (18)**, each to compare one JSON file that `test_golden.py` has already compared on the same commit. The job exists to check the wiring (every input reaches the program, every output comes back), which one maximal case and one warning case already prove. It runs again every night.                                                                                    | P8       | 7.1 |
+| F6  | **`release.yaml` falls back to `--generate-notes`** when `release-notes/vX.Y.Z.md` is missing. The checklist says the file is mandatory, and an immutable tag should not get notes that nobody reviewed.                                                                                                                                                                                                                  | P4       | 7.2 |
+| F7  | **Two readers of `[dependency-groups]`**: `pyproject.read_group_names` normalizes the names for the `groups` output, `requirements.read_groups` normalizes them again for the lookup. Same rule, two implementations.                                                                                                                                                                                                      | P8       | 5.3 |
+| F8  | **The Python default needs a release per Python.** `DEFAULT_PYTHON_CANDIDATES` is a hard-coded list (correct under P4: a default that follows the clock would make a tag change over time), and `maintenance.yaml` opens an issue when it lags. It is a maintenance cost, not a defect, but the README does not tell a caller what to do when a new Python is out before the next release.                                 | P4, P6   | 4.4 |
+| F9  | **`release-notes/v0.3.0.md` will drift** from the target if 4.2 and 4.3 are applied (it describes `python-versions` as "the candidates that `requires-python` allows").                                                                                                                                                                                                                                                  | P6       | 9   |
 
-### 3.1 What is good and must be kept
-
-- Inputs through `env:`, random output delimiters, escaped annotations (P2).
-- One `MetadataError`, one error format, one `main` that turns it into an exit code (P7).
-- The golden cases and the real-action job that runs every one of them (P5, P10).
-- Generated README tables and README examples that are fixtures (P10, P12).
-- One-way layers enforced by `tests/test_layers.py`, strict pyright, the 100 % gate.
-- `-I -B` and the vendored, pristine `packaging` (P3, P4); `run.sh` finding `python3` then `python`.
-- The usage error on a stray argument (the one footgun of a local run: `python script.py path` would silently read `pyproject.toml`).
+What was checked and found **good**, so it is not touched: the `env:` wiring of inputs, the
+random `$GITHUB_OUTPUT` delimiter and the escaping of annotations (`github.py`), the
+validation of all inputs in one place (`inputs.py`), requirement tables read only for a
+lookup, errors as `MetadataError` with a field prefix, `-I -B` in `run.sh`, pinned actions with
+`ratchet` comments, no `concurrency`, top-level `permissions`, `timeout-minutes` on every job.
 
 ---
 
-## 4. Target behaviour
+## 4. Target behaviour (the interface)
 
-### 4.1 Inputs: same names and defaults, stricter validation (N3)
+The interface stays 5 inputs and 13 outputs. Two behaviours change, two are documented.
 
-| Input               | Target validation                                                                                                                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pyproject-path`    | Unchanged.                                                                                                                                                                                |
-| `extra-values`      | Unchanged: a JSON array of strings (`""` is allowed on purpose: the "no extra" baseline).                                                                                                 |
-| `dependencies`      | A JSON array of entries `<name>` or `<name>@<scope>`. **`<name>` must be a valid PEP 508 name** (the rule that `[project].name` already uses). Error: `dependencies: entry 'x y' is not a valid package name`. |
-| `python-candidates` | A JSON array of **canonical** `major.minor` strings: `(0\|[1-9][0-9]*)\.(0\|[1-9][0-9]*)` (`3.12`, not `03.012`). Duplicates are removed as today.                                          |
-| `strict`            | Unchanged: `true` or `false`, case and spaces ignored.                                                                                                                                    |
+### 4.1 Inputs: unchanged
 
-The two name rules move into one function used by `pyproject.py` and `inputs.py` (a
-`check_package_name` in `checks.py`), so the file and the input cannot disagree.
+| Input               | Default             | Note                                                                         |
+| ------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `pyproject-path`    | `pyproject.toml`    |                                                                              |
+| `extra-values`      | `[]`                | prepended to the extras (`'[""]'` adds a "no extra" job)                     |
+| `dependencies`      | `[]`                | `name`, `name@project`, `name@extra:<n>`, `name@group:<n>`; first match wins |
+| `python-candidates` | the list in the README | explicit, so the output depends on the tag and the inputs only (P4)       |
+| `strict`            | `false`             | boolean; any warning is an error                                             |
 
-### 4.2 Outputs: unchanged names, one changed number
+Rejected additions: an input that selects which warnings are fatal (`strict` is a switch a
+workflow understands at a glance; a workflow that wants less tests the `warnings` codes in
+`json`), an input for the name of the output, an input to evaluate markers.
 
-The 13 outputs keep their names and values. In `json`, `schema_version` is **`1`** (N8):
-`json` is new in `v0.3.0`, so the first published shape is version 1. The rule stays: it
-increases only when a key is renamed, removed or changes type. The golden files, the README
-and the docstrings say `1`.
+### 4.2 Outputs: `python-versions` is sorted
 
-### 4.3 Warnings: unchanged
+`python-versions` becomes the allowed candidates **sorted ascending as numbers, without
+duplicates** (`["3.9","3.10","3.12"]`, whatever the order of `python-candidates`).
 
-Nine codes, as in the README table (generated from `warning_codes.py`). No code is added: a
-suspicious input that the action can still use is a warning, and an input that cannot match
-anything is an error (N3).
+- `python-min` and `python-max` stay: `python-max` cannot be written in an expression
+  (`fromJSON(x)[-1]` does not exist), and `python-min` is the common "lowest supported" value.
+- The contract becomes simple to state and test: `python-min == python-versions[0]`,
+  `python-max == python-versions[-1]`, empty when the list is empty.
+- It is a breaking change only against the unreleased `v0.3.0` text.
 
-### 4.4 Errors: unchanged format
+### 4.3 Outputs: the rest is unchanged
 
-`<field>: <problem>`, the file name only in the annotation (or the plain stderr prefix).
-New messages: the two of 4.1.
+`name`, `normalized-name`, `file-name`, `version`, `normalized-version`, `requires-python`,
+`extras`, `groups`, `dependency-specifiers`, `json`. The `json` output keeps `schema_version`
+`1` (an additive or order change does not bump it; a rename or a type change does).
 
-### 4.5 Release notes (N1)
+### 4.4 Documented, not coded: the Python default (F8)
 
-`release-notes/v0.3.0.md` is rewritten as **`v0.2` to `v0.3.0`**: what a caller of `v0.2`
-sees. Shape:
+The default list of Python versions is part of the tag. The README states, next to the
+generated list: *"A Python that is released after this tag is not in the default: pass it in
+`python-candidates`. The action does not read the date or the network."* The October task of
+the release checklist stays.
 
-1. The pin: `@v0.3.0`; no moving tag.
-2. New inputs (`dependencies`, `python-candidates`, `strict`) and new outputs (the 10 that
-   `v0.2` did not have), each with its purpose in one line.
-3. Changed behaviour of what `v0.2` had: the normalized `extras` (PEP 685, sorted), the
-   errors (`<field>: <problem>`), the `::error`/`::warning` annotations with a code.
-4. Platforms: Linux and macOS; Windows is not supported.
-5. What the action does not do (never runs project code, no dynamic version resolution).
+### 4.5 Failure and warning model: unchanged
 
-No "Removed" table: nothing that `v0.2` had is removed.
+Same nine warning codes, same `<field>: <problem>` errors, same `strict` behaviour (the error
+lists the warnings, nothing is written). If 5.3 is adopted, `include-group-cycle` and
+`unknown-include-group` stay as warnings (decision D2).
 
 ---
 
 ## 5. Target architecture
 
-### 5.1 Execution flow (unchanged)
+The shape stays: a launcher, a package split by concern, imports going one way. The changes
+are deletions and one correction of the documentation.
 
 ```
-action.yaml --env INPUT_*--> scripts/run.sh --exec--> python -I -B scripts/extract_metadata.py
-                                                        cli.run()
-                                                          cli.main(environ, argv)
-                                                            parse_inputs  -> Inputs
-                                                            build_report  -> Report
-                                                            emit_github_output / print JSON
+action.yaml                      wiring only (inputs -> env, outputs <- step outputs)
+scripts/run.sh                   find Python >= 3.11, exec the launcher
+scripts/extract_metadata.py      launcher: sys.path.insert(src), raise SystemExit(run())
+src/extract_pyproject_metadata/
+  errors types warning_codes checks        rank 0-1  (no import of the package)
+  python_versions                          rank 1    (defines the default list; types only)
+  inputs                                   rank 2    (parse_inputs)
+  pyproject                                rank 2    (load_pyproject, read_project, read_groups)
+  requirements                             rank 3    (collect/lookup)
+  github                                   rank 3    (outputs, annotations, log line)
+  report                                   rank 4    (build_report)
+  cli                                      rank 5    (read_inputs, main, run)
 ```
 
-### 5.2 Modules
+### 5.1 One graph, in one place (F1)
 
-Same 13 modules, same layers. `warning_codes.py` is added to the layer list of
-`CLAUDE.md` (N11).
+`CLAUDE.md` and `tests/test_layers.py` must say the same thing, and the test is the source:
+`python_versions` depends on `types` and the vendor only, so `inputs` may import it.
+Update the numbered list in `CLAUDE.md` (move `python_versions` next to `checks`, below
+`inputs`), and make `test_layers.py` the only place with the ranks. No code moves.
 
-```
-errors, types, checks (+ check_package_name), warning_codes
-inputs        parse_inputs (strict names and candidates)
-pyproject     load_pyproject, read_project (name and version in one step each)
-requirements  collect_requirements, find_requirements, lookup_* (a normalized group table)
-python_versions, github
-report        build_report
-cli           main(environ, argv), run()   (new: the two entry points call run())
-```
+### 5.2 One entry point (F2)
 
-### 5.3 `flatten_group` without suppression (N4)
+- Delete `__main__.py` (and its test) and the `arguments` parameter of `main`, `_usage_error`
+  and the exit code 2. `main(environ)` returns 0 or 1.
+- `run()` stays the one function the launcher calls (UTF-8 streams, environment).
+- The README "Development" and the `cli` docstring give the same local command:
+  `INPUT_PYPROJECT_PATH=path/to/pyproject.toml python scripts/extract_metadata.py`.
+- An argument on the command line is simply ignored by the launcher, as for any script that
+  does not read `sys.argv`. The action never passes one.
 
-Normalize the group table **once**, then expand a normalized table:
+Net: ~35 lines of code and ~100 lines of tests, one less way to run the program, and the exit
+codes are 0 and 1.
 
-```python
-def read_groups(data) -> dict[str, list[object]]:
-    """key = canonical name; value = the entries of every spelling, in file order."""
+### 5.3 Read the groups once; let `packaging` expand them (F4, F7)
 
+1. **Always**: one `read_groups(table)` (normalized name to spellings), in `pyproject.py`, used
+   by `read_group_names` and by `requirements.py`. `requirements` already sits above
+   `pyproject`, so the import direction is right.
+2. **Proposed, to be proven by a spike before it is merged**: replace `_Expansion` by
+   `packaging.dependency_groups.DependencyGroupResolver`. The spike must show, with the
+   existing tests as the oracle:
+   - the same `group:<name>` requirements in the same order, with `include-group` expanded;
+   - cycles and unknown groups still reported as the **warnings** `include-group-cycle` and
+     `unknown-include-group` (catch `CyclicDependencyGroup` and the unknown-group error of the
+     resolver **per group**, add the warning, skip the entry), never as a crash;
+   - the diamond case (a group included by several groups, 25 levels) stays linear, so the
+     `_MAX_GROUP_EXPANSIONS` budget can go, and the recursion-depth guard stays only if the
+     resolver can still reach `RecursionError`;
+   - a non-string, non-`include-group` entry is still the error `[dependency-groups].<g>:
+     entries must be ...`.
 
-@dataclass
-class _Expansion:  # one per collect_requirements call
-    groups: dict[str, list[object]]
-    warnings: dict[ReportWarning, None]  # insertion-ordered set
-    budget: int = _MAX_GROUP_EXPANSIONS
+   If any point fails, keep `_Expansion` (the code is correct and tested) and do only step 1.
+   I did not run the resolver in this review: this is a hypothesis with a clear exit, not a
+   promise.
 
-    def expand(self, key: str, path: tuple[str, ...] = ()) -> list[str]: ...
-    def _include(self, label: str, entry: dict, path) -> list[str]: ...
-```
+### 5.4 Python versions
 
-- A dict lookup replaces the rescans; `_gather` loses the first-spelling loop (the
-  normalized table has one key per group, in first-spelling order).
-- Each method stays under the complexity limit **without** `noqa`: `expand` loops over the
-  entries and calls `_include` for a table; `_include` validates and recurses.
-- The three `cast`s go: the entry type is `object`, narrowed by `isinstance`.
-- Behaviour is unchanged: same limits (100 levels, 10,000 expansions), same cycle,
-  unknown-group and type errors, same warning order. The existing tests in
-  `test_requirements.py` and `test_limits.py` prove it.
+`compatible_python_versions` returns the sorted, de-duplicated list. `lowest_python_version`,
+`highest_python_version` and `_minor_version_key` collapse into one sort key; `python_min` is
+`versions[0]` and `python_max` is `versions[-1]` in `build_report`. The probing of
+`X.Y.0 ... X.Y.99` and `X.Y.9999` stays: it is the simplest exact rule with the public API of
+`SpecifierSet`, and it costs about 500 `contains` calls.
 
-### 5.4 `pyproject.py`: one step per field (N5)
+### 5.5 What `types.py` says about itself
 
-```python
-def _read_name(project, dynamic) -> str: ...  # missing, dynamic, not a string, invalid
-def _read_version(project, dynamic) -> tuple[str | None, list[ReportWarning]]: ...
-```
-
-`_read_version` returns `None` plus the `dynamic-version` warning, or the validated string.
-No `object`, no `is_known` flag. Consequence, to put in the PR description: when both
-`name` and `version` are wrong, the **name** error is reported first (today: missing name,
-missing version, invalid name, invalid version). The file is invalid either way.
-
-### 5.5 One warning type (N6)
-
-Delete `WarningItem`. `Report.warnings` is `list[dict[str, str]]` built with
-`dataclasses.asdict`. `ReportWarning`, `WarningCode` and `WARNING_CODES` stay, tied by the
-existing test.
-
-### 5.6 One entry point function (N7)
-
-```python
-# cli.py
-def run() -> int:
-    """Entry point of the program: UTF-8 streams, the environment and the arguments."""
-    for stream in (sys.stdout, sys.stderr):
-        if isinstance(stream, io.TextIOWrapper):  # no type: ignore
-            stream.reconfigure(encoding="utf-8")
-    return main(os.environ, sys.argv[1:])
-```
-
-`scripts/extract_metadata.py` and `__main__.py` become `raise SystemExit(run())` after the
-import line. The local run of the README then behaves like the action with a non-UTF-8
-locale. `main(environ, arguments)` keeps its signature and the usage error (8).
-
-### 5.7 Rules that stay
-
-Module docstring and `from __future__ import annotations` everywhere; public names in
-`__all__` (checked by `test_package.py`); verb prefixes; type hints and docstrings on every
-function; collaborators that a test replaces are arguments with a default; `MetadataError`
-is the only user-facing exception. **New:** no `noqa` or `type: ignore` in `src/` (the
-`# noqa: E402` of `scripts/generate_docs.py` and the `S310` of `scripts/vendor_packaging.py`
-are about a launcher `sys.path` and a fixed `https` URL; they stay, each with its reason).
+Its docstring calls its content "typed dictionaries"; four of the six are frozen dataclasses.
+Fix the sentence. No code change.
 
 ---
 
-## 6. Test target
+## 6. Tests
 
-- Keep the layout and every rule of `CLAUDE.md` (mirror of the package, `tmp_path`,
-  `match` on every `raises`, one behaviour per test, whole outputs against a literal).
-- **One behaviour, one test (N10).** Delete from `test_cli.py` the per-output tests that
-  repeat a golden case or `test_report.py` (`..._github_output_python_max`, `_python_min`,
-  `_groups`, `_normalized_name`, `_requires_python`, and their `_json` twins): about 20
-  tests. A behaviour that needs a new output check gets a **golden case** (a directory),
-  not a Python test. `test_cli.py` keeps what only `main` does: the exit codes, the
-  channel (stdout JSON or `GITHUB_OUTPUT`), the annotation format, strict, the usage error.
-- **New tests**, each checked to fail before the change:
-  - `dependencies: '["not a name!"]'`, `'[""]'`, `'["@project"]'` fail with
-    `dependencies: entry ... is not a valid package name`; `'["Numpy_x"]'` still works.
-  - `python-candidates: '["03.12"]'`, `'["3.012"]'`, `'["3."]'` fail; `'["3.0","10.11"]'` pass.
-  - `flatten_group` through the new expansion: the existing cases plus one that proves the
-    lookup is by normalized name when two spellings of a group exist (`Dev` and `dev`).
-  - `run()` reconfigures the streams: a process test with `LC_ALL=C PYTHONUTF8=0` and a
-    non-ASCII name, through `python -m extract_pyproject_metadata` (an existing process
-    test class can take it).
-  - `schema_version` is `1` in the golden files and in the README.
-  - The workflow tests of 7.1: the Python versions of the matrices come from
-    `DEFAULT_PYTHON_CANDIDATES`.
-- **Property tests** stay as they are (already on every Python since the previous round).
-- Rename `_specifier_error` in `tests/helpers.py` (public name, as `CLAUDE.md` asks for
-  shared helpers) and fix the `output` sub-package sentence of `tests/test_layers.py`.
-- Target: about 4,500 lines (from 6,336), coverage stays at 100 %.
+The suite is strong (1,043 tests in 12.5 s, 100 % coverage, properties, golden cases,
+injection, process-level tests) and is the reason the changes above are safe. The target is
+**fewer tests per behaviour, not fewer behaviours**:
+
+- Delete with the code: the usage-error tests (F2), the `__main__` test, the tests of
+  `lowest_/highest_python_version` (replaced by one ordering test of `python-versions`, 4.2).
+- Add: `python-versions` is sorted and de-duplicated for an unsorted input with duplicates
+  (`["3.12","3.9","3.10","3.12"]` gives `["3.9","3.10","3.12"]`); `python-min` and
+  `python-max` equal its ends; a property test of that on any list of candidates.
+- Keep the rule: a test per bug fixed, checked to fail without the fix; one behaviour per test;
+  `match` on every `pytest.raises`.
+- If 5.3 step 2 is adopted, the 1,015 lines of `test_requirements.py` shrink around the
+  expansion (the cases move to golden cases of `test-data/`, which already hold output-shaped
+  checks); the limits tests of `test_limits.py` stay for whatever limit remains.
+- Golden cases are the cheapest way to pin an output: prefer a `test-data/<case>/` directory
+  to a unit test with a literal, when the assertion is "this file gives this `json`".
+
+No change to the 100 % gate and no `pragma: no cover`.
 
 ---
 
-## 7. CI, release and tooling target
+## 7. CI, release and tooling
 
-The workflows cannot be run locally. Every change below is checked with `actionlint` and
-by `tests/integration/test_workflows.py`; the first run on GitHub is the real test, and the
-pull request says so.
+### 7.1 `ci-test-local.yaml`: check the wiring once, not 18 times (F5)
 
-### 7.1 One list of Python versions (N2)
+The integration job tests that the composite action passes its inputs and returns its outputs
+(P6). The logic and the 18 golden files are tested without GitHub by `test_golden.py`, on the
+same commit.
 
-- `DEFAULT_PYTHON_CANDIDATES` stays the single definition.
-- `ci.yaml` `unit` matrix: every candidate, `3.11` to `3.15`. `ci-test-local.yaml` and
-  `nightly-test-stable.yaml`: `["3.11", "3.15"]` (the oldest and the newest candidate).
-- `test_workflows.py` gets one test: the `unit` matrix equals the default candidates, and
-  the `local` matrices equal their minimum and maximum. A new candidate then fails the
-  test until the workflows follow, and `maintenance.yaml` keeps telling the maintainer
-  that a version is missing.
-- If `actions/setup-python` has no 3.15 on a runner, the job fails visibly: that is the
-  point of the matrix; the fix is `allow-prereleases` or removing 3.15 from the defaults.
+Target:
 
-### 7.2 The CI calls the task runner (N9)
+- `golden` runs **3 cases**: `minimal` (defaults), `readme-example` (every input set, every
+  output filled, the case of the README) and one case with a warning (the annotation and the
+  `warnings` array). `scripts/compare_json.py` stays.
+- The list is explicit in the workflow (a three-item matrix) and **a test checks that each
+  listed case exists** and that, together, they set every input and fill every output of
+  `action.yaml` (so a new input without a case fails `make test`). The `cases` job and its
+  `jq` pipeline are deleted.
+- `smoke` (Linux and macOS on 3.11 and 3.15), `wiring` (failures, `strict`, nothing left
+  behind) and `test-old-python` stay.
 
-| Job            | Target steps                                                                                          |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| `lint`         | setup-python 3.11, `pip install --group dev`, `make lint-python`, pre-commit (without pyright), `make docs-check`, `make workflows-check` |
-| `types`        | setup-python 3.11, `pip install --group dev`, `make types`                                            |
-| `unit`         | matrix of 7.1, `pip install --group dev`, `make test`                                                 |
+Effect: from ~38 to ~22 jobs per CI run and per night, with the same detection of a wiring
+break. This changes the sentence of `CLAUDE.md` "the `golden` job runs the real action on every
+case": update it in the same PR (decision D3).
 
-The Makefile uses `uv run`; the CI sets `PYTHON_RUN=` on the command line (`make test
-PYTHON_RUN=`), so the target is the same command without `uv` (the variable already exists:
-`PYTHON_RUN ?= uv run`). Two new targets, `docs-check` and `workflows-check`, run the
-scripts with `--check`, which the CI runs today by hand. `.make/` is not edited.
+### 7.2 `release.yaml`: no release without reviewed notes (F6)
 
-### 7.3 Workflows that stay as they are
+Remove the `--generate-notes` branch: the job fails with `release-notes/$TAG.md: missing` when
+the file does not exist, and `test_release.py` pins it. The tag is immutable (P4): its notes
+must be reviewed text in the repository. Everything else stays (checks first, `--verify-tag`,
+`contents: write` on the release job only, `persist-credentials: false`).
 
-`bot-cancel-stale-queued-runs.yaml` (required, and a test checks that no workflow uses
-`concurrency`), `nightly.yaml` (the only schedule besides `maintenance.yaml` and the bots),
-`maintenance.yaml` (packaging and Python checks), `release.yaml` (no moving tag),
-`ci-test-local.yaml` (design unchanged), `bot-pin-action.yaml`, `bot-format-files.yaml`,
-`bot-sync-shared-makefile.yaml`, `dependabot.yml`.
+### 7.3 Unchanged workflows
 
-### 7.4 Release (N1, N8, N11)
-
-1. The steps of 9 are merged, `make check` and `make docs` pass, `release-notes/v0.3.0.md`
-   is rewritten (4.5).
-2. The owner pushes `v0.3.0` (the agent never tags).
-3. After the release: `STABLE_REF = "durandtibo/extract-pyproject-metadata-action@v0.3.0"`,
-   `make workflows`, README and examples already pin `@v0.3.0`.
-
-Add to the checklist in the README (one sentence): the `STABLE_REF` is updated **after** the
-tag exists, because the stable job needs the tag to resolve.
+`ci.yaml` (single entry point, `make` targets in the steps), `nightly.yaml` (runs the CI on the
+schedule), `maintenance.yaml` (packaging and Python version issues), the four `bot-*` files,
+`dependabot.yml`. Nothing here is a finding.
 
 ---
 
-## 8. Deliberately not changed
+## 8. What does not change, and why
 
-| Topic                                         | Why it stays                                                                                                                                                                                                                  |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The vendored `packaging`, whole               | Importing 30 ms and running 60 to 90 ms meet P4. Half of the import is `packaging.tags` (through `utils`, which `specifiers` needs), so no lazy import avoids it; pruning or patching modules would make `make vendor-packaging` a merge job. |
-| `-B` (no bytecode)                            | Costs about 30 ms, keeps the workspace and a cached action directory clean (P3). A job runs the action once.                                                                                                                  |
-| The scripts `generate_docs.py`, `vendor_packaging.py` | Small, tested, and the source of P10.                                                                                                                                                                         |
-| The usage error on a stray argument           | 15 lines and a footgun removed. Silently ignoring `python script.py path` would read `pyproject.toml` instead.                                                                                                                |
-| First match wins, markers ignored             | Evaluating markers needs the target Python and platform. `dependency_requirements` and the `@scope` entries answer "which one".                                                                                              |
-| `concurrency` and removing the cancel bot     | `CLAUDE.md` forbids `concurrency`; the bot is the chosen mechanism (the previous review was wrong).                                                                                                                           |
-| Windows                                       | Out of scope, by decision. No code, matrix, test or doc.                                                                                                                                                                      |
-| The 5 inputs and 13 outputs                   | Each answers P1. Candidate additions were looked at and rejected: `description`, `license`, `urls` (read the file with `tomllib`), a resolved dynamic version (the build backend knows it), a marker-evaluated specifier.    |
-| `python-candidates` default `""` in `action.yaml` | The list is defined in the code (P10); the README shows it, generated. Putting it in `action.yaml` would need a second copy for local runs.                                                                               |
-| Failure and strict jobs of `ci-test-local.yaml` | A composite step exposes only its outcome, not stderr, so they cannot become golden cases. They check the wiring, which is their job.                                                                                       |
-| Publishing to PyPI, a cache, a job summary    | Not what the action is for.                                                                                                                                                                                                   |
+| Candidate                                                          | Decision | Reason                                                                                                                                                |
+| ------------------------------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows support                                                    | No       | Decision of the maintainer (P9).                                                                                                                      |
+| `STABLE_REF`, a moving `v0`/`v0.3` tag, a generated stable workflow | No       | Decision of the maintainer; P4: a tag never changes.                                                                                                  |
+| A Python default derived from the date or the network              | No       | Breaks P4 and P3. A new Python is a new release or an input (4.4).                                                                                    |
+| Evaluating environment markers                                     | No       | Needs an environment to evaluate against; the `dependency_requirements` list has every marker, the workflow picks.                                    |
+| Resolving a dynamic version                                        | No       | Needs the build backend: breaks P2. It is a warning, and `strict` makes it fatal.                                                                     |
+| A job summary (`$GITHUB_STEP_SUMMARY`)                             | No       | Removed on purpose; it needs Markdown escaping (P2) for no output a workflow can use.                                                                 |
+| Installing `packaging` at run time, or dropping the vendored copy  | No       | Breaks P3. The copy is verified by hash and updated by one command.                                                                                   |
+| Trimming the vendored `packaging` (tags, pylock, metadata, ...)    | No       | The copy is the wheel's `packaging/` verbatim: it is auditable against the recorded SHA-256 and costs nothing at run time. 26 ms of `tags` is not worth a patched copy. |
+| Merging the two interpreter probes of `run.sh` (~35 ms)            | No       | A single `exec` with the version check inside the script means Python code that must parse on an old interpreter to print a clean error. Worse than 35 ms. |
+| `concurrency` in workflows                                         | No       | Forbidden by `CLAUDE.md`; `bot-cancel-stale-queued-runs.yaml` does it.                                                                                |
+| Single source for `WarningCode` (the `Literal`) and `WARNING_CODES` | No      | A `Literal` cannot be built from a dict at type-check time; a test already compares them. Two lines per new code is acceptable.                      |
+| Fewer warning codes, or `strict` as a list of codes                | No       | Each code is a distinct, testable cause; the table is generated. A list input is more surface (P6) for a need a `warnings` check already covers.     |
+| Splitting `requirements.py` further                                | No       | It is the largest module (368 lines) but it shrinks with 5.3; split it only if it is still past a few hundred lines afterward.                       |
+| Rewriting `_PATCH_RELEASES` with `packaging.ranges`                | No       | The public `SpecifierSet.contains` probe is exact for real releases, readable, and fast; `ranges` is new API of the vendored copy.                   |
 
 ---
 
 ## 9. Migration plan
 
-One branch and one pull request per step, names as `CLAUDE.md` asks, each leaves `main`
-green, each description says what is not changed. **B** marks a change a caller can see.
-Steps 2 to 6 can be stacked or parallel (no file in common except tests); 1 is first, 8 is
-last.
+Stacked PRs, each small and reviewable on its own, each from an up to date `main` (or the
+previous branch), branch names per `CLAUDE.md`. `make fix`, `make check` and `make docs` before
+each commit. The workflows cannot be run locally: say so in each PR and do not claim they pass.
 
-| Step | Branch                                   | Change                                                                                                                                              | Finding | Breaking                |
-| ---- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------- |
-| 1    | `docs/release-notes-v0-2-to-v0-3-0`      | Rewrite `release-notes/v0.3.0.md` as 4.5 (Windows line gone, no "Removed" tables). Stale sentences of `test_layers.py` and `CLAUDE.md` (`warning_codes`). | N1, N11 |                         |
-| 2    | `refactor/schema-version-1`              | `SCHEMA_VERSION = 1`; golden files (`UPDATE_GOLDEN=1`, review the diff), README, docstring.                                                          | N8      | B (`json`, unreleased)  |
-| 3    | `bugfix/validate-input-names`            | `check_package_name`, strict `python-candidates`; tests of 6.                                                                                       | N3      | B (stricter)            |
-| 4    | `refactor/group-expansion`               | Normalized group table, `_Expansion`, no `noqa`, no cast.                                                                                           | N4      |                         |
-| 5    | `refactor/pyproject-name-version`        | `_read_name`, `_read_version`; the one changed error order is in the description.                                                                    | N5      | B (which error is first) |
-| 6    | `refactor/run-entry-point`               | `cli.run()`, two-line entry points, delete `WarningItem`, no `type: ignore`.                                                                         | N6, N7  |                         |
-| 7    | `test/one-behaviour-one-test`            | Trim `test_cli.py` and the other duplicates, move per-output checks to golden cases, rename the private helper.                                      | N10     |                         |
-| 8    | `ci/python-matrix-and-make`              | 7.1 and 7.2, the workflow tests, `docs-check` and `workflows-check` targets. Not awaited locally: say so.                                            | N2, N9  |                         |
-| 9    | `chore/release-v0.3.0`                   | Final check of the notes and the README. The owner pushes the tag; then a small PR sets `STABLE_REF` and runs `make workflows`.                     | N11     |                         |
+| PR  | Branch                                | Content                                                                                                                                             | Behaviour change                                  |
+| --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| 1   | `docs/layering-and-types-docstring`   | F1 and 5.5: `CLAUDE.md` numbered list, `types.py` docstring, README "Development" command. No code.                                                  | none                                              |
+| 2   | `refactor/single-entry-point`         | 5.2: delete `__main__.py`, `arguments`, `_usage_error`, exit code 2, their tests; fix the `cli` docstring.                                           | none for the action (it passes no argument)       |
+| 3   | `feat/sorted-python-versions`         | 4.2 and 5.4: sorted, de-duplicated `python-versions`; delete `lowest_/highest_`; tests and golden files (`UPDATE_GOLDEN=1`, review the diff); README sentence; update `release-notes/v0.3.0.md` (F9) and the README note of 4.4. | `python-versions` is sorted (unreleased)          |
+| 4   | `refactor/read-groups-once`           | 5.3 step 1: one `read_groups` in `pyproject.py`.                                                                                                     | none                                              |
+| 5   | `refactor/packaging-dependency-groups` | 5.3 step 2, **only if the spike passes**: the resolver replaces `_Expansion`; the limits that become unreachable are removed with their tests; README "Failures" updated if a limit disappears. Otherwise: close without merging and say why. | none expected; any difference is a bug of the PR  |
+| 6   | `ci/golden-three-cases`               | 7.1: three-case matrix, the test that checks the cases against `action.yaml`, delete the `cases` job; update `CLAUDE.md`.                            | none for users                                    |
+| 7   | `ci/release-requires-notes`           | 7.2: no generated notes; `test_release.py`.                                                                                                          | none for users                                    |
 
-Steps 1, 4, 5, 6, 7 change nothing a caller can see. Step 3 turns a misleading warning into
-an error for a typo; the new behaviour is easier to explain than the old one.
+Order: 1, 2, 3 first (the user-visible text of `v0.3.0` is final after 3), then 4 to 7
+in any order. Release only after all merged: update the version check of the checklist, then
+**the maintainer** pushes `v0.3.0` (never from a PR, never moved).
 
----
-
-## 10. Expected result
-
-| Measure                         | Today (`e92a16a`)                        | Target                                           |
-| ------------------------------- | ---------------------------------------- | ------------------------------------------------ |
-| Inputs / outputs / warnings     | 5 / 13 / 9                               | 5 / 13 / 9                                       |
-| `schema_version`                | 3 (never published)                      | 1                                                |
-| Invalid `dependencies` name     | warning `dependency-not-found`           | error `dependencies: entry ... not a valid package name` |
-| `python-candidates: ["03.012"]` | accepted as written                      | error                                            |
-| Suppressions in `src/`          | 1 `noqa`, 1 `type: ignore`, 3 `cast` in `requirements.py` | none                                |
-| Source, without `_vendor/`      | 1,682 lines                              | about 1,560 lines                                |
-| Warning types                   | 2 (`ReportWarning`, `WarningItem`)       | 1                                                |
-| Entry points that fix the encoding | 1 of 2                                | 2 of 2 (one function)                            |
-| Tests                           | 6,336 lines (3.8 times the source)       | about 4,500 lines (2.9 times), 100 % coverage     |
-| Python versions in the CI       | 3.11 to 3.14 (3.15 untested)             | every default candidate, checked by a test       |
-| CI commands                     | `pip`, `pytest`, `pyright` by hand       | `make` targets                                   |
-| Release notes                   | Windows supported; removes what never shipped | `v0.2` to `v0.3.0`, Linux and macOS         |
-| Run time                        | 60 to 90 ms                              | unchanged                                        |
-| Caller pin                      | `@v0.3.0`                                | `@v0.3.0`                                        |
+**Expected result.** Package ~1,550 lines (from 1,745) or ~1,400 with PR 5, tests ~5,400 lines
+(from 6,147) with the same behaviours covered, CI ~22 jobs (from ~38), one entry point, one
+dependency-group reader, a `CLAUDE.md` that agrees with `test_layers.py`, a `python-versions`
+whose first and last items are `python-min` and `python-max`, and a release that cannot be
+created without reviewed notes. The run stays ~160 ms.
 
 ---
 
-## 11. Decisions to take
+## 10. Decisions for the maintainer
 
-Each has a recommendation. **All five are accepted by the maintainer** (2026-11-10); the plan assumes them.
+| #   | Question                                                                                                                                              | Recommendation                                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Sort `python-versions` ascending (4.2)?                                                                                                               | **Yes.** It is free now and breaking later. Without it, keep the order of the input and say so in the README.             |
+| D2  | If the `packaging` resolver replaces `_Expansion`, may a cycle or an unknown group become an error instead of a warning?                              | **No.** Keep warnings: a cycle in a group that nobody looks up should not fail a workflow outside `strict` (P5). Catch per group. |
+| D3  | Reduce the real-action `golden` matrix from 18 cases to 3 and change the sentence in `CLAUDE.md` (7.1)?                                               | **Yes.** `test_golden.py` already checks all 18 on the same commit; the job's purpose is wiring.                          |
+| D4  | Make a missing `release-notes/vX.Y.Z.md` fail the release (7.2)?                                                                                      | **Yes.**                                                                                                                  |
+| D5  | Is the hard-coded Python default plus the October release acceptable (F8, 4.4)?                                                                       | **Yes**, it is the price of P4; the README sentence makes it explicit.                                                    |
 
-1. **Reset `schema_version` to `1`** (step 2). _Recommended:_ yes. No caller has seen `1`,
-   `2` or `3`; starting at `3` tells a reader about a history that does not exist.
-   _Alternative:_ keep `3`.
-2. **Make an invalid dependency name or a non-canonical candidate an error** (step 3).
-   _Recommended:_ yes (P7: a value that can never match is not a "not found"). Cost: a
-   workflow that passes `"my pkg"` fails instead of getting `null`.
-3. **Run the unit tests on 3.15 and name 3.15 as "the newest"** (step 8). _Recommended:_
-   yes; the default list says 3.15 is supported, so a job must run it.
-   _Alternative:_ drop 3.15 from the defaults until a job exists.
-4. **CI through `make`** (step 8). _Recommended:_ yes (`CLAUDE.md` asks for it).
-   _Cost:_ the `PYTHON_RUN=` override on the command line in three jobs.
-5. **Trim the redundant tests** (step 7). _Recommended:_ yes, but only tests whose whole
-   assertion is covered elsewhere (check with a coverage run before and after: the gate
-   must stay at 100 % and no behaviour may lose its only test).
+## Verification status of this review
+
+Read: `action.yaml`, `README.md`, `CLAUDE.md`, `Makefile`, `run.sh`, the launcher, the whole
+package except the body of `checks.py` past its first 60 lines, `ci.yaml`, `nightly.yaml`,
+`maintenance.yaml`, `release.yaml`, the first and last third of `ci-test-local.yaml`, the
+release notes and `pyproject.toml`. Run: the unit and integration tests (1,043 passed, 12.5 s),
+ten runs of the action, an import-time profile. **Not run:** any GitHub workflow, `make check`
+(lint and types), the `DependencyGroupResolver` spike of 5.3, `actionlint`. The three
+numbers that depend on the proposals (package ~1,550 and ~1,400 lines, tests ~5,400 lines,
+~22 CI jobs) are estimates, not measurements.
