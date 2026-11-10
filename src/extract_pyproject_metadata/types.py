@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal, TypedDict
 
-__all__ = ["Metadata", "Report", "StepSummary"]
+__all__ = ["Inputs", "Metadata", "Report", "StepSummary"]
 
 # The values of the ``step-summary`` input: always, never, or only when there are warnings
 # (or when the run fails).
 StepSummary = Literal["true", "false", "auto"]
+
+
+@dataclass(frozen=True)
+class Inputs:
+    """The inputs of the action, validated and parsed by ``parse_inputs``."""
+
+    pyproject_path: str
+    extra_values: list[str]
+    dependencies: list[str]
+    python_candidates: list[str]
+    fail_on_missing: bool
+    fail_on_dynamic_version: bool
+    strict: bool
+    step_summary: StepSummary
+    resolve_dynamic_version: bool
 
 
 class Metadata(TypedDict):

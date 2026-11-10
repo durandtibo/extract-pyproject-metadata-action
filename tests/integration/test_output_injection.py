@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from extract_pyproject_metadata.cli import _build_parser, main
+from extract_pyproject_metadata.cli import main
+from extract_pyproject_metadata.inputs import parse_inputs
 from extract_pyproject_metadata.output.github import (
     format_outputs,
     format_summary,
@@ -25,8 +26,9 @@ from extract_pyproject_metadata.output.summary import format_step_summary
 from extract_pyproject_metadata.report import build_report
 
 if TYPE_CHECKING:
-    import argparse
     from pathlib import Path
+
+    from extract_pyproject_metadata.types import Inputs
 
 HOSTILE_VALUES = [
     "plain",
@@ -162,19 +164,19 @@ def test_the_output_file_of_a_hostile_pyproject_reads_back_unchanged(
     assert main(["extract_metadata.py", "--github-output", str(output), str(path), "[]"]) == 0
 
     capsys.readouterr()
-    expected = format_outputs(build_report(_args(path)))
+    expected = format_outputs(build_report(_inputs(path)))
     assert parse_github_output(output.read_bytes().decode("utf-8")) == expected
     assert expected["description"].startswith("x\n::error::forged\r\n")
 
 
-def _args(path: Path) -> argparse.Namespace:
-    """Parse the command line of the action, with the defaults."""
-    return _build_parser("extract_metadata.py").parse_args([str(path), "[]"])
+def _inputs(path: Path) -> Inputs:
+    """Parse the inputs of the action, with the defaults."""
+    return parse_inputs({"pyproject-path": str(path)})
 
 
 def test_the_log_line_of_a_hostile_pyproject_is_a_single_line(tmp_path: Path) -> None:
     path = hostile_pyproject(tmp_path)
-    outputs = format_outputs(build_report(_args(path)))
+    outputs = format_outputs(build_report(_inputs(path)))
 
     summary = format_summary(outputs)
 
@@ -184,7 +186,7 @@ def test_the_log_line_of_a_hostile_pyproject_is_a_single_line(tmp_path: Path) ->
 
 def test_the_job_summary_of_a_hostile_pyproject_stays_a_table(tmp_path: Path) -> None:
     path = hostile_pyproject(tmp_path)
-    report = build_report(_args(path))
+    report = build_report(_inputs(path))
     outputs = format_outputs(report)
 
     markdown = format_step_summary(report, outputs)

@@ -18,7 +18,7 @@ from extract_pyproject_metadata.dependencies.lookup import extract_dependency_sp
 from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.metadata import extract_metadata
 from extract_pyproject_metadata.pyproject import load_pyproject
-from extract_pyproject_metadata.types import Metadata, Report
+from extract_pyproject_metadata.types import Inputs, Metadata, Report
 
 ROOT_PATH = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "extract_metadata.py"
@@ -148,6 +148,11 @@ def parse_github_output(text: str) -> dict[str, str]:
 def parse_args(*argv: str) -> argparse.Namespace:
     """Parse a command line like ``main`` does."""
     return extract_metadata_module._build_parser("extract_metadata.py").parse_args(list(argv))
+
+
+def parse_inputs_args(*argv: str) -> Inputs:
+    """Parse a command line like ``main`` does and validate the inputs."""
+    return extract_metadata_module.parse_cli_inputs(parse_args(*argv))
 
 
 def chain_of_groups(length: int) -> dict[str, list]:

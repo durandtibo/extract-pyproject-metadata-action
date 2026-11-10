@@ -15,9 +15,9 @@ The package `src/extract_pyproject_metadata/` is split by concern. Imports go on
 way, from the bottom of this list to the top, and a module never imports from a
 module above it:
 
-1. `errors` (`MetadataError`), `types` (`Metadata`, `Report`), `checks` (type
-   checks of the values read from the file), `inputs` (JSON and boolean inputs,
-   `Options`).
+1. `errors` (`MetadataError`), `types` (`Inputs`, `Metadata`, `Report`), `checks`
+   (type checks of the values read from the file), `inputs` (`parse_inputs`: the
+   single place that validates the input strings and builds `Inputs`).
 2. `pyproject` (read and parse the file), `license`, `fields` (optional fields
    of `[project]` and `[build-system]`), `dynamic_version` (a dynamic version read
    statically from the file of the build backend), `metadata` (`extract_metadata`: name,
@@ -28,6 +28,8 @@ module above it:
 5. `report` (`build_report`) wires 2 to 4 together; `cli` (argument parser and
    `main`) is the top.
 
+- The core never sees `argparse`: `cli` maps the command line to `Inputs`
+  (`parse_cli_inputs`), and `build_report(inputs)` takes plain values.
 - Put a new function in the module of its concern; create a module (and its
   test module) instead of growing one past a few hundred lines. A constant
   lives in the module that uses it.

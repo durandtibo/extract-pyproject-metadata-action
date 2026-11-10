@@ -10,4 +10,3 @@ def test_script_requirements_list_the_dependencies_of_the_script() -> None:
     lines = [line for line in requirements.splitlines() if line and not line.startswith("#")]
 
     assert lines == ["packaging>=23.0,<27"]
-

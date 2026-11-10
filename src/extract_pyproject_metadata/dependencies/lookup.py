@@ -8,12 +8,10 @@ from typing import TYPE_CHECKING, Any
 from packaging.utils import canonicalize_name
 
 from extract_pyproject_metadata.dependencies.requirements import (
-    PROJECT_SCOPE,
     conflict_warnings,
     index_dependencies,
 )
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.inputs import parse_string_array
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -22,43 +20,9 @@ __all__ = [
     "check_no_missing_dependency",
     "extract_dependency_requirements",
     "extract_dependency_specifiers",
-    "parse_dependencies",
     "requirements_from_index",
     "specifiers_from_index",
 ]
-
-
-def parse_dependencies(raw: str) -> list[str]:
-    """Parse the ``dependencies`` input: a JSON array of package names
-    with an optional scope.
-
-    A name may be followed by ``@`` and the only place to look it up in:
-    ``name@project`` (``[project].dependencies``), ``name@extra:<extra>``
-    (``[project.optional-dependencies]``) or ``name@group:<group>``
-    (``[dependency-groups]``, ``include-group`` expanded). Without a scope, every place is
-    searched. A package name cannot contain ``@``, so the scope is unambiguous.
-
-    Args:
-        raw: The value of the input.
-
-    Returns:
-        The entries as written, in order, duplicates included.
-
-    Raises:
-        MetadataError: If ``raw`` is not a JSON array of strings, or an entry has a scope that is
-            not ``project``, ``extra:<name>`` or ``group:<name>`` (with a name).
-    """
-    entries = parse_string_array(raw, "dependencies")
-    for entry in entries:
-        _, separator, scope = entry.partition("@")
-        kind, _, name = scope.partition(":")
-        if separator and scope != PROJECT_SCOPE and (kind not in {"extra", "group"} or not name):
-            msg = (
-                f"dependencies entry {entry!r} has an invalid scope: it must be 'project', "
-                "'extra:<name>' or 'group:<name>' (for example 'pytest@group:dev')"
-            )
-            raise MetadataError(msg)
-    return entries
 
 
 def _lookup_key(dependency: str) -> str:
@@ -66,7 +30,7 @@ def _lookup_key(dependency: str) -> str:
     ``dependencies``.
 
     Args:
-        dependency: An entry, as returned by ``parse_dependencies``.
+        dependency: An entry, as returned by ``parse_inputs``.
 
     Returns:
         The normalized package name (PEP 503), followed by ``@`` and the normalized scope for
@@ -90,7 +54,7 @@ def extract_dependency_specifiers(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies: Package names to look up, as returned by
-            ``parse_dependencies``: a name may be followed by ``@`` and a scope that limits
+            ``parse_inputs``: a name may be followed by ``@`` and a scope that limits
             the lookup to ``[project].dependencies``, one extra or one group.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error and warning messages.
@@ -166,7 +130,7 @@ def extract_dependency_requirements(
     Args:
         data: The parsed pyproject.toml, as returned by ``load_pyproject``.
         dependencies: Package names to look up, as returned by
-            ``parse_dependencies``: a name may be followed by ``@`` and a scope that limits
+            ``parse_inputs``: a name may be followed by ``@`` and a scope that limits
             the lookup to ``[project].dependencies``, one extra or one group.
         pyproject_path: Path of the file ``data`` was read from, used only in
             error messages.

@@ -9,13 +9,11 @@ from packaging.specifiers import SpecifierSet
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.python_versions import (
-    DEFAULT_PYTHON_CANDIDATES,
     compatible_python_versions,
     highest_python_version,
     lowest_python_version,
-    parse_python_candidates,
 )
-from tests.helpers import CANDIDATES, README_PATH, extract, write_pyproject
+from tests.helpers import CANDIDATES, extract, write_pyproject
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -136,39 +134,6 @@ def test_compatible_python_versions_invalid_specifier_warns(requires_python: str
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("[]", []),
-        ('["3.12"]', ["3.12"]),
-        ('["3.10", "3.9", "3.10"]', ["3.10", "3.9"]),
-        ('["0.1", "10.20"]', ["0.1", "10.20"]),
-        (DEFAULT_PYTHON_CANDIDATES, ["3.11", "3.12", "3.13", "3.14", "3.15"]),
-    ],
-)
-def test_parse_python_candidates(raw: str, expected: list[str]) -> None:
-    assert parse_python_candidates(raw) == expected
-
-
-@pytest.mark.parametrize(
-    "raw",
-    ['["3"]', '["3.12.1"]', '["3.x"]', '["v3.12"]', '["3.12 "]', '[""]', '["3.1a"]', '["3.12\\n"]'],
-)
-def test_parse_python_candidates_not_major_minor(raw: str) -> None:
-    with pytest.raises(
-        MetadataError, match=r"python-candidates must contain 'major.minor' versions"
-    ):
-        parse_python_candidates(raw)
-
-
-@pytest.mark.parametrize("raw", ["not json", '{"a": 1}', "[3.12]"])
-def test_parse_python_candidates_not_an_array_of_strings(raw: str) -> None:
-    with pytest.raises(
-        MetadataError, match=r"python-candidates (is not valid JSON|must be a JSON array)"
-    ):
-        parse_python_candidates(raw)
-
-
-@pytest.mark.parametrize(
     "requires_python",
     [
         ">=3.12.0,<3.12.1",
@@ -233,9 +198,3 @@ def test_lowest_python_version(versions: list[str], expected: str) -> None:
 )
 def test_highest_python_version(versions: list[str], expected: str) -> None:
     assert highest_python_version(versions) == expected
-
-
-def test_readme_default_of_python_candidates_matches_the_script() -> None:
-    readme = README_PATH.read_text(encoding="utf-8")
-
-    assert f"| `{DEFAULT_PYTHON_CANDIDATES}` |" in readme

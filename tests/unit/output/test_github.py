@@ -25,8 +25,8 @@ from tests.helpers import (
     METADATA,
     README_PATH,
     _action_section_keys,
-    parse_args,
     parse_github_output,
+    parse_inputs_args,
     write_pyproject,
 )
 
@@ -140,7 +140,9 @@ def test_new_delimiter_is_random_and_not_guessable() -> None:
 
 def test_emit_github_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     output = tmp_path / "github_output"
-    report = build_report(parse_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["dup"]'))
+    report = build_report(
+        parse_inputs_args(str(write_pyproject(tmp_path, DEPS_TOML)), "[]", '["dup"]')
+    )
 
     emit_github_output(report, "my,file.toml", str(output))
 
