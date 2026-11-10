@@ -134,6 +134,10 @@ default it is:
 `["3.11","3.12","3.13","3.14","3.15"]`
 <!-- candidates:end -->
 
+A Python that is released after this tag is not in the default: pass it in
+`python-candidates`. The action does not read the date or the network, so the same tag and
+the same inputs always give the same outputs.
+
 ## Outputs
 
 <!-- outputs:start -->
@@ -146,9 +150,9 @@ default it is:
 | `version`               | Project version, as declared in [project].version                                                                                                                                                                                                                                                                       |
 | `normalized-version`    | Project version in the canonical form of PEP 440 (e.g. "1.0rc1" for "1.0-RC1"; empty if the version is dynamic)                                                                                                                                                                                                         |
 | `requires-python`       | Python version specifier, as declared in [project].requires-python (empty if not declared)                                                                                                                                                                                                                              |
-| `python-versions`       | JSON array of the python-candidates allowed by requires-python (all of them if requires-python is not declared)                                                                                                                                                                                                         |
-| `python-min`            | Lowest of the python-versions, compared as numbers (empty if there is none)                                                                                                                                                                                                                                             |
-| `python-max`            | Highest of the python-versions, compared as numbers (empty if there is none)                                                                                                                                                                                                                                            |
+| `python-versions`       | JSON array of the python-candidates allowed by requires-python (all of them if requires-python is not declared), sorted ascending as numbers and without duplicates, whatever the order of python-candidates                                                                                                            |
+| `python-min`            | First of the python-versions, the lowest (empty if there is none)                                                                                                                                                                                                                                                       |
+| `python-max`            | Last of the python-versions, the highest (empty if there is none)                                                                                                                                                                                                                                                       |
 | `extras`                | JSON array of extra names                                                                                                                                                                                                                                                                                               |
 | `groups`                | JSON array of dependency group names, from [dependency-groups]                                                                                                                                                                                                                                                          |
 | `dependency-specifiers` | JSON object mapping each requested package to its specifier (null if not found, empty string if it has no specifier)                                                                                                                                                                                                    |

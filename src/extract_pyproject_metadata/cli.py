@@ -52,9 +52,9 @@ written and the message lists the warnings. A requested dependency that is not
 found (a ``null`` specifier) and a dynamic ``version`` are warnings.
 
 ``python_versions`` lists the ``INPUT_PYTHON_CANDIDATES`` (a JSON array of
-"major.minor" strings) that ``[project].requires-python`` allows, and
-``python_min`` is the lowest of them and ``python_max`` the highest (each an
-empty string if there is none).
+"major.minor" strings) that ``[project].requires-python`` allows, sorted ascending as
+numbers and without duplicates; ``python_min`` is the first of them and ``python_max`` the
+last (each an empty string if there is none).
 
 Exits with 1 and a message ``<field>: <problem>`` on stderr (with ``GITHUB_OUTPUT``, an
 ``::error file=<path>::`` workflow command, so that GitHub shows an error annotation on the

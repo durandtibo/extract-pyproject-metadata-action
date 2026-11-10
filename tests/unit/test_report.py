@@ -49,6 +49,34 @@ def test_build_report(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("candidates", "requires_python", "versions", "python_min", "python_max"),
+    [
+        ('["3.12","3.9","3.10","3.12"]', "", ["3.9", "3.10", "3.12"], "3.9", "3.12"),
+        ('["3.12","3.9","3.10"]', ">=3.10", ["3.10", "3.12"], "3.10", "3.12"),
+        ('["3.11"]', ">=3.11", ["3.11"], "3.11", "3.11"),
+        ('["3.11"]', ">=4", [], "", ""),
+        ("[]", "", [], "", ""),
+    ],
+)
+def test_build_report_python_min_and_max_are_the_ends_of_the_sorted_python_versions(
+    tmp_path: Path,
+    candidates: str,
+    requires_python: str,
+    versions: list[str],
+    python_min: str,
+    python_max: str,
+) -> None:
+    requires = f'requires-python = "{requires_python}"\n' if requires_python else ""
+    path = write_pyproject(tmp_path, f'[project]\nname = "a"\nversion = "1"\n{requires}')
+
+    report = build_report(parse_inputs_args("--python-candidates", candidates, str(path), "[]"))
+
+    assert report["python_versions"] == versions
+    assert report["python_min"] == python_min
+    assert report["python_max"] == python_max
+
+
+@pytest.mark.parametrize(
     ("argv", "match"),
     [
         (["--strict", "maybe", "{path}", "[]"], r"strict: must be 'true' or 'false'"),

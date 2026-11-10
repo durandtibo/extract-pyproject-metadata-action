@@ -14,8 +14,6 @@ import yaml
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS
 from extract_pyproject_metadata.python_versions import (
     DEFAULT_PYTHON_CANDIDATES,
-    highest_python_version,
-    lowest_python_version,
 )
 from tests.helpers import PACKAGE_PATH, ROOT_PATH
 
@@ -134,7 +132,7 @@ def test_the_unit_matrix_is_every_default_candidate() -> None:
 
 def test_the_action_matrices_are_the_oldest_and_the_newest_candidate() -> None:
     candidates = json.loads(DEFAULT_PYTHON_CANDIDATES)
-    oldest_and_newest = [lowest_python_version(candidates), highest_python_version(candidates)]
+    oldest_and_newest = [candidates[0], candidates[-1]]
 
     matrices = python_matrices(load_workflow("ci-test-local.yaml"))
 

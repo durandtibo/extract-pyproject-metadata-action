@@ -29,8 +29,6 @@ from extract_pyproject_metadata.inputs import (
 )
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
-    highest_python_version,
-    lowest_python_version,
 )
 from tests.helpers import parse_github_output
 
@@ -114,14 +112,15 @@ def test_parse_python_candidates_never_fails_with_another_error(raw: str) -> Non
     assert all(re.fullmatch(r"\d+\.\d+", item) for item in result)
 
 
-@given(st.text(), st.lists(minor_versions, unique=True))
-def test_compatible_python_versions_is_a_subsequence_of_the_candidates(
+@given(st.text(), st.lists(minor_versions))
+def test_compatible_python_versions_are_sorted_unique_members_of_the_candidates(
     requires_python: str, candidates: list[str]
 ) -> None:
     versions, warnings = compatible_python_versions(requires_python, candidates)
 
-    remaining = iter(candidates)
-    assert all(version in remaining for version in versions)  # same order, no new value
+    keys = [tuple(int(part) for part in version.split(".")) for version in versions]
+    assert keys == sorted(set(keys))  # ascending as numbers, no duplicate
+    assert set(versions) <= set(candidates)
     assert all(isinstance(warning.message, str) for warning in warnings)
     if candidates and not versions:
         assert len(warnings) == 1  # an empty python-versions is never silent
@@ -133,18 +132,10 @@ def test_compatible_python_versions_is_a_subsequence_of_the_candidates(
 def test_compatible_python_versions_allows_everything_without_requires_python(
     requires_python: str, candidates: list[str]
 ) -> None:
-    assert compatible_python_versions(requires_python, candidates) == (candidates, [])
+    versions, warnings = compatible_python_versions(requires_python, candidates)
 
-
-@given(st.lists(minor_versions, min_size=1))
-def test_lowest_and_highest_python_versions_are_members_and_ordered(versions: list[str]) -> None:
-    lowest = lowest_python_version(versions)
-    highest = highest_python_version(versions)
-
-    assert lowest in versions
-    assert highest in versions
-    key = lambda version: tuple(int(part) for part in version.split("."))  # noqa: E731
-    assert key(lowest) <= key(highest)
+    assert set(versions) == set(candidates)
+    assert warnings == []
 
 
 @given(st.text())

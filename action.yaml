@@ -81,17 +81,16 @@ outputs:
   python-versions:
     description: >
       JSON array of the python-candidates allowed by requires-python (all of
-      them if requires-python is not declared)
+      them if requires-python is not declared), sorted ascending as numbers
+      and without duplicates, whatever the order of python-candidates
     value: ${{ steps.metadata.outputs.python-versions }}
   python-min:
     description: >
-      Lowest of the python-versions, compared as numbers (empty if there is
-      none)
+      First of the python-versions, the lowest (empty if there is none)
     value: ${{ steps.metadata.outputs.python-min }}
   python-max:
     description: >
-      Highest of the python-versions, compared as numbers (empty if there is
-      none)
+      Last of the python-versions, the highest (empty if there is none)
     value: ${{ steps.metadata.outputs.python-max }}
   extras:
     description: JSON array of extra names
