@@ -86,6 +86,14 @@ def test_no_workflow_uses_concurrency(path: Path) -> None:
     assert not re.search(r"(?m)^\s*concurrency:", path.read_text(encoding="utf-8"))
 
 
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
+def test_permissions_are_set_on_every_job_and_not_on_the_workflow(path: Path) -> None:
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert "permissions" not in workflow
+    assert [name for name, job in workflow["jobs"].items() if "permissions" not in job] == []
+
+
 def test_ci_runs_every_night_through_the_nightly_workflow_only() -> None:
     ci = (WORKFLOWS_PATH / "ci.yaml").read_text(encoding="utf-8")
     nightly = (WORKFLOWS_PATH / "nightly.yaml").read_text(encoding="utf-8")

@@ -6,12 +6,11 @@ on:
   workflow_call:
   workflow_dispatch: # to trigger manually
 
-permissions:
-  contents: read
-
 jobs:
   # pyright reads the packages from .venv (see [tool.pyright] in pyproject.toml)
   type-checking:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
