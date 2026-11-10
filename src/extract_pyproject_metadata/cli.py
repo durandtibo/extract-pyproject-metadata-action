@@ -23,10 +23,10 @@ characters are kept as they are, as in the action outputs):
      "extras": [...], "groups": [...],
      "python_versions": [...], "python_min": ..., "python_max": ...,
      "dependency_specifiers": {...}, "dependency_requirements": {...},
-     "warnings": [{"code": ..., "message": ...}, ...], "schema_version": 3}
+     "warnings": [...], "schema_version": 3}
 
-"warnings" lists the suspicious but non-fatal input: the "code" is a stable identifier
-(see ``warning_codes.py``), the "message" is for a human and may be reworded.
+"warnings" lists the suspicious but non-fatal input as objects with a ``code`` (a stable
+identifier, see ``warning_codes.py``) and a ``message`` (for a human, it may be reworded).
 
 "schema_version" is the version of this JSON object: it increases when a key is
 renamed, removed or changes type, not when a key is added, so that a tool that
