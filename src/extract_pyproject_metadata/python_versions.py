@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
 from extract_pyproject_metadata.types import ReportWarning
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 __all__ = [
     "DEFAULT_PYTHON_CANDIDATES",
     "compatible_python_versions",
-    "highest_python_version",
-    "lowest_python_version",
 ]
 
 # The Python versions that ``python-candidates`` defaults to (and the default of the input). Add
@@ -25,6 +18,11 @@ DEFAULT_PYTHON_CANDIDATES = '["3.11","3.12","3.13","3.14","3.15"]'
 # real release (CPython patch numbers stay below 100) and a very late one, for the specifiers that
 # have no upper bound.
 _PATCH_RELEASES = (*range(100), 9999)
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    """Return the numbers of a "major.minor" version, to sort versions as numbers."""
+    return tuple(int(part) for part in version.split("."))
 
 
 def compatible_python_versions(
@@ -49,14 +47,16 @@ def compatible_python_versions(
 
     Returns:
         A tuple ``(versions, warnings)``. ``versions`` are the allowed
-        candidates, in the order of ``candidates``: all of them when
+        candidates, sorted ascending as numbers (``3.9`` before ``3.10``) and without
+        duplicates, whatever the order of ``candidates``: all of them when
         ``requires_python`` is empty, none of them (with a warning) when it is
         not a valid specifier. There is also a warning when ``candidates`` is
         not empty and none of them is allowed, because a job matrix built from
         an empty list is rejected by GitHub.
     """
+    candidates = sorted(set(candidates), key=_version_key)
     if not requires_python.strip():
-        return list(candidates), []
+        return candidates, []
     try:
         specifier = SpecifierSet(requires_python)
     except InvalidSpecifier as exc:
@@ -79,42 +79,3 @@ def compatible_python_versions(
         )
         return versions, [ReportWarning("no-python-version", message)]
     return versions, []
-
-
-def _minor_version_key(version: str) -> tuple[int, ...]:
-    """Return the numbers of a "major.minor" version, to compare
-    versions as numbers."""
-    return tuple(int(part) for part in version.split("."))
-
-
-def lowest_python_version(versions: Sequence[str]) -> str:
-    """Return the lowest of "major.minor" versions, compared as numbers.
-
-    Args:
-        versions: Versions such as ``"3.9"`` and ``"3.10"``, as returned by
-            ``compatible_python_versions``.
-
-    Returns:
-        The lowest version (``"3.9"`` is lower than ``"3.10"``), or an empty
-        string if ``versions`` is empty.
-    """
-    if not versions:
-        return ""
-    return min(versions, key=_minor_version_key)
-
-
-def highest_python_version(versions: Sequence[str]) -> str:
-    """Return the highest of "major.minor" versions, compared as
-    numbers.
-
-    Args:
-        versions: Versions such as ``"3.9"`` and ``"3.10"``, as returned by
-            ``compatible_python_versions``.
-
-    Returns:
-        The highest version (``"3.10"`` is higher than ``"3.9"``), or an empty
-        string if ``versions`` is empty.
-    """
-    if not versions:
-        return ""
-    return max(versions, key=_minor_version_key)

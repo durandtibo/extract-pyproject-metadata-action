@@ -8,8 +8,8 @@
   "extras": [],
   "groups": [],
   "python_versions": [
-    "3.10",
-    "3.9"
+    "3.9",
+    "3.10"
   ],
   "python_min": "3.9",
   "python_max": "3.10",

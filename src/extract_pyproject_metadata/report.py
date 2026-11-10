@@ -10,8 +10,6 @@ from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.pyproject import load_pyproject, read_project
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
-    highest_python_version,
-    lowest_python_version,
 )
 from extract_pyproject_metadata.requirements import (
     collect_requirements,
@@ -72,8 +70,8 @@ def build_report(inputs: Inputs) -> Report:
         extras=project.extras,
         groups=project.groups,
         python_versions=python_versions,
-        python_min=lowest_python_version(python_versions),
-        python_max=highest_python_version(python_versions),
+        python_min=python_versions[0] if python_versions else "",
+        python_max=python_versions[-1] if python_versions else "",
         dependency_specifiers=specifiers,
         dependency_requirements=requirements,
         warnings=[asdict(w) for w in unique_warnings],

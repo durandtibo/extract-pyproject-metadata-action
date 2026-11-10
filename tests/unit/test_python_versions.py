@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,9 +10,8 @@ import pytest
 from extract_pyproject_metadata._vendor.packaging.specifiers import SpecifierSet
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.python_versions import (
+    DEFAULT_PYTHON_CANDIDATES,
     compatible_python_versions,
-    highest_python_version,
-    lowest_python_version,
 )
 from extract_pyproject_metadata.types import ReportWarning
 from tests.helpers import CANDIDATES, extract, messages, write_pyproject
@@ -115,10 +115,6 @@ def test_compatible_python_versions_none_allowed_warning_message() -> None:
     assert warnings[0].message.startswith("no python-candidates version")
 
 
-def test_compatible_python_versions_keeps_the_order_of_the_candidates() -> None:
-    assert compatible_python_versions(">=3.10", ["3.12", "3.10", "3.8"]) == (["3.12", "3.10"], [])
-
-
 def test_compatible_python_versions_no_candidates_does_not_warn() -> None:
     assert compatible_python_versions(">=3.10", []) == ([], [])
 
@@ -170,33 +166,29 @@ def test_compatible_python_versions_match_a_brute_force_search(requires_python: 
     assert messages(warnings) == []
 
 
-@pytest.mark.parametrize(
-    ("versions", "expected"),
-    [
-        ([], ""),
-        (["3.12"], "3.12"),
-        (["3.11", "3.12", "3.13"], "3.11"),
-        (["3.13", "3.11", "3.12"], "3.11"),
-        (["3.10", "3.9"], "3.9"),
-        (["3.10", "3.2", "2.7"], "2.7"),
-        (("3.10", "3.9"), "3.9"),
-    ],
-)
-def test_lowest_python_version(versions: list[str], expected: str) -> None:
-    assert lowest_python_version(versions) == expected
+@pytest.mark.parametrize("requires_python", ["", ">=3.9"])
+def test_compatible_python_versions_are_sorted_as_numbers_without_duplicates(
+    requires_python: str,
+) -> None:
+    versions, warnings = compatible_python_versions(
+        requires_python, ["3.12", "3.9", "3.10", "3.12"]
+    )
+
+    assert versions == ["3.9", "3.10", "3.12"]
+    assert warnings == []
 
 
-@pytest.mark.parametrize(
-    ("versions", "expected"),
-    [
-        ([], ""),
-        (["3.12"], "3.12"),
-        (["3.11", "3.12", "3.13"], "3.13"),
-        (["3.13", "3.11", "3.12"], "3.13"),
-        (["3.10", "3.9"], "3.10"),
-        (["3.10", "3.2", "2.7"], "3.10"),
-        (("3.9", "3.10"), "3.10"),
-    ],
-)
-def test_highest_python_version(versions: list[str], expected: str) -> None:
-    assert highest_python_version(versions) == expected
+def test_compatible_python_versions_do_not_modify_the_candidates() -> None:
+    candidates = ["3.12", "3.9", "3.12"]
+
+    compatible_python_versions("", candidates)
+
+    assert candidates == ["3.12", "3.9", "3.12"]
+
+
+def test_the_default_python_candidates_are_sorted_without_duplicates() -> None:
+    candidates = json.loads(DEFAULT_PYTHON_CANDIDATES)
+
+    assert candidates == sorted(
+        set(candidates), key=lambda version: tuple(map(int, version.split(".")))
+    )
