@@ -1,5 +1,9 @@
 # extract-pyproject-metadata-action
 
+[![CI](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/ci.yaml/badge.svg)](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/ci.yaml)
+[![Nightly Tests](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/nightly.yaml/badge.svg)](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/nightly.yaml)
+[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
+
 A GitHub Action that reads a `pyproject.toml` and exposes the values that drive a
 workflow: what to build (name, version), what to test (extras, dependency groups, Python
 versions) and which dependency specifiers to install. Reading them from the file keeps
@@ -9,6 +13,44 @@ The action only **reads** the file: it never runs project code or a build backen
 values from the file cannot become shell code, workflow commands or Markdown. It needs a
 Python 3.11 or later on `PATH` (for example from `actions/setup-python`) and nothing
 else: no installation, no network. It runs on Linux and macOS. Windows is not supported, on purpose.
+
+## Table of Contents
+
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Usage](#usage)
+- [Recipes](#recipes)
+- [Inputs](#inputs)
+- [Outputs](#outputs)
+- [Looking up a dependency in one place](#looking-up-a-dependency-in-one-place)
+- [Warnings](#warnings)
+- [Failures](#failures)
+- [How it works](#how-it-works)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Limitations](#limitations)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Changelog](#changelog)
+- [License](#license)
+
+## Features
+
+- Project `name`, `version` and `requires-python`, plus the normalized name, the file name
+  and the canonical version (PEP 503 and PEP 440).
+- Extras and dependency groups, ready for a test matrix.
+- The Python versions that `requires-python` allows, with their lowest and highest.
+- The version specifier of chosen dependencies, searched in the project, an extra or a group.
+- Every result in one `json` output, with the warnings.
+- Warnings that become failures in strict mode.
+- No installation and no network: only the standard library and a vendored `packaging`.
+
+## Prerequisites
+
+- A Linux or macOS runner (Windows is not supported).
+- A Python 3.11 or later as `python3` or `python` on `PATH`, for example from
+  `actions/setup-python`.
+- A `pyproject.toml` in the checked out repository (`actions/checkout`).
 
 ## Usage
 
@@ -258,6 +300,73 @@ Python traceback. It happens when:
 Fields that the action does not output (`description`, `license`, `authors`,
 `[build-system]`, ...) are not read and not validated.
 
+## How it works
+
+1. `scripts/run.sh` finds a Python 3.11 or later on `PATH` and starts the program.
+2. The inputs are read from the environment and validated before the file is read.
+3. `pyproject.toml` is parsed with `tomllib`; only the fields that the action outputs are
+   read and validated.
+4. The Python versions are the `python-candidates` that `requires-python` allows; the
+   requirements are read only when `dependencies` is not empty.
+5. The outputs are written to `$GITHUB_OUTPUT`, the warnings become annotations, and
+   one log line summarizes the result. With `strict: "true"` any warning fails the step
+   and nothing is written.
+
+## Troubleshooting
+
+### The step fails with `<field>: <problem>`
+
+**Cause:** an input or a field of the file is invalid (see [Failures](#failures)).
+**Solution:** fix the field named in the message; the annotation points to the file.
+
+### No Python 3.11 or later was found
+
+**Cause:** the runner has no suitable `python3` or `python` on `PATH`.
+**Solution:** add `actions/setup-python` before the action.
+
+### `version` is empty
+
+**Cause:** the version is in `[project].dynamic`, so the file has no value for it.
+**Solution:** ask the build backend for the version, and use `strict` where one is needed.
+
+### `python-versions` is empty
+
+**Cause:** `requires-python` is invalid or allows no version of `python-candidates`.
+**Solution:** fix `requires-python`, or pass the newer versions in `python-candidates`.
+
+### A dependency has the specifier `null`
+
+**Cause:** the package is not in the place searched (`dependency-not-found`).
+**Solution:** check the name and the `@` scope, see
+[Looking up a dependency in one place](#looking-up-a-dependency-in-one-place).
+
+## FAQ
+
+### Does the action install or run my project?
+
+No. It only reads the file; it never runs project code or a build backend.
+
+### How do I use an output in a matrix?
+
+Set it as the job output and read it with `fromJSON`, as in [Recipes](#recipes).
+
+### Why is the newest Python missing from `python-versions`?
+
+The action does not read the date or the network. Pass the version in `python-candidates`.
+
+### Are environment markers evaluated?
+
+No. When a package has several requirements, `dependency_requirements` in the `json`
+output lists all of them with their `marker`.
+
+## Limitations
+
+- **Linux and macOS only.** Windows is not supported, on purpose.
+- **Python 3.11 or later** must be on `PATH`; the action installs none.
+- **Static values only.** A field in `dynamic` has no value.
+- **First match wins** when a dependency is looked up without a scope.
+- **Fixed default candidates.** New Python versions need `python-candidates`.
+
 ## Development
 
 The logic is in `src/extract_pyproject_metadata/`, started by `scripts/run.sh`;
@@ -286,3 +395,18 @@ To release: update the default `python-candidates` in `python_versions.py` (ever
 that `packaging` is current (`make vendor-packaging`), run `make check` and `make docs`,
 push the tag `vX.Y.Z` and create the GitHub release with its notes. Tags are immutable: a published tag is never moved or
 deleted, a fix is a new version, and workflows pin the exact tag (`@vX.Y.Z`).
+
+## Contributing
+
+Issues and pull requests are welcome. The rules for changes (architecture, tests, workflows)
+are in [CONTRIBUTING.md](CONTRIBUTING.md), and the [Development](#development) section shows
+how to run the checks.
+
+## Changelog
+
+The release notes are on the
+[GitHub releases](https://github.com/durandtibo/extract-pyproject-metadata-action/releases) page.
+
+## License
+
+This project is licensed under the BSD 3-Clause License, see [LICENSE](LICENSE).
