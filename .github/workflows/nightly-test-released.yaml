@@ -1,10 +1,14 @@
+name: Test Stable Action
+
 # Test the latest stable (published) version of the action, to catch what its users pick up:
 # a change of the runner images or of the Python versions that breaks the released tag.
-# Called from nightly.yaml. It only uses the inputs and outputs of that version (the current code is tested by
-# ci-action.yaml).  When a release is
-# made, update the pinned SHA and tag below (bot-pin-action.yaml keeps the SHA of the tag).
+# Called from nightly.yaml. It runs the same checks as ci-action.yaml (which tests the current
+# code from this checkout) against the pinned release: every input and output, the golden cases,
+# strict, the invalid inputs and Python 3.10. The test data and helper scripts come from this
+# checkout, so a check that needs an input or output newer than the release must wait for the next
+# release. When a release is made, update the pinned SHA and tag below in every step
+# (bot-pin-action.yaml keeps the SHA of the tag).
 
-name: Test Stable Action
 on:
   workflow_call:
     inputs:
@@ -16,6 +20,7 @@ on:
 permissions: {}
 
 jobs:
+  # The success path on Linux and macOS, on the oldest and the newest Python.
   test:
     permissions:
       contents: read
@@ -27,7 +32,6 @@ jobs:
       matrix:
         os: ${{ fromJson(inputs.test-matrix).os_matrix }}
         python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
@@ -37,53 +41,443 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: 🧪 Test minimal pyproject.toml
-        id: test-minimal
-        uses: durandtibo/extract-pyproject-metadata-action@4661b78698e6ceb7e04cf60bbdd52addf85a2889 # ratchet:durandtibo/extract-pyproject-metadata-action@v0.2
+      - name: 🧪 Run the action with every input
+        id: action
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/readme-example/pyproject.toml
+          extra-values: '[""]'
+          dependencies: '["numpy", "pytest@group:dev", "missing"]'
+          python-candidates: '["3.11","3.12","3.13"]'
+          strict: "false"
+
+      - name: ✓ Verify every output
+        env:
+          NAME: ${{ steps.action.outputs.name }}
+          NORMALIZED_NAME: ${{ steps.action.outputs.normalized-name }}
+          FILE_NAME: ${{ steps.action.outputs.file-name }}
+          VERSION: ${{ steps.action.outputs.version }}
+          NORMALIZED_VERSION: ${{ steps.action.outputs.normalized-version }}
+          REQUIRES_PYTHON: ${{ steps.action.outputs.requires-python }}
+          PYTHON_VERSIONS: ${{ steps.action.outputs.python-versions }}
+          PYTHON_MIN: ${{ steps.action.outputs.python-min }}
+          PYTHON_MAX: ${{ steps.action.outputs.python-max }}
+          EXTRAS: ${{ steps.action.outputs.extras }}
+          GROUPS_: ${{ steps.action.outputs.groups }}
+          SPECIFIERS: ${{ steps.action.outputs.dependency-specifiers }}
+          JSON: ${{ steps.action.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "My_Package" "$NAME"
+          assert_equal "normalized-name" "my-package" "$NORMALIZED_NAME"
+          assert_equal "file-name" "my_package" "$FILE_NAME"
+          assert_equal "version" "1.2.3" "$VERSION"
+          assert_equal "normalized-version" "1.2.3" "$NORMALIZED_VERSION"
+          assert_equal "requires-python" ">=3.12" "$REQUIRES_PYTHON"
+          assert_equal "python-versions" '["3.12","3.13"]' "$PYTHON_VERSIONS"
+          assert_equal "python-min" "3.12" "$PYTHON_MIN"
+          assert_equal "python-max" "3.13" "$PYTHON_MAX"
+          assert_equal "extras" '["","numpy","pandas"]' "$EXTRAS"
+          assert_equal "groups" '["dev"]' "$GROUPS_"
+          assert_equal "dependency-specifiers" '{"numpy":"<3,>=1.20","pytest@group:dev":">=8","missing":null}' "$SPECIFIERS"
+          assert_equal "json: extras" '["","numpy","pandas"]' "$(jq -c .extras <<< "$JSON")"
+          assert_equal "json: warning code" "dependency-not-found" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          print_success "every output has the expected value"
+
+      - name: 🧪 Run the action on a minimal file
+        id: minimal
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
         with:
           pyproject-path: test-data/minimal/pyproject.toml
 
-      - name: ✓ Verify minimal pyproject.toml
+      - name: ✓ Verify the defaults
         env:
-          NAME: ${{ steps.test-minimal.outputs.name }}
-          VERSION: ${{ steps.test-minimal.outputs.version }}
-          EXTRAS: ${{ steps.test-minimal.outputs.extras }}
+          NAME: ${{ steps.minimal.outputs.name }}
+          VERSION: ${{ steps.minimal.outputs.version }}
+          EXTRAS: ${{ steps.minimal.outputs.extras }}
+          GROUPS_: ${{ steps.minimal.outputs.groups }}
+          SPECIFIERS: ${{ steps.minimal.outputs.dependency-specifiers }}
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "minimal-pkg" "$NAME"
           assert_equal "version" "0.1.0" "$VERSION"
           assert_equal "extras" "[]" "$EXTRAS"
-          print_success "minimal pyproject.toml test passed"
+          assert_equal "groups" "[]" "$GROUPS_"
+          assert_equal "dependency-specifiers" "{}" "$SPECIFIERS"
+          print_success "the defaults are applied"
 
-      - name: 🧪 Test pyproject.toml with extras
-        id: test-extras
-        uses: durandtibo/extract-pyproject-metadata-action@4661b78698e6ceb7e04cf60bbdd52addf85a2889 # ratchet:durandtibo/extract-pyproject-metadata-action@v0.2
+      - name: ✓ Verify the action leaves nothing behind
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "__pycache__ directories" "0" "$(count_pycache)"
+          print_success "nothing left behind"
+
+  # A warning is reported in the json output and fails the step only with strict.
+  test-warning:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
-          pyproject-path: test-data/with-extras/pyproject.toml
+          python-version: "3.12"
 
-      - name: ✓ Verify extras
+      - name: 🧪 Run the action on a file with a dynamic version
+        id: action
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+
+      - name: ✓ Verify a warning does not fail the step without strict
         env:
-          NAME: ${{ steps.test-extras.outputs.name }}
-          VERSION: ${{ steps.test-extras.outputs.version }}
-          EXTRAS: ${{ steps.test-extras.outputs.extras }}
+          OUTCOME: ${{ steps.action.outcome }}
+          NAME: ${{ steps.action.outputs.name }}
+          VERSION: ${{ steps.action.outputs.version }}
+          JSON: ${{ steps.action.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "success" "$OUTCOME"
+          assert_equal "name" "dynamic-pkg" "$NAME"
+          assert_equal "version" "" "$VERSION"
+          assert_equal "warning code" "dynamic-version" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          print_success "a warning is reported and does not fail the step"
+
+  # The default of pyproject-path is `pyproject.toml` of the workspace.
+  test-default-path:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Put a pyproject.toml at the default path
+        run: cp test-data/with-extras/pyproject.toml pyproject.toml
+
+      - name: 🧪 Run the action without pyproject-path
+        id: action
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+
+      - name: ✓ Verify the file at the default path is read
+        env:
+          NAME: ${{ steps.action.outputs.name }}
+          EXTRAS: ${{ steps.action.outputs.extras }}
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "coola" "$NAME"
-          assert_equal "version" "1.2.3" "$VERSION"
           assert_equal "extras" '["numpy","pandas"]' "$EXTRAS"
-          print_success "extras test passed"
+          print_success "the default pyproject-path is read"
 
-      - name: 🧪 Test missing version (should fail)
-        id: test-missing-version
-        uses: durandtibo/extract-pyproject-metadata-action@4661b78698e6ceb7e04cf60bbdd52addf85a2889 # ratchet:durandtibo/extract-pyproject-metadata-action@v0.2
+  # The path reaches the program unsplit.
+  test-path-with-spaces:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Copy the file to a path with spaces
+        run: |
+          mkdir "dir with spaces"
+          cp test-data/with-extras/pyproject.toml "dir with spaces/my pyproject.toml"
+
+      - name: 🧪 Run the action on the path with spaces
+        id: action
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: dir with spaces/my pyproject.toml
+
+      - name: ✓ Verify the file is read
+        env:
+          NAME: ${{ steps.action.outputs.name }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "coola" "$NAME"
+          print_success "a path with spaces is read"
+
+  # `strict` fails the step on a warning, and only on a warning.
+  test-strict:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Run the action with strict on a warning
+        id: warning
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify strict with a warning fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.warning.outcome }}
+          JSON: ${{ steps.warning.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "strict with a warning fails the step"
+
+      - name: 🧪 Run the action with strict on a missing dependency
+        id: missing
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["invoke-tasklib","missing"]'
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify strict with a missing dependency fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+          JSON: ${{ steps.missing.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "strict with a missing dependency fails the step"
+
+      - name: 🧪 Run the action with strict and no warning
+        id: clean
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "true"
+
+      - name: ✓ Verify strict does not fail without a warning
+        env:
+          OUTCOME: ${{ steps.clean.outcome }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "success" "$OUTCOME"
+          print_success "strict does not fail without a warning"
+
+  # Invalid inputs and files fail the step without setting an output.
+  test-invalid-inputs:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Run the action with a missing file
+        id: missing-file
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/does-not-exist/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify a missing file fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.missing-file.outcome }}
+          JSON: ${{ steps.missing-file.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "a missing file fails the step"
+
+      - name: 🧪 Run the action with a missing version
+        id: missing-version
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
         with:
           pyproject-path: test-data/missing-version/pyproject.toml
         continue-on-error: true
 
-      - name: ✓ Verify a missing version fails the step
+      - name: ✓ Verify a missing version fails the step and sets no output
         env:
-          OUTCOME: ${{ steps.test-missing-version.outcome }}
+          OUTCOME: ${{ steps.missing-version.outcome }}
+          JSON: ${{ steps.missing-version.outputs.json }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
+          assert_failed "$OUTCOME" "$JSON"
           print_success "a missing version fails the step"
+
+      - name: 🧪 Run the action with an invalid extra-values
+        id: extra-values
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          extra-values: "not json"
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid extra-values fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.extra-values.outcome }}
+          JSON: ${{ steps.extra-values.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid extra-values fails the step"
+
+      - name: 🧪 Run the action with an invalid dependencies
+        id: dependencies
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          dependencies: '"numpy"'
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid dependencies fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.dependencies.outcome }}
+          JSON: ${{ steps.dependencies.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid dependencies fails the step"
+
+      - name: 🧪 Run the action with an invalid python-candidates
+        id: python-candidates
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          python-candidates: '["three"]'
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid python-candidates fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.python-candidates.outcome }}
+          JSON: ${{ steps.python-candidates.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid python-candidates fails the step"
+
+      - name: 🧪 Run the action with an invalid strict
+        id: strict
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "yes"
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid strict fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.strict.outcome }}
+          JSON: ${{ steps.strict.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid strict fails the step"
+
+      - name: ✓ Verify the action leaves nothing behind
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "__pycache__ directories" "0" "$(count_pycache)"
+          print_success "nothing left behind"
+
+  # Only Python 3.11 or later is supported: the action must fail with an explicit error.
+  test-old-python:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: 🧪 Run the action with Python 3.10
+        id: old-python
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify Python 3.10 fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.old-python.outcome }}
+          JSON: ${{ steps.old-python.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "Python 3.10 fails the step"
+
+  # Each case runs the action with the inputs of its inputs.json (the other inputs have their
+  # default, repeated here: tests/integration/test_workflows.py checks them against action.yaml)
+  # and compares the json output with its expected.json. tests/integration/test_golden.py
+  # checks every case of test-data/ without GitHub; this job only checks the wiring, with three
+  # cases: `minimal` (the defaults), `readme-example` (every output filled) and
+  # `python-candidates-none` (a warning). The list is explicit: a test checks that the cases
+  # exist and that, together, they set every input and fill every output of action.yaml (of the current code).
+  golden:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      max-parallel: 8
+      fail-fast: false
+      matrix:
+        case: [minimal, readme-example, python-candidates-none]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Read the inputs of the case
+        id: case
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          file="test-data/$CASE/inputs.json"
+          if [ -f "$file" ]; then inputs="$(jq -c . "$file")"; else inputs='{}'; fi
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+
+      - name: 🧪 Run the action on the case
+        id: action
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
+          extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
+          dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
+          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '' }}
+          strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
+
+      - name: ✓ Compare the json output with the golden file
+        env:
+          EXPECTED: test-data/${{ matrix.case }}/expected.json
+          ACTUAL: ${{ steps.action.outputs.json }}
+        run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
