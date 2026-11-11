@@ -1,4 +1,4 @@
-# Tests of the Python code. `test`: the unit and integration tests, with the coverage gate. `properties`:
+# Tests of the Python code. `test`: the unit and integration tests (the coverage gate runs on ubuntu-latest with Python 3.14 only). `properties`:
 # the Hypothesis tests of tests/properties/ (hypothesis has no free-threaded wheels and is in the
 # `property` group, not in `dev`), on ubuntu-latest and the standard (non-free-threaded) Python versions.
 # Runs on the OS and Python versions of the shared matrix (3.11 is the oldest: tomllib).
@@ -39,8 +39,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install --group dev
 
+      # The coverage gate runs on one cell only: the coverage does not depend on the OS or Python version.
+      - name: Run the tests with coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: pytest -q --cov
+
       - name: Run the tests
-        run: make test PYTHON_RUN=
+        if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14') }}
+        run: pytest -q
 
   properties:
     permissions:

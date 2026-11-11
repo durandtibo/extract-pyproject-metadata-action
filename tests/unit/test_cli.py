@@ -777,3 +777,19 @@ def test_run_switches_a_text_stream_to_utf8(
     assert run() == 0
     stdout.flush()
     assert json.loads(buffer.getvalue().decode("utf-8"))["extras"] == ["é"]
+
+
+def test_run_decodes_the_environment_as_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1"\n')
+    monkeypatch.setattr(sys, "argv", ["extract_metadata.py"])
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setenv("INPUT_PYPROJECT_PATH", str(path))
+    # What a C locale makes of the UTF-8 bytes of "é".
+    monkeypatch.setenv("INPUT_EXTRA_VALUES", '["\udcc3\udca9"]')
+    stdout = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stdout)
+
+    assert run() == 0
+    assert json.loads(stdout.getvalue())["extras"] == ["é"]

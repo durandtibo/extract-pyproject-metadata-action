@@ -150,7 +150,8 @@ def run() -> int:
     environment.
 
     The log line has non-ASCII characters, which a non-UTF-8 locale cannot encode, so the
-    standard output and error are switched to UTF-8 first.
+    standard output and error are switched to UTF-8 first. A non-UTF-8 locale also decodes
+    the bytes of the environment as surrogates, so the values are decoded again as UTF-8.
 
     Returns:
         The exit code of ``main``.
@@ -158,4 +159,8 @@ def run() -> int:
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
-    return main(os.environ)
+    environ = {
+        key: os.fsencode(value).decode("utf-8", errors="surrogateescape")
+        for key, value in os.environ.items()
+    }
+    return main(environ)
