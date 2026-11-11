@@ -21,6 +21,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 jobs:
   # The success path on Linux and macOS, on the oldest and the newest Python.
   test:

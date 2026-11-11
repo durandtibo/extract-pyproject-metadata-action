@@ -20,6 +20,8 @@ on:
     - cron: "10 9 * * *" # Run nightly at 9:10 AM UTC to catch issues from external changes
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   # Load the shared OS and Python matrix from durandtibo/workflow-config-action once.
   get-matrix:

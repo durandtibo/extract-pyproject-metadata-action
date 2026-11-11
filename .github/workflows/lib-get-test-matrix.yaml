@@ -27,6 +27,8 @@ on:
 
   workflow_dispatch: # Allows manual triggering for testing purposes
 
+permissions: {}
+
 jobs:
   get-matrix:
     permissions:

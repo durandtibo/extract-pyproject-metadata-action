@@ -11,6 +11,8 @@ on:
       - main
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   verify-workflows:
     permissions:
