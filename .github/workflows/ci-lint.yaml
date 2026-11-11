@@ -6,6 +6,8 @@ on:
   workflow_call:
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   lint:
     permissions:

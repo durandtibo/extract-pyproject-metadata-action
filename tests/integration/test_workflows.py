@@ -90,7 +90,7 @@ def test_no_workflow_uses_concurrency(path: Path) -> None:
 def test_permissions_are_set_on_every_job_and_the_workflow_grants_nothing(path: Path) -> None:
     workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    assert workflow.get("permissions", {}) == {}
+    assert workflow["permissions"] == {}
     assert [name for name, job in workflow["jobs"].items() if "permissions" not in job] == []
 
 

@@ -19,6 +19,8 @@ on:
     branches: ["main"]
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   analysis:
     name: Scorecard analysis

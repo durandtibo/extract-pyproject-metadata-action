@@ -6,6 +6,8 @@ on:
   workflow_call:
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   # pyright reads the packages from .venv (see [tool.pyright] in pyproject.toml)
   type-checking:

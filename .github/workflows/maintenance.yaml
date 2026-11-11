@@ -11,6 +11,8 @@ on:
     - cron: "30 9 * * 1" # Every Monday at 9:30 AM UTC
   workflow_dispatch: # to trigger manually
 
+permissions: {}
+
 jobs:
   packaging:
     permissions:
