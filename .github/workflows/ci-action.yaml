@@ -1,13 +1,16 @@
 name: Test Action
 
 # The integration test of the current code of the action, `uses: ./` (it can only run on GitHub;
-# nightly-test-released.yaml tests the published version). It checks the wiring: the
-# inputs reach the action and the outputs come back. The logic is covered by tests/.
+# nightly-test-released.yaml tests the published version). It checks that the action works as a
+# whole: the inputs reach the program, every output comes back with the right value, the invalid
+# inputs and the warnings with `strict` fail the step, and nothing is left behind. The logic is
+# covered by tests/.
 #
-# - `golden` runs the action on a few cases and compares the whole `json` output.
-# - `wiring` runs on Linux and macOS, on the oldest and the newest Python: a success, the
-#   failures (each must fail without setting an output), `strict` and what is left behind.
-# - Add a job or a golden case (test-data/) for every new input or output.
+# - `test` runs on the OS and Python matrix and checks every output one by one.
+# - `golden` compares the whole `json` output of a few cases (test-data/) with their golden file.
+# - The other jobs each check one behaviour; the failures use `continue-on-error` and check the
+#   outcome and that no output was set.
+# - Add a job or a golden case for every new input or output.
 # - Values go through `env:`, never interpolated in `run:`.
 
 on:
@@ -19,6 +22,416 @@ on:
         type: string
 
 jobs:
+  # The success path on Linux and macOS, on the oldest and the newest Python.
+  test:
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      max-parallel: 8
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
+        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 🧪 Run the action with every input
+        id: action
+        uses: ./
+        with:
+          pyproject-path: test-data/readme-example/pyproject.toml
+          extra-values: '[""]'
+          dependencies: '["numpy", "pytest@group:dev", "missing"]'
+          python-candidates: '["3.11","3.12","3.13"]'
+          strict: "false"
+
+      - name: ✓ Verify every output
+        env:
+          NAME: ${{ steps.action.outputs.name }}
+          NORMALIZED_NAME: ${{ steps.action.outputs.normalized-name }}
+          FILE_NAME: ${{ steps.action.outputs.file-name }}
+          VERSION: ${{ steps.action.outputs.version }}
+          NORMALIZED_VERSION: ${{ steps.action.outputs.normalized-version }}
+          REQUIRES_PYTHON: ${{ steps.action.outputs.requires-python }}
+          PYTHON_VERSIONS: ${{ steps.action.outputs.python-versions }}
+          PYTHON_MIN: ${{ steps.action.outputs.python-min }}
+          PYTHON_MAX: ${{ steps.action.outputs.python-max }}
+          EXTRAS: ${{ steps.action.outputs.extras }}
+          GROUPS_: ${{ steps.action.outputs.groups }}
+          SPECIFIERS: ${{ steps.action.outputs.dependency-specifiers }}
+          JSON: ${{ steps.action.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "My_Package" "$NAME"
+          assert_equal "normalized-name" "my-package" "$NORMALIZED_NAME"
+          assert_equal "file-name" "my_package" "$FILE_NAME"
+          assert_equal "version" "1.2.3" "$VERSION"
+          assert_equal "normalized-version" "1.2.3" "$NORMALIZED_VERSION"
+          assert_equal "requires-python" ">=3.12" "$REQUIRES_PYTHON"
+          assert_equal "python-versions" '["3.12","3.13"]' "$PYTHON_VERSIONS"
+          assert_equal "python-min" "3.12" "$PYTHON_MIN"
+          assert_equal "python-max" "3.13" "$PYTHON_MAX"
+          assert_equal "extras" '["","numpy","pandas"]' "$EXTRAS"
+          assert_equal "groups" '["dev"]' "$GROUPS_"
+          assert_equal "dependency-specifiers" '{"numpy":"<3,>=1.20","pytest@group:dev":">=8","missing":null}' "$SPECIFIERS"
+          assert_equal "json: extras" '["","numpy","pandas"]' "$(jq -c .extras <<< "$JSON")"
+          assert_equal "json: warning code" "dependency-not-found" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          print_success "every output has the expected value"
+
+      - name: 🧪 Run the action on a minimal file
+        id: minimal
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify the defaults
+        env:
+          NAME: ${{ steps.minimal.outputs.name }}
+          VERSION: ${{ steps.minimal.outputs.version }}
+          EXTRAS: ${{ steps.minimal.outputs.extras }}
+          GROUPS_: ${{ steps.minimal.outputs.groups }}
+          SPECIFIERS: ${{ steps.minimal.outputs.dependency-specifiers }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "$NAME"
+          assert_equal "version" "0.1.0" "$VERSION"
+          assert_equal "extras" "[]" "$EXTRAS"
+          assert_equal "groups" "[]" "$GROUPS_"
+          assert_equal "dependency-specifiers" "{}" "$SPECIFIERS"
+          print_success "the defaults are applied"
+
+      - name: ✓ Verify the action leaves nothing behind
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "__pycache__ directories" "0" "$(count_pycache)"
+          print_success "nothing left behind"
+
+  # A warning is reported in the json output and fails the step only with strict.
+  test-warning:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Run the action on a file with a dynamic version
+        id: action
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+
+      - name: ✓ Verify a warning does not fail the step without strict
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          NAME: ${{ steps.action.outputs.name }}
+          VERSION: ${{ steps.action.outputs.version }}
+          JSON: ${{ steps.action.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "success" "$OUTCOME"
+          assert_equal "name" "dynamic-pkg" "$NAME"
+          assert_equal "version" "" "$VERSION"
+          assert_equal "warning code" "dynamic-version" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          print_success "a warning is reported and does not fail the step"
+
+  # The default of pyproject-path is `pyproject.toml` of the workspace.
+  test-default-path:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Put a pyproject.toml at the default path
+        run: cp test-data/with-extras/pyproject.toml pyproject.toml
+
+      - name: 🧪 Run the action without pyproject-path
+        id: action
+        uses: ./
+
+      - name: ✓ Verify the file at the default path is read
+        env:
+          NAME: ${{ steps.action.outputs.name }}
+          EXTRAS: ${{ steps.action.outputs.extras }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "coola" "$NAME"
+          assert_equal "extras" '["numpy","pandas"]' "$EXTRAS"
+          print_success "the default pyproject-path is read"
+
+  # The path reaches the program unsplit.
+  test-path-with-spaces:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Copy the file to a path with spaces
+        run: |
+          mkdir "dir with spaces"
+          cp test-data/with-extras/pyproject.toml "dir with spaces/my pyproject.toml"
+
+      - name: 🧪 Run the action on the path with spaces
+        id: action
+        uses: ./
+        with:
+          pyproject-path: dir with spaces/my pyproject.toml
+
+      - name: ✓ Verify the file is read
+        env:
+          NAME: ${{ steps.action.outputs.name }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "coola" "$NAME"
+          print_success "a path with spaces is read"
+
+  # `strict` fails the step on a warning, and only on a warning.
+  test-strict:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Run the action with strict on a warning
+        id: warning
+        uses: ./
+        with:
+          pyproject-path: test-data/dynamic-version/pyproject.toml
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify strict with a warning fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.warning.outcome }}
+          JSON: ${{ steps.warning.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "strict with a warning fails the step"
+
+      - name: 🧪 Run the action with strict on a missing dependency
+        id: missing
+        uses: ./
+        with:
+          pyproject-path: test-data/with-dependencies/pyproject.toml
+          dependencies: '["invoke-tasklib","missing"]'
+          strict: "true"
+        continue-on-error: true
+
+      - name: ✓ Verify strict with a missing dependency fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+          JSON: ${{ steps.missing.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "strict with a missing dependency fails the step"
+
+      - name: 🧪 Run the action with strict and no warning
+        id: clean
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "true"
+
+      - name: ✓ Verify strict does not fail without a warning
+        env:
+          OUTCOME: ${{ steps.clean.outcome }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "outcome" "success" "$OUTCOME"
+          print_success "strict does not fail without a warning"
+
+  # Invalid inputs and files fail the step without setting an output.
+  test-invalid-inputs:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Run the action with a missing file
+        id: missing-file
+        uses: ./
+        with:
+          pyproject-path: test-data/does-not-exist/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify a missing file fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.missing-file.outcome }}
+          JSON: ${{ steps.missing-file.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "a missing file fails the step"
+
+      - name: 🧪 Run the action with a missing version
+        id: missing-version
+        uses: ./
+        with:
+          pyproject-path: test-data/missing-version/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify a missing version fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.missing-version.outcome }}
+          JSON: ${{ steps.missing-version.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "a missing version fails the step"
+
+      - name: 🧪 Run the action with an invalid extra-values
+        id: extra-values
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          extra-values: "not json"
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid extra-values fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.extra-values.outcome }}
+          JSON: ${{ steps.extra-values.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid extra-values fails the step"
+
+      - name: 🧪 Run the action with an invalid dependencies
+        id: dependencies
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          dependencies: '"numpy"'
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid dependencies fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.dependencies.outcome }}
+          JSON: ${{ steps.dependencies.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid dependencies fails the step"
+
+      - name: 🧪 Run the action with an invalid python-candidates
+        id: python-candidates
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          python-candidates: '["three"]'
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid python-candidates fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.python-candidates.outcome }}
+          JSON: ${{ steps.python-candidates.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid python-candidates fails the step"
+
+      - name: 🧪 Run the action with an invalid strict
+        id: strict
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+          strict: "yes"
+        continue-on-error: true
+
+      - name: ✓ Verify an invalid strict fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.strict.outcome }}
+          JSON: ${{ steps.strict.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "an invalid strict fails the step"
+
+      - name: ✓ Verify the action leaves nothing behind
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "__pycache__ directories" "0" "$(count_pycache)"
+          print_success "nothing left behind"
+
+  # Only Python 3.11 or later is supported: the action must fail with an explicit error.
+  test-old-python:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: 🧪 Run the action with Python 3.10
+        id: old-python
+        uses: ./
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify Python 3.10 fails the step and sets no output
+        env:
+          OUTCOME: ${{ steps.old-python.outcome }}
+          JSON: ${{ steps.old-python.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "Python 3.10 fails the step"
+
   # Each case runs the action with the inputs of its inputs.json (the other inputs have their
   # default, repeated here: tests/integration/test_workflows.py checks them against action.yaml)
   # and compares the json output with its expected.json. tests/integration/test_golden.py
@@ -70,185 +483,3 @@ jobs:
           EXPECTED: test-data/${{ matrix.case }}/expected.json
           ACTUAL: ${{ steps.action.outputs.json }}
         run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
-
-  # What the golden files cannot see: failures, strict, and what the action leaves behind.
-  wiring:
-    permissions:
-      contents: read
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
-    strategy:
-      max-parallel: 8
-      fail-fast: false
-      matrix:
-        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
-        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: 🧪 Test a successful run
-        id: test-minimal
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Compare the json output with the golden file
-        env:
-          EXPECTED: test-data/minimal/expected.json
-          ACTUAL: ${{ steps.test-minimal.outputs.json }}
-        run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
-
-      - name: 🧪 Test a pyproject.toml with extras
-        id: test-extras
-        uses: ./
-        with:
-          pyproject-path: test-data/with-extras/pyproject.toml
-
-      - name: ✓ Compare the json output with the golden file (extras)
-        env:
-          EXPECTED: test-data/with-extras/expected.json
-          ACTUAL: ${{ steps.test-extras.outputs.json }}
-        run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
-
-      - name: 🧪 Test a missing version (should fail)
-        id: test-missing-version
-        uses: ./
-        with:
-          pyproject-path: test-data/missing-version/pyproject.toml
-        continue-on-error: true
-
-      - name: ✓ Verify a missing version fails the step
-        env:
-          OUTCOME: ${{ steps.test-missing-version.outcome }}
-          JSON: ${{ steps.test-missing-version.outputs.json }}
-        run: |
-          source scripts/test-helper.sh
-          assert_failed "$OUTCOME" "$JSON"
-          print_success "a missing version fails the step"
-
-      - name: 🧪 Test a missing file (should fail)
-        id: test-missing-file
-        uses: ./
-        with:
-          pyproject-path: test-data/does-not-exist/pyproject.toml
-        continue-on-error: true
-
-      - name: ✓ Verify Test a missing file fails the step
-        env:
-          OUTCOME: ${{ steps.test-missing-file.outcome }}
-          JSON: ${{ steps.test-missing-file.outputs.json }}
-        run: |
-          source scripts/test-helper.sh
-          assert_failed "$OUTCOME" "$JSON"
-          print_success "Test a missing file fails the step"
-
-      - name: 🧪 Test an invalid extra-values (should fail)
-        id: test-invalid-input
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          extra-values: "not json"
-        continue-on-error: true
-
-      - name: ✓ Verify Test an invalid extra-values fails the step
-        env:
-          OUTCOME: ${{ steps.test-invalid-input.outcome }}
-          JSON: ${{ steps.test-invalid-input.outputs.json }}
-        run: |
-          source scripts/test-helper.sh
-          assert_failed "$OUTCOME" "$JSON"
-          print_success "Test an invalid extra-values fails the step"
-
-      - name: 🧪 Test strict with a warning (should fail)
-        id: test-strict
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-          strict: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify Test strict with a warning fails the step
-        env:
-          OUTCOME: ${{ steps.test-strict.outcome }}
-          JSON: ${{ steps.test-strict.outputs.json }}
-        run: |
-          source scripts/test-helper.sh
-          assert_failed "$OUTCOME" "$JSON"
-          print_success "Test strict with a warning fails the step"
-
-      - name: 🧪 Test the same file without strict
-        id: test-not-strict
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-
-      - name: ✓ Verify a warning does not fail the step without strict
-        env:
-          OUTCOME: ${{ steps.test-not-strict.outcome }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "success" "$OUTCOME"
-          print_success "a warning does not fail the step without strict"
-
-      - name: 🧪 Test strict with a missing dependency (should fail)
-        id: test-strict-missing
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '["invoke-tasklib","missing"]'
-          strict: "true"
-        continue-on-error: true
-
-      - name: ✓ Verify Test strict with a missing dependency fails the step
-        env:
-          OUTCOME: ${{ steps.test-strict-missing.outcome }}
-          JSON: ${{ steps.test-strict-missing.outputs.json }}
-        run: |
-          source scripts/test-helper.sh
-          assert_failed "$OUTCOME" "$JSON"
-          print_success "Test strict with a missing dependency fails the step"
-
-      - name: ✓ Verify the action leaves nothing behind
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "__pycache__ directories" "0" "$(count_pycache)"
-          print_success "nothing left behind"
-
-  # Only Python 3.11 or later is supported: the action must fail with an explicit error
-  test-old-python:
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: "3.10"
-
-      - name: 🧪 Test the action with Python 3.10 (should fail)
-        id: test-old-python
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-        continue-on-error: true
-
-      - name: ✓ Verify Python 3.10 is rejected
-        env:
-          OUTCOME: ${{ steps.test-old-python.outcome }}
-          JSON: ${{ steps.test-old-python.outputs.json }}
-        run: |
-          source scripts/test-helper.sh
-          assert_failed "$OUTCOME" "$JSON"
-          print_success "Python 3.10 is rejected"
