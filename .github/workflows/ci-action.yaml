@@ -4,7 +4,9 @@ name: Test Action
 # nightly-test-released.yaml tests the published version). It checks the wiring: the
 # inputs reach the action and the outputs come back. The logic is covered by tests/.
 #
-# - `smoke` runs the action on a few simple files, on the oldest and the newest Python.
+# - `golden` runs the action on a few cases and compares the whole `json` output.
+# - `wiring` runs on Linux and macOS, on the oldest and the newest Python: a success, the
+#   failures (each must fail without setting an output), `strict` and what is left behind.
 # - Add a job or a golden case (test-data/) for every new input or output.
 # - Values go through `env:`, never interpolated in `run:`.
 
@@ -17,79 +19,6 @@ on:
         type: string
 
 jobs:
-  # A smoke test of the contract: the main inputs and outputs, on Linux and macOS.
-  smoke:
-    permissions:
-      contents: read
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
-    strategy:
-      max-parallel: 8
-      fail-fast: false
-      matrix:
-        os: ${{ fromJson(inputs.test-matrix).os_matrix }}
-        python-version: ${{ fromJson(inputs.test-matrix).python_versions }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: 🧪 Test minimal pyproject.toml
-        id: test-minimal
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: ✓ Verify minimal pyproject.toml
-        env:
-          NAME: ${{ steps.test-minimal.outputs.name }}
-          VERSION: ${{ steps.test-minimal.outputs.version }}
-          EXTRAS: ${{ steps.test-minimal.outputs.extras }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "minimal-pkg" "$NAME"
-          assert_equal "version" "0.1.0" "$VERSION"
-          assert_equal "extras" "[]" "$EXTRAS"
-          print_success "minimal pyproject.toml test passed"
-
-      - name: 🧪 Test pyproject.toml with extras
-        id: test-extras
-        uses: ./
-        with:
-          pyproject-path: test-data/with-extras/pyproject.toml
-
-      - name: ✓ Verify extras
-        env:
-          NAME: ${{ steps.test-extras.outputs.name }}
-          VERSION: ${{ steps.test-extras.outputs.version }}
-          EXTRAS: ${{ steps.test-extras.outputs.extras }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "name" "coola" "$NAME"
-          assert_equal "version" "1.2.3" "$VERSION"
-          assert_equal "extras" '["numpy","pandas"]' "$EXTRAS"
-          print_success "extras test passed"
-
-      - name: 🧪 Test missing version (should fail)
-        id: test-missing-version
-        uses: ./
-        with:
-          pyproject-path: test-data/missing-version/pyproject.toml
-        continue-on-error: true
-
-      - name: ✓ Verify a missing version fails the step
-        env:
-          OUTCOME: ${{ steps.test-missing-version.outcome }}
-        run: |
-          source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
-          print_success "a missing version fails the step"
-
   # Each case runs the action with the inputs of its inputs.json (the other inputs have their
   # default, repeated here: tests/integration/test_workflows.py checks them against action.yaml)
   # and compares the json output with its expected.json. tests/integration/test_golden.py
@@ -176,6 +105,34 @@ jobs:
           ACTUAL: ${{ steps.test-minimal.outputs.json }}
         run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
 
+      - name: 🧪 Test a pyproject.toml with extras
+        id: test-extras
+        uses: ./
+        with:
+          pyproject-path: test-data/with-extras/pyproject.toml
+
+      - name: ✓ Compare the json output with the golden file (extras)
+        env:
+          EXPECTED: test-data/with-extras/expected.json
+          ACTUAL: ${{ steps.test-extras.outputs.json }}
+        run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
+
+      - name: 🧪 Test a missing version (should fail)
+        id: test-missing-version
+        uses: ./
+        with:
+          pyproject-path: test-data/missing-version/pyproject.toml
+        continue-on-error: true
+
+      - name: ✓ Verify a missing version fails the step
+        env:
+          OUTCOME: ${{ steps.test-missing-version.outcome }}
+          JSON: ${{ steps.test-missing-version.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_failed "$OUTCOME" "$JSON"
+          print_success "a missing version fails the step"
+
       - name: 🧪 Test a missing file (should fail)
         id: test-missing-file
         uses: ./
@@ -186,9 +143,10 @@ jobs:
       - name: ✓ Verify Test a missing file fails the step
         env:
           OUTCOME: ${{ steps.test-missing-file.outcome }}
+          JSON: ${{ steps.test-missing-file.outputs.json }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
+          assert_failed "$OUTCOME" "$JSON"
           print_success "Test a missing file fails the step"
 
       - name: 🧪 Test an invalid extra-values (should fail)
@@ -202,9 +160,10 @@ jobs:
       - name: ✓ Verify Test an invalid extra-values fails the step
         env:
           OUTCOME: ${{ steps.test-invalid-input.outcome }}
+          JSON: ${{ steps.test-invalid-input.outputs.json }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
+          assert_failed "$OUTCOME" "$JSON"
           print_success "Test an invalid extra-values fails the step"
 
       - name: 🧪 Test strict with a warning (should fail)
@@ -218,9 +177,10 @@ jobs:
       - name: ✓ Verify Test strict with a warning fails the step
         env:
           OUTCOME: ${{ steps.test-strict.outcome }}
+          JSON: ${{ steps.test-strict.outputs.json }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
+          assert_failed "$OUTCOME" "$JSON"
           print_success "Test strict with a warning fails the step"
 
       - name: 🧪 Test the same file without strict
@@ -249,9 +209,10 @@ jobs:
       - name: ✓ Verify Test strict with a missing dependency fails the step
         env:
           OUTCOME: ${{ steps.test-strict-missing.outcome }}
+          JSON: ${{ steps.test-strict-missing.outputs.json }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
+          assert_failed "$OUTCOME" "$JSON"
           print_success "Test strict with a missing dependency fails the step"
 
       - name: ✓ Verify the action leaves nothing behind
@@ -286,7 +247,8 @@ jobs:
       - name: ✓ Verify Python 3.10 is rejected
         env:
           OUTCOME: ${{ steps.test-old-python.outcome }}
+          JSON: ${{ steps.test-old-python.outputs.json }}
         run: |
           source scripts/test-helper.sh
-          assert_equal "outcome" "failure" "$OUTCOME"
+          assert_failed "$OUTCOME" "$JSON"
           print_success "Python 3.10 is rejected"

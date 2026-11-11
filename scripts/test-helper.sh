@@ -24,6 +24,12 @@ assert_equal() {
 	fi
 }
 
+# A step that must fail: its outcome is "failure" and it set no output (the json one stands for all).
+assert_failed() {
+	assert_equal "outcome" "failure" "$1"
+	assert_equal "json output of a failed step" "" "$2"
+}
+
 # Print the number of __pycache__ directories in the workspace (the action must not leave any).
 count_pycache() {
 	find . -name __pycache__ -not -path './.git/*' | wc -l | tr -d ' '
