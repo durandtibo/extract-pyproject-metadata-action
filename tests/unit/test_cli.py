@@ -793,3 +793,14 @@ def test_run_decodes_the_environment_as_utf8(
 
     assert run() == 0
     assert json.loads(stdout.getvalue())["extras"] == ["é"]
+
+
+def test_main_strict_passes_on_a_static_and_dynamic_field_that_is_not_read(
+    tmp_path: Path,
+) -> None:
+    path = write_pyproject(
+        tmp_path,
+        '[project]\nname = "coola"\nversion = "1"\ndescription = "d"\ndynamic = ["description"]\n',
+    )
+
+    assert run_main(["--strict", "true", str(path), "[]"]) == 0

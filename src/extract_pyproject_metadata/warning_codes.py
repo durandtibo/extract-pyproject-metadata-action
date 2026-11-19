@@ -14,7 +14,10 @@ __all__ = ["WARNING_CODES"]
 # the README are generated from this one (``make docs``).
 WARNING_CODES: dict[WarningCode, tuple[str, str]] = {
     "static-and-dynamic": (
-        "A field of `[project]` has a value and is also in `dynamic` (forbidden by PEP 621).",
+        (
+            "A field that the action reads (`name`, `version`, `requires-python`, `dependencies`, "
+            "`optional-dependencies`) has a value and is also in `dynamic` (forbidden by PEP 621)."
+        ),
         "The static value is used.",
     ),
     "dynamic-version": (
