@@ -139,46 +139,11 @@ def test_read_project_name_and_version(tmp_path: Path) -> None:
     }
 
 
-def test_read_project_extras_are_sorted(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        name = "coola"
-        version = "1.2.3"
-
-        [project.optional-dependencies]
-        pandas = ["pandas"]
-        numpy = ["numpy"]
-        """,
-    )
-
-    metadata = extract(path)
-
-    assert metadata["extras"] == ["numpy", "pandas"]
-
-
-def test_read_project_extra_values_are_prepended(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        name = "coola"
-        version = "1.2.3"
-
-        [project.optional-dependencies]
-        numpy = ["numpy"]
-        """,
-    )
-
-    metadata = extract(path, '[""]')
-
-    assert metadata["extras"] == ["", "numpy"]
-
-
 @pytest.mark.parametrize(
     ("extra_values_json", "expected"),
     [
+        ("[]", ["numpy", "pandas"]),
+        ('[""]', ["", "numpy", "pandas"]),
         ('["numpy"]', ["numpy", "pandas"]),
         ('["pandas", "numpy"]', ["pandas", "numpy"]),
         ('["all", "all"]', ["all", "numpy", "pandas"]),
@@ -186,7 +151,7 @@ def test_read_project_extra_values_are_prepended(tmp_path: Path) -> None:
         ('["all", "numpy", "all"]', ["all", "numpy", "pandas"]),
     ],
 )
-def test_read_project_extras_are_deduplicated(
+def test_read_project_extras_are_sorted_prepended_and_deduplicated(
     tmp_path: Path, extra_values_json: str, expected: list[str]
 ) -> None:
     path = write_pyproject(
@@ -203,19 +168,6 @@ def test_read_project_extras_are_deduplicated(
     )
 
     assert extract(path, extra_values_json)["extras"] == expected
-
-
-def test_read_project_missing_name(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        version = "1.2.3"
-        """,
-    )
-
-    with pytest.raises(MetadataError, match=r"\[project\]\.name: missing"):
-        extract(path)
 
 
 @pytest.mark.parametrize("dynamic", ['["name"]', '["name", "version"]', '["readme", "name"]'])

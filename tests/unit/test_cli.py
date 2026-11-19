@@ -24,7 +24,6 @@ from tests.helpers import (
     messages,
     parse_github_output,
     run_main,
-    specifier_error,
     write_pyproject,
 )
 
@@ -85,52 +84,6 @@ def test_main_json_keeps_non_ascii_characters(
     assert "\\u" not in out
 
 
-def test_main_strict_fails_on_a_static_and_dynamic_field(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "coola"\nversion = "1"\ndynamic = ["version"]\n'
-    )
-
-    assert run_main(["--strict", "true", str(path), "[]"]) == 1
-    assert (
-        "[project].version is set and also listed in [project].dynamic" in capsys.readouterr().err
-    )
-
-
-def test_main_prints_json_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        name = "coola"
-        version = "1.2.3"
-        """,
-    )
-
-    exit_code = run_main([str(path), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert json.loads(captured.out) == {
-        "name": "coola",
-        "normalized_name": "coola",
-        "file_name": "coola",
-        "version": "1.2.3",
-        "normalized_version": "1.2.3",
-        "requires_python": "",
-        "extras": [],
-        "groups": [],
-        "python_versions": ["3.11", "3.12", "3.13", "3.14", "3.15"],
-        "python_min": "3.11",
-        "python_max": "3.15",
-        "dependency_specifiers": {},
-        "dependency_requirements": {},
-        "warnings": [],
-        "schema_version": 1,
-    }
-
-
 def test_main_parses_the_file_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -158,6 +111,86 @@ def test_main_returns_nonzero_on_error(tmp_path: Path, capsys: pytest.CaptureFix
 
     assert exit_code == 1
     assert "not a file" in captured.err
+
+
+BASE_TOML = '[project]\nname = "coola"\nversion = "1"\n'
+
+
+@pytest.mark.parametrize(
+    ("toml", "options", "tail", "message"),
+    [
+        (BASE_TOML, [], ["[]", "not json"], "dependencies: not valid JSON"),
+        (BASE_TOML, [], ["[]", '{"a": 1}'], "dependencies: must be a JSON array of strings"),
+        (BASE_TOML, [], ["not json"], "extra-values: not valid JSON"),
+        (BASE_TOML, [], ["{}"], "extra-values: must be a JSON array"),
+        (BASE_TOML, [], ["[1]"], "extra-values: must be a JSON array of strings"),
+        (
+            BASE_TOML,
+            ["--strict", "maybe"],
+            ["[]"],
+            "strict: must be 'true' or 'false', got: 'maybe'",
+        ),
+        (
+            BASE_TOML,
+            ["--python-candidates", '["3.12.1"]'],
+            ["[]"],
+            "python-candidates: must contain",
+        ),
+        (
+            BASE_TOML,
+            ["--python-candidates", "not json"],
+            ["[]"],
+            "python-candidates: not valid JSON",
+        ),
+        (
+            DATA_WITH_SCOPES,
+            [],
+            ["[]", '["numpy@dev"]'],
+            "dependencies: entry 'numpy@dev' has an invalid scope",
+        ),
+        (
+            BASE_TOML.replace('"1"', '"latest"'),
+            [],
+            ["[]"],
+            "not a valid PEP 440 version: 'latest'",
+        ),
+        (
+            BASE_TOML + '\n[dependency-groups]\ndev = [{include_group = "a"}]\n',
+            [],
+            ["[]", '["x"]'],
+            "[dependency-groups].dev: entries must be strings or",
+        ),
+        (
+            BASE_TOML + '[dependency-groups]\ndev = "numpy"\n',
+            [],
+            ["[]", '["numpy"]'],
+            "[dependency-groups].dev: must be an array",
+        ),
+        (
+            BASE_TOML + 'dependencies = ["a", 1]\n',
+            [],
+            ["[]", '["a"]'],
+            "[project].dependencies: must contain only strings, got: 1",
+        ),
+    ],
+)
+def test_main_returns_one_with_the_message_for_an_invalid_input(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    toml: str,
+    options: list[str],
+    tail: list[str],
+    message: str,
+) -> None:
+    path = write_pyproject(tmp_path, toml)
+
+    exit_code = run_main([*options, str(path), *tail])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert message in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
 
 
 def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
@@ -247,15 +280,6 @@ def test_main_strict_fails_without_writing_the_outputs(
     assert not output.exists()
 
 
-def test_main_invalid_strict_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    assert run_main(["--strict", "maybe", str(path), "[]"]) == 1
-    assert "strict: must be 'true' or 'false', got: 'maybe'" in capsys.readouterr().err
-
-
 @pytest.mark.parametrize(
     ("message", "pyproject_path", "annotate", "expected"),
     [
@@ -339,57 +363,6 @@ def test_main_github_output_multiline_name_is_rejected(
     assert "[project].name: not a valid project name" in captured.err
 
 
-@pytest.mark.parametrize(
-    ("argv_tail", "message"),
-    [
-        (["[]", "not json"], "dependencies: not valid JSON"),
-        (["[]", '{"a": 1}'], "dependencies: must be a JSON array of strings"),
-        (["not json"], "extra-values: not valid JSON"),
-        (["{}"], "extra-values: must be a JSON array"),
-        (["[1]"], "extra-values: must be a JSON array of strings"),
-    ],
-)
-def test_main_invalid_inputs_return_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv_tail: list[str], message: str
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
-
-    exit_code = run_main([str(path), *argv_tail])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert message in captured.err
-    assert captured.out == ""
-
-
-def test_main_unknown_group_entry_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "coola"\nversion = "1"\n\n[dependency-groups]\ndev = [{include_group = "a"}]\n',
-    )
-
-    assert run_main([str(path), "[]", '["x"]']) == 1
-    assert "[dependency-groups].dev: entries must be strings or" in capsys.readouterr().err
-
-
-def test_main_malformed_dependency_table_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\ndev = "numpy"\n'
-    )
-
-    exit_code = run_main([str(path), "[]", '["numpy"]'])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "[dependency-groups].dev: must be an array" in captured.err
-    assert "Traceback" not in captured.err
-    assert captured.out == ""
-
-
 def test_main_include_group_cycle_warning_annotation(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -439,19 +412,6 @@ def test_main_warning_annotation_names_the_file(
     assert capsys.readouterr().out.splitlines()[0] == (
         "::warning file=pyproject.toml,title=dynamic-version::[project].version is dynamic, the version output is empty"
     )
-
-
-def test_main_invalid_version_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "latest"\n')
-
-    exit_code = run_main([str(path), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "not a valid PEP 440 version: 'latest'" in captured.err
-    assert captured.out == ""
 
 
 def test_main_missing_dependency_is_a_warning(
@@ -508,127 +468,6 @@ def test_main_strict_fails_for_a_missing_dependency(
     )
     assert captured.out == ""
     assert not output.exists()
-
-
-def test_main_no_warning_when_all_the_dependencies_are_found(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    exit_code = run_main(["--strict", "true", str(path), "[]", '["nospec"]'])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["dependency_specifiers"] == {"nospec": ""}
-
-
-def test_main_missing_dependency_with_dynamic_dependencies_warns_twice(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\ndynamic = ["dependencies"]\n'
-    )
-
-    exit_code = run_main([str(path), "[]", '["numpy"]'])
-
-    assert exit_code == 0
-    assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
-        ("[project].dependencies is dynamic, it cannot be read, so no requirement is found in it"),
-        "dependency 'numpy' not found",
-    ]
-
-
-def test_main_strict_fails_when_no_python_version_is_allowed(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = ">=4"\n'
-    )
-
-    assert run_main(["--strict", "true", str(path), "[]"]) == 1
-    assert "strict: true and there are 1 warning(s)" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("raw", ['["3.12.1"]', "not json"])
-def test_main_invalid_python_candidates_return_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: str
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
-
-    exit_code = run_main(["--python-candidates", raw, str(path), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "python-candidates" in captured.err
-    assert captured.out == ""
-
-
-def test_main_warnings_are_in_the_order_of_the_sources(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "a"\ndynamic = ["version"]\nrequires-python = "python3"\n'
-        'dependencies = ["x>=1", "x>=2"]\n\n[dependency-groups]\ndev = ["x>=3", "not valid!"]\n',
-    )
-
-    assert run_main([str(path), "[]", '["x"]']) == 0
-    warnings = json.loads(capsys.readouterr().out)["warnings"]
-    assert len(warnings) == 3
-    # The metadata, the Python versions, then the lookups.
-    assert [w["message"] for w in warnings[:2]] == [
-        "[project].version is dynamic, the version output is empty",
-        (
-            f"[project].requires-python is not a valid version specifier, "
-            f"the python-versions output is empty: {specifier_error('python3')}"
-        ),
-    ]
-    assert warnings[2]["message"].startswith("Ignoring invalid requirement 'not valid!': ")
-
-
-def test_main_missing_dependency_names_the_entry_with_a_scope(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
-
-    assert run_main([str(path), "[]", '["tqdm", "tqdm@extra:fast"]']) == 0
-    assert messages(json.loads(capsys.readouterr().out)["warnings"]) == [
-        "dependency 'tqdm@extra:fast' not found"
-    ]
-
-
-def test_main_returns_one_for_an_invalid_dependency_scope(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DATA_WITH_SCOPES)
-
-    assert run_main([str(path), "[]", '["numpy@dev"]']) == 1
-    assert "dependencies: entry 'numpy@dev' has an invalid scope" in capsys.readouterr().err
-
-
-def test_main_non_string_requirement_returns_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, '[project]\nname = "coola"\nversion = "1"\ndependencies = ["a", 1]\n'
-    )
-
-    assert run_main([str(path), "[]", '["a"]']) == 1
-    assert "[project].dependencies: must contain only strings, got: 1" in capsys.readouterr().err
-
-
-def test_main_dynamic_version_is_a_warning_and_strict_fails(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    assert run_main([str(path), "[]"]) == 0
-    report = json.loads(capsys.readouterr().out)
-    assert (report["version"], len(report["warnings"])) == ("", 1)
-
-    assert run_main(["--strict", "true", str(path), "[]"]) == 1
-    captured = capsys.readouterr()
-    assert "[project].version is dynamic" in captured.err
-    assert captured.out == ""
 
 
 def test_main_github_output_multiline_requires_python_cannot_inject_commands(

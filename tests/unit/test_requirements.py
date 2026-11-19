@@ -172,37 +172,35 @@ def test_expansion_flatten_self_include_adds_a_warning() -> None:
     assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> a"]
 
 
-def test_expansion_flatten_cycle_message_starts_at_the_smallest_group() -> None:
-    groups = {
-        "c": [{"include-group": "a"}],
-        "a": [{"include-group": "b"}],
-        "b": [{"include-group": "c"}],
-    }
-    _, warnings = flatten(groups, "b")
+@pytest.mark.parametrize(
+    ("groups", "name", "expected"),
+    [
+        (
+            {
+                "c": [{"include-group": "a"}],
+                "a": [{"include-group": "b"}],
+                "b": [{"include-group": "c"}],
+            },
+            "b",
+            "a -> b -> c -> a",
+        ),
+        (
+            {
+                "a": [{"include-group": "b"}],
+                "b": [{"include-group": "c"}],
+                "c": [{"include-group": "b"}],
+            },
+            "a",
+            "b -> c -> b",
+        ),
+        ({"My_Group": [{"include-group": "my-group"}]}, "My_Group", "my-group -> my-group"),
+    ],
+    ids=["starts-at-the-smallest-group", "not-the-path-leading-to-it", "canonical-names"],
+)
+def test_expansion_flatten_cycle_message(groups: dict, name: str, expected: str) -> None:
+    _, warnings = flatten(groups, name)
 
-    assert messages(warnings) == [
-        "[dependency-groups] has an include-group cycle: a -> b -> c -> a"
-    ]
-
-
-def test_expansion_flatten_cycle_does_not_include_the_path_leading_to_it() -> None:
-    groups = {
-        "a": [{"include-group": "b"}],
-        "b": [{"include-group": "c"}],
-        "c": [{"include-group": "b"}],
-    }
-    _, warnings = flatten(groups, "a")
-
-    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: b -> c -> b"]
-
-
-def test_expansion_flatten_cycle_uses_canonical_names() -> None:
-    groups = {"My_Group": [{"include-group": "my-group"}]}
-    _, warnings = flatten(groups, "My_Group")
-
-    assert messages(warnings) == [
-        "[dependency-groups] has an include-group cycle: my-group -> my-group"
-    ]
+    assert messages(warnings) == [f"[dependency-groups] has an include-group cycle: {expected}"]
 
 
 def test_expansion_flatten_no_cycle_adds_no_warning() -> None:
@@ -301,22 +299,19 @@ def test_expansion_flatten_missing_include_group_is_reported_once_per_group() ->
     ]
 
 
-def test_extract_metadata_groups_are_sorted(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, GROUPS_TOML)
+@pytest.mark.parametrize(
+    ("toml", "expected"),
+    [
+        (GROUPS_TOML, ["Dev", "docs", "test"]),
+        ('[project]\nname = "p"\nversion = "1"\n', []),
+        ('[project]\nname = "p"\nversion = "1"\n[dependency-groups]\n', []),
+    ],
+    ids=["sorted", "no-table", "empty-table"],
+)
+def test_extract_metadata_groups(tmp_path: Path, toml: str, expected: list[str]) -> None:
+    path = write_pyproject(tmp_path, toml)
 
-    assert extract(path)["groups"] == ["Dev", "docs", "test"]
-
-
-def test_extract_metadata_groups_default_to_empty(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "1"\n')
-
-    assert extract(path)["groups"] == []
-
-
-def test_extract_metadata_groups_empty_table(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\n')
-
-    assert extract(path)["groups"] == []
+    assert extract(path)["groups"] == expected
 
 
 @pytest.mark.parametrize(
@@ -733,10 +728,18 @@ def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
     assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
-def test_dependency_include_group_cycle_does_not_warn_when_nothing_is_requested(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "toml",
+    [
+        '[dependency-groups]\na = [{include-group = "a"}]\n',
+        '[dependency-groups]\ndev = [{include-group = "tset"}]\n',
+    ],
+    ids=["include-group-cycle", "unknown-include-group"],
+)
+def test_dependency_group_warnings_are_not_reported_when_nothing_is_requested(
+    tmp_path: Path, toml: str
 ) -> None:
-    path = write_pyproject(tmp_path, '[dependency-groups]\na = [{include-group = "a"}]\n')
+    path = write_pyproject(tmp_path, toml)
     result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [])
 
     assert result == {}
@@ -759,38 +762,26 @@ def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None
     ]
 
 
-def test_dependency_missing_include_group_does_not_warn_when_nothing_is_requested(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("toml", "name", "expected"),
+    [
+        (MARKERS_TOML, "numpy", ">=1.20"),
+        (MARKERS_TOML, "mixed", ">=1"),
+        (
+            "[project]\ndependencies = [\"a>=1; os_name == 'nt'\", \"a>=1; os_name == 'posix'\"]\n",
+            "a",
+            ">=1",
+        ),
+    ],
+    ids=["different-markers", "marker-and-no-marker", "same-specifier-different-markers"],
+)
+def test_dependency_markers_do_not_warn(
+    tmp_path: Path, toml: str, name: str, expected: str
 ) -> None:
-    path = write_pyproject(tmp_path, '[dependency-groups]\ndev = [{include-group = "tset"}]\n')
-    _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [])
+    path = write_pyproject(tmp_path, toml)
+    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [name])
 
-    assert messages(warnings) == []
-
-
-def test_dependency_different_markers_do_not_warn(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, MARKERS_TOML)
-    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["numpy"])
-
-    assert result == {"numpy": ">=1.20"}
-    assert messages(warnings) == []
-
-
-def test_dependency_marker_and_no_marker_do_not_warn(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, MARKERS_TOML)
-    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["mixed"])
-
-    assert result == {"mixed": ">=1"}
-    assert messages(warnings) == []
-
-
-def test_dependency_same_specifier_with_different_markers_does_not_warn(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        "[project]\ndependencies = [\"a>=1; os_name == 'nt'\", \"a>=1; os_name == 'posix'\"]\n",
-    )
-    _, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["a"])
-
+    assert result == {name: expected}
     assert messages(warnings) == []
 
 

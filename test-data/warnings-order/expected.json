@@ -1,0 +1,52 @@
+{
+  "name": "a",
+  "normalized_name": "a",
+  "file_name": "a",
+  "version": "",
+  "normalized_version": "",
+  "requires_python": "python3",
+  "extras": [],
+  "groups": [
+    "dev"
+  ],
+  "python_versions": [],
+  "python_min": "",
+  "python_max": "",
+  "dependency_specifiers": {
+    "x": ">=1"
+  },
+  "dependency_requirements": {
+    "x": [
+      {
+        "specifier": ">=1",
+        "marker": "",
+        "source": "project"
+      },
+      {
+        "specifier": ">=2",
+        "marker": "",
+        "source": "project"
+      },
+      {
+        "specifier": ">=3",
+        "marker": "",
+        "source": "group:dev"
+      }
+    ]
+  },
+  "warnings": [
+    {
+      "code": "dynamic-version",
+      "message": "[project].version is dynamic, the version output is empty"
+    },
+    {
+      "code": "invalid-requires-python",
+      "message": "[project].requires-python is not a valid version specifier, the python-versions output is empty: Invalid specifier: 'python3'"
+    },
+    {
+      "code": "invalid-requirement",
+      "message": "Ignoring invalid requirement 'not valid!': Expected semicolon (after name with no version specifier) or end\n    not valid!\n        ^"
+    }
+  ],
+  "schema_version": 1
+}
