@@ -9,7 +9,8 @@ project name, version, extra names and dependency specifiers from a
 `pyproject.toml`. The logic lives in the package `src/extract_pyproject_metadata/`, started by
 `scripts/run.sh` through the launcher `scripts/extract_metadata.py`; the action
 only wires its inputs and outputs. `test-data/` holds the `pyproject.toml`
-fixtures used by the integration workflows.
+fixtures used by the integration workflows. `dev/` holds maintainer helpers (`check_export.sh`),
+not part of the action.
 
 ## Architecture
 
@@ -49,11 +50,12 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 
 ## Supported platforms
 
-- Linux and macOS only. **Windows is not supported, and that is a deliberate,
-  final decision of the maintainer.** Do not add `windows-latest` to any matrix,
-  do not add Windows-specific code, branches, tests or documentation, and do not
-  propose or re-add Windows support, even as a small or optional change. If a
-  failure only happens on Windows, it is out of scope.
+- Linux and macOS only (`os_matrix` of `durandtibo/workflow-config-action`), on the Python
+  versions of its `python_versions` (3.11 is the oldest: `tomllib`), as the README says.
+  **Windows is not supported, and that is a deliberate, final decision of the maintainer.** Do
+  not add `windows-latest` to any matrix, do not add Windows-specific code, branches, tests or
+  documentation, and do not propose or re-add Windows support, even as a small or optional
+  change. If a failure only happens on Windows, it is out of scope.
 
 ## Environment
 
@@ -97,6 +99,12 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 - Name the branch `<type>/<short-description>` in lowercase kebab-case, with one
   of these types: `feat`, `bugfix`, `hotfix`, `docs`, `refactor`, `perf`,
   `test`, `chore`, `ci`.
+- Write commit messages and PR titles as a short imperative sentence starting with a verb such as
+  `Add`, `Fix`, `Update`, `Remove` or `Improve`. Do not use conventional-commit prefixes like
+  `docs:` or `feat:` (the type prefix is only for branch names). The squash-merge appends the PR
+  number, so do not add one.
+- Do not escape special characters such as the backtick (`` ` ``) in PR titles and descriptions
+  (no `\``): the escape characters are not rendered well. Write them as plain Markdown.
 - In the PR description, say what was changed, what was deliberately not
   changed, and any behaviour change (for example a changed input, default or
   output of the action).
@@ -130,6 +138,12 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   that changes. Set `permissions` on every job (also on jobs that call a reusable workflow) with the
   minimum permissions per job, and `timeout-minutes` on every job. Every workflow sets
   `permissions: {}` at the workflow level (it grants nothing), never a grant.
+- Only ship what the action needs at runtime: `action.yaml`, `LICENSE`, `scripts/run.sh`,
+  `scripts/extract_metadata.py` and the package `src/extract_pyproject_metadata/` are exported,
+  and `.gitattributes` marks everything else `export-ignore`. When the action starts using a new
+  file, un-ignore it there and add it to `dev/check_export.sh`. Never make the action read tests,
+  fixtures (`test-data/`) or other repo files that are not exported. Check the exported set with
+  `make check-export` (`git archive --worktree-attributes HEAD | tar t`).
 - Check workflow changes with `actionlint` when available.
 - Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
   runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
@@ -144,15 +158,19 @@ Files are prefixed by role:
   - `ci-type-checking.yaml`: pyright.
   - `ci-python.yaml`: the Python tests: unit and integration on the OS and Python matrix, and the
     property-based tests (job `properties`) on the standard Python versions.
-  - `ci-action.yaml`: runs the action from this checkout (`uses: ./`), i.e. the version not
-    released yet.
+  - `ci-export.yaml`: checks the exported set (`make check-export`, `dev/check_export.sh`).
+  - `ci-action.yaml`: runs the action, from this checkout (`uses: ./`, the version not released
+    yet) when its input `use-released` is `false` (the default; `ci.yaml` passes it), or the latest
+    released action when it is `true` (`nightly.yaml`).
 - `ci-verify-workflows.yaml`: lints the workflow files themselves. It has its own triggers and is
   not called from `ci.yaml`.
-- `nightly.yaml`: scheduled entry point that calls `nightly-test-released.yaml`, which tests the
-  latest released action. It is not part of `ci.yaml` (which runs nightly too, for the current code).
+- `nightly.yaml`: scheduled entry point that calls `ci-action.yaml` with `use-released: true`,
+  which tests the latest released action. It is not part of `ci.yaml` (which runs nightly too, for
+  the current code). There is no separate workflow for the released action.
 - `security-*.yaml`: dependency review and OSSF Scorecard.
-- `lib-get-test-matrix.yaml`: reusable workflow that loads the shared OS matrix once; callers pass
-  it down through the `test-matrix` input.
+- `lib-get-test-matrix.yaml`: reusable workflow that loads the shared OS and Python matrix once
+  (`os_matrix`, `os_macos`, `python_versions`, `python_versions_standard`, from
+  `durandtibo/workflow-config-action`); callers pass it down through the `test-matrix` input.
 - `bot-*.yaml`: scheduled automation that opens PRs or acts on runs (format files, pin actions,
   sync `.make/`, cancel stale runs).
 
@@ -164,8 +182,11 @@ Conventions:
 - Each `ci-*` check is a `workflow_call` workflow that also has `workflow_dispatch`, so it can be
   run alone (the ones that take the `test-matrix` input have `workflow_call` only). Add a check as
   a new `ci-<name>.yaml` plus a job in `ci.yaml`.
-- Name test workflows by what they test: `ci-action` tests the action, `ci-python` tests
-  the Python code, `nightly-test-released` tests the published action.
+- Name test workflows by what they test: `ci-action` tests the action (local or released),
+  `ci-python` tests the Python code.
+- Never write an OS or a Python version in a workflow matrix: read the lists from
+  `durandtibo/workflow-config-action` through `lib-get-test-matrix.yaml`. A job that needs one
+  runner or one version for an edge case writes it (`ubuntu-latest`, the Python the case needs).
 - Put `make` targets in the steps rather than duplicating commands, so local runs and CI match.
 
 ## Python script
@@ -221,20 +242,65 @@ Conventions:
   rewrites the files (review the diff). Adding a case is adding a directory (it is checked by
   `test_golden.py`; add it to the
   `golden` matrix only if it covers a new input or output).
-- The integration workflow `.github/workflows/ci-action.yaml` (`uses: ./`)
-  checks only the wiring: the `golden` job runs the real action on three
-  cases (`minimal`, `readme-example`, `python-candidates-none`: a three-item matrix) and
-  compares the `json` output with `expected.json` (`scripts/compare_json.py`); a test checks that
-  together they set every input and fill every output;
-  the other jobs check what the golden files cannot see (failures, `strict`,
-  what the action leaves behind). Pass values through `env:`, never interpolate
-  them in `run:` (a test checks it). Add a case or a job for every new input or
-  output. `nightly-test-released.yaml` (called from `nightly.yaml`) tests the latest
-  published tag, pinned by SHA, with the inputs and outputs of that version; update the pin
-  after each release. A tag is never moved.
+- The tests of the workflows are in `tests/integration/test_workflows.py`; the export check is
+  tested in `tests/integration/test_export.py`.
+
+## Testing strategy
+
+The strategy is the same for all the action repositories of `durandtibo`; the full reasoning and
+the properties (T1 to T16) are in `review/testing.md` of `cancel-queued-runs-action`. Three levels:
+
+1. **Code**: the package and the scripts, tested alone (pytest in `tests/`, `ci-python.yaml`) with
+   no network and no GitHub. It covers the logic and every edge case, and the golden cases of
+   `test-data/` through `tests/integration/test_golden.py`.
+2. **Local action**: the action from this checkout (`uses: ./`) in a real workflow
+   (`ci-action.yaml`, `use-released: false`, called from `ci.yaml`).
+3. **Released action**: the latest stable release (`uses: durandtibo/extract-pyproject-metadata-action@<sha>`,
+   pinned, `# ratchet:...@vX.Y.Z`) with the same jobs as level 2 (`ci-action.yaml`,
+   `use-released: true`, called nightly from `nightly.yaml`). Never run it on pull requests.
+
+Rules:
+
+- Test a behaviour at the cheapest level that can show it. The action tests (levels 2 and 3) check
+  the contract and the wiring: inputs reach the program, outputs are set, the action fails on an
+  invalid input. Do not re-test the logic there; add it to level 1.
+- Split the action tests in two. **General behaviour** (the `test` job: every input, every output
+  and the defaults) runs on the full matrix: `os_matrix` x `python_versions`. **Edge cases**
+  (`golden`, `test-warning`, `test-default-path`, `test-path-with-spaces`, `test-strict`,
+  `test-invalid-inputs`, `test-old-python`: one input, one invalid value, one unusual file or
+  interpreter) run on one runner (`ubuntu-latest`). There is no reduced matrix on pull requests:
+  the same matrix runs on pull requests, pushes and the schedule.
+- Each run of the action in `ci-action.yaml` is two steps, `uses: ./` with id `<id>-local` and
+  `if: ${{ !inputs.use-released }}`, and the pinned release with id `<id>-released` and
+  `if: ${{ inputs.use-released }}`, with the same `with:`. The verify step reads
+  `steps.<id>-local.outputs.x || steps.<id>-released.outputs.x`, and the outcome with
+  `inputs.use-released && steps.<id>-released.outcome || steps.<id>-local.outcome`. A test checks
+  that every local step has its released twin. After a release, update the pinned SHA and tag in
+  every released step (a tag is never moved). A check of a feature that the last release does not
+  have yet carries `if: ${{ !inputs.use-released }}` until the next release.
+- The `golden` cases are the list of its matrix: three cases (`minimal`, `readme-example`,
+  `python-candidates-none`) that together set every input and fill every output (a test checks
+  it). The verification code shared by the local and released runs is in `scripts/test-helper.sh`
+  and `scripts/compare_json.py`, not in two workflows.
+- Every input has a case that sets it and asserts its effect, and every validated input has a case
+  with an invalid value that asserts that the step failed (`continue-on-error: true`, an `id`, and
+  `assert_failed` on the outcome and the empty `json` output). Assert the value or the format of
+  outputs, never just print them.
+- A negative test needs a positive run on the same runner before it, so it cannot pass for the
+  wrong reason (`test-strict` and `test-invalid-inputs` start with a run that succeeds).
+- Tests have no side effects outside the runner: throwaway files only. The README example is
+  checked by `tests/` without GitHub.
+- Check what is shipped: `make check-export` (`ci-export.yaml`) checks the exported set, because
+  `uses: ./` runs the whole checkout and hides a missing file.
+- Set `timeout-minutes` and `fail-fast: false` (with `max-parallel`) on matrix jobs. Pass values
+  through `env:`, never interpolate them in `run:` (a test checks it). Add a case or a job for every
+  new input or output.
+- Keep the README inputs and outputs in step with `action.yaml` (`make docs-check`,
+  `tests/integration/test_contract.py`).
 
 ## Reporting
 
-- Report faithfully: say which checks were run (`make check`, `pytest`), which were not, and that
-  the workflows and CI were not awaited.
+- Report faithfully: say which checks were run (`make check`, `make lint`, `make check-export`,
+  `pytest`), which were not, and that the workflows and CI were not awaited (workflows cannot be
+  run locally).
 - Mention failures that already exist on `main` instead of hiding them.

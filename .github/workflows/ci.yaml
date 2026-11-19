@@ -6,9 +6,10 @@
 # - ci-lint.yaml: ruff, pre-commit, generated README tables.
 # - ci-type-checking.yaml: pyright.
 # - ci-python.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
+# - ci-export.yaml: the files shipped to the consumers of the action (.gitattributes).
 # - ci-action.yaml: the integration test of the current code of the action (`uses: ./`).
 # ci-verify-workflows.yaml lints the workflows; it has its own triggers and is not called from here.
-# The test of the published action is nightly-test-released.yaml (called from nightly.yaml).
+# The test of the published action is ci-action.yaml with `use-released: true` (nightly.yaml).
 
 name: CI
 on:
@@ -54,4 +55,11 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci-action.yaml
     with:
+      use-released: false
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
+
+  # Check that the exported files are the files the action needs at runtime
+  export:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-export.yaml

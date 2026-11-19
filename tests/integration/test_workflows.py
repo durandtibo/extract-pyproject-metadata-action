@@ -94,24 +94,62 @@ def test_permissions_are_set_on_every_job_and_the_workflow_grants_nothing(path: 
     assert [name for name, job in workflow["jobs"].items() if "permissions" not in job] == []
 
 
-def test_ci_and_the_released_test_both_run_every_night() -> None:
+def test_ci_and_the_nightly_test_of_the_release_both_run_every_night() -> None:
     ci = (WORKFLOWS_PATH / "ci.yaml").read_text(encoding="utf-8")
     nightly = (WORKFLOWS_PATH / "nightly.yaml").read_text(encoding="utf-8")
 
     assert "schedule:" in ci
     assert "schedule:" in nightly
     assert "uses: ./.github/workflows/ci.yaml" not in nightly
-    assert "uses: ./.github/workflows/nightly-test-released.yaml" in nightly
+    assert "uses: ./.github/workflows/ci-action.yaml" in nightly
+    assert not (WORKFLOWS_PATH / "nightly-test-released.yaml").exists()
 
 
-def test_the_released_workflow_tests_the_pinned_published_action_only() -> None:
-    text = (WORKFLOWS_PATH / "nightly-test-released.yaml").read_text(encoding="utf-8")
+def action_steps() -> list[dict]:
+    """Return the steps of ``ci-action.yaml`` that run the action, local or released."""
+    return [
+        step
+        for job in load_workflow("ci-action.yaml")["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses", "").startswith(("./", "durandtibo/extract-pyproject-metadata-action@"))
+    ]
 
-    assert re.search(
-        r"uses: durandtibo/extract-pyproject-metadata-action@[0-9a-f]{40} # ratchet:\S+@v\d+\.\d+",
-        text,
-    )
-    assert "uses: ./" not in text
+
+def test_ci_action_has_a_local_and_a_released_step_for_every_run_of_the_action() -> None:
+    steps = action_steps()
+    local = [step for step in steps if step["uses"] == "./"]
+    released = [step for step in steps if step["uses"] != "./"]
+
+    assert local
+    assert all(step["id"].endswith("-local") for step in local)
+    assert [step["id"].removesuffix("-released") for step in released] == [
+        step["id"].removesuffix("-local") for step in local
+    ]
+    assert all(step["if"] == "${{ !inputs.use-released }}" for step in local)
+    assert all(step["if"] == "${{ inputs.use-released }}" for step in released)
+
+
+def test_the_released_steps_use_the_pinned_published_action() -> None:
+    released = [step for step in action_steps() if step["uses"] != "./"]
+    text = (WORKFLOWS_PATH / "ci-action.yaml").read_text(encoding="utf-8")
+
+    assert released
+    assert len({step["uses"] for step in released}) == 1
+    assert len(
+        re.findall(
+            r"uses: durandtibo/extract-pyproject-metadata-action@[0-9a-f]{40} "
+            r"# ratchet:\S+@v\d+\.\d+\.\d+",
+            text,
+        )
+    ) == len(released)
+
+
+def test_ci_action_takes_use_released_as_an_optional_boolean() -> None:
+    inputs = load_workflow("ci-action.yaml")[True]["workflow_call"]["inputs"]
+
+    assert inputs["use-released"]["type"] == "boolean"
+    assert inputs["use-released"]["default"] is False
+    assert inputs["test-matrix"]["required"] is True
 
 
 def test_ci_only_calls_the_reusable_workflows() -> None:
@@ -120,6 +158,7 @@ def test_ci_only_calls_the_reusable_workflows() -> None:
     assert all("uses" in job for job in jobs.values())
     assert sorted(job["uses"] for job in jobs.values()) == [
         "./.github/workflows/ci-action.yaml",
+        "./.github/workflows/ci-export.yaml",
         "./.github/workflows/ci-lint.yaml",
         "./.github/workflows/ci-python.yaml",
         "./.github/workflows/ci-type-checking.yaml",
@@ -160,7 +199,7 @@ def python_matrices(workflow: dict) -> list[list[str]]:
     ]
 
 
-MATRIX_WORKFLOWS = ["ci-python.yaml", "ci-action.yaml", "nightly-test-released.yaml"]
+MATRIX_WORKFLOWS = ["ci-python.yaml", "ci-action.yaml"]
 
 
 @pytest.mark.parametrize("name", MATRIX_WORKFLOWS)
@@ -195,19 +234,22 @@ def test_hypothesis_is_in_the_property_group_only() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "caller"),
+    ("name", "caller", "extra"),
     [
-        ("ci-python.yaml", "ci.yaml"),
-        ("ci-action.yaml", "ci.yaml"),
-        ("nightly-test-released.yaml", "nightly.yaml"),
+        ("ci-python.yaml", "ci.yaml", {}),
+        ("ci-action.yaml", "ci.yaml", {"use-released": False}),
+        ("ci-action.yaml", "nightly.yaml", {"use-released": True}),
     ],
 )
-def test_the_callers_pass_the_shared_matrix(name: str, caller: str) -> None:
+def test_the_callers_pass_the_shared_matrix(name: str, caller: str, extra: dict) -> None:
     jobs = load_workflow(caller)["jobs"]
     job = next(job for job in jobs.values() if job.get("uses", "").endswith(f"/{name}"))
 
     assert job["needs"] == "get-matrix"
-    assert job["with"] == {"test-matrix": "${{ needs.get-matrix.outputs.test_matrix }}"}
+    assert job["with"] == {
+        **extra,
+        "test-matrix": "${{ needs.get-matrix.outputs.test_matrix }}",
+    }
 
 
 def test_ci_runs_the_checks_through_make() -> None:
@@ -255,7 +297,8 @@ def test_the_local_workflow_passes_every_input_of_the_action() -> None:
     golden = golden[golden.index("\n  golden:") :]
 
     passed = re.findall(r"(?m)^          ([a-z-]+): \$\{\{", golden)
-    assert sorted(passed) == sorted(names)
+    # Every input is passed twice: to the local step and to the released step.
+    assert sorted(passed) == sorted(names * 2)
     assert sorted(DEFAULT_INPUTS) == sorted(names)
 
 
