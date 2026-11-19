@@ -7,11 +7,12 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.github import format_outputs
-from extract_pyproject_metadata.inputs import parse_dependencies
+from extract_pyproject_metadata.inputs import DEFAULT_INPUTS, parse_dependencies
 from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.report import build_report
 from extract_pyproject_metadata.types import Report
@@ -33,11 +34,11 @@ def test_metadata_keys_match_the_extracted_metadata(tmp_path: Path) -> None:
     assert list(extract(path)) == list(Report.__annotations__)[:8]
 
 
-def test_action_yaml_does_not_repeat_the_default_of_python_candidates() -> None:
-    action = ACTION_PATH.read_text(encoding="utf-8")
+def test_action_yaml_defaults_are_the_defaults_of_parse_inputs() -> None:
+    action = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
 
-    assert 'default: ""' in action
-    assert DEFAULT_PYTHON_CANDIDATES not in action
+    assert {name: spec["default"] for name, spec in action["inputs"].items()} == DEFAULT_INPUTS
+    assert action["inputs"]["python-candidates"]["default"] == DEFAULT_PYTHON_CANDIDATES
 
 
 def test_action_yaml_separates_the_inputs_with_a_blank_line() -> None:

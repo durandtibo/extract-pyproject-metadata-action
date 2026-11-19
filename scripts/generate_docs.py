@@ -4,8 +4,7 @@ Usage: generate_docs.py [--check]
 
 Rewrites the blocks between ``<!-- NAME:start -->`` and ``<!-- NAME:end -->``
 of the README: ``inputs`` and ``outputs`` (the tables of ``action.yaml``) and
-``warnings`` (the codes of ``warning_codes.py``) and ``candidates`` (the default of
-``python-candidates``, defined in the code).
+``warnings`` (the codes of ``warning_codes.py``).
 With ``--check``, writes nothing and exits with 1 when the README is not up
 to date. It is a development tool: it needs PyYAML, the action does not.
 """
@@ -22,7 +21,6 @@ import yaml
 ROOT_PATH = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_PATH / "src"))
 
-from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES  # noqa: E402
 from extract_pyproject_metadata.warning_codes import WARNING_CODES  # noqa: E402
 
 ACTION_PATH = ROOT_PATH / "action.yaml"
@@ -53,9 +51,7 @@ def render_inputs(action: dict[str, Any]) -> str:
     """Return the table of the inputs of the action."""
     rows = []
     for name, spec in action["inputs"].items():
-        default = spec.get("default", "")
-        shown = f"`{default}`" if default != "" else "(see the description)"
-        rows.append([f"`{name}`", _cell(spec["description"]), shown])
+        rows.append([f"`{name}`", _cell(spec["description"]), f"`{spec['default']}`"])
     return format_table(["Name", "Description", "Default"], rows)
 
 
@@ -71,32 +67,24 @@ def render_warnings() -> str:
     return format_table(["Code", "When", "Effect"], rows)
 
 
-def render_candidates() -> str:
-    """Return the default ``python-candidates``, as code."""
-    return f"`{DEFAULT_PYTHON_CANDIDATES}`"
-
-
-def replace_block(text: str, name: str, content: str, *, table: bool = True) -> str:
+def replace_block(text: str, name: str, content: str) -> str:
     """Replace what is between the ``name`` markers of ``text``.
 
-    Prettier puts a blank line after an HTML comment and before a table that follows it, so the
-    block is written that way (a table also gets a blank line before the end marker), and
-    formatting the README does not change it.
+    Prettier puts a blank line after an HTML comment, and before and after a table that follows
+    it, so the block is written that way, and formatting the README does not change it.
     """
     pattern = re.compile(rf"(<!-- {name}:start -->).*?(<!-- {name}:end -->)", re.DOTALL)
     if not pattern.search(text):
         msg = f"README.md has no <!-- {name}:start --> ... <!-- {name}:end --> block"
         raise SystemExit(msg)
-    end = "\n\n" if table else "\n"
-    return pattern.sub(lambda match: f"{match.group(1)}\n\n{content}{end}{match.group(2)}", text)
+    return pattern.sub(lambda match: f"{match.group(1)}\n\n{content}\n\n{match.group(2)}", text)
 
 
 def generate(readme: str, action: dict[str, Any]) -> str:
     """Return the README with its generated blocks up to date."""
     readme = replace_block(readme, "inputs", render_inputs(action))
     readme = replace_block(readme, "outputs", render_outputs(action))
-    readme = replace_block(readme, "warnings", render_warnings())
-    return replace_block(readme, "candidates", render_candidates(), table=False)
+    return replace_block(readme, "warnings", render_warnings())
 
 
 def main(argv: list[str]) -> int:

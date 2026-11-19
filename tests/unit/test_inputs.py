@@ -16,7 +16,6 @@ from extract_pyproject_metadata.inputs import (
 )
 from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.types import Inputs, Lookup
-from tests.helpers import README_PATH
 
 
 def test_parse_inputs() -> None:
@@ -209,14 +208,10 @@ def test_parse_dependencies_not_an_array_of_strings(raw: str) -> None:
         parse_dependencies(raw)
 
 
-def test_readme_default_of_python_candidates_matches_the_script() -> None:
-    readme = README_PATH.read_text(encoding="utf-8")
-
-    assert (
-        f"<!-- candidates:start -->\n\n`{DEFAULT_PYTHON_CANDIDATES}`\n<!-- candidates:end -->"
-        in readme
-    )
+def test_parse_inputs_empty_python_candidates_is_an_error() -> None:
+    with pytest.raises(MetadataError, match=r"^python-candidates: not valid JSON: ''"):
+        parse_inputs({"python-candidates": ""})
 
 
-def test_parse_inputs_empty_python_candidates_is_the_default() -> None:
-    assert parse_inputs({"python-candidates": ""}) == parse_inputs({})
+def test_parse_inputs_python_candidates_default_is_the_constant() -> None:
+    assert parse_inputs({}).python_candidates == json.loads(DEFAULT_PYTHON_CANDIDATES)

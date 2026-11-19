@@ -283,9 +283,11 @@ def test_the_local_workflow_repeats_the_defaults_of_the_inputs() -> None:
     for name, default in DEFAULT_INPUTS.items():
         if name == "pyproject-path":
             continue
-        # The action takes its own default for an empty python-candidates.
-        shown = "" if name == "python-candidates" else default
-        assert f"fromJSON(steps.case.outputs.inputs)['{name}'] || '{shown}'" in local
+        # The golden cases get the default of python-candidates from action.yaml (inputs step).
+        if name == "python-candidates":
+            assert f"fromJSON(steps.case.outputs.inputs)['{name}'] }}}}" in local
+            continue
+        assert f"fromJSON(steps.case.outputs.inputs)['{name}'] || '{default}'" in local
         assert re.search(rf"(?m)^  {re.escape(name)}:$", action)
 
 
