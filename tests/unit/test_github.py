@@ -13,6 +13,7 @@ from extract_pyproject_metadata.github import (
     emit_github_output,
     escape_annotation,
     escape_annotation_property,
+    format_error,
     format_log_line,
     format_outputs,
     new_delimiter,
@@ -280,3 +281,16 @@ def test_single_line(value: str, expected: str) -> None:
 )
 def test_escape_annotation_property(value: str, expected: str) -> None:
     assert escape_annotation_property(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "pyproject_path", "annotate", "expected"),
+    [
+        ("boom", "p.toml", False, "p.toml: boom"),
+        ("a\nb", "p.toml", False, "p.toml: a\nb"),
+        ("boom", "p.toml", True, "::error file=p.toml::boom"),
+        ("50%\nnext\r", "a,b:c.toml", True, "::error file=a%2Cb%3Ac.toml::50%25%0Anext%0D"),
+    ],
+)
+def test_format_error(message: str, pyproject_path: str, annotate: bool, expected: str) -> None:
+    assert format_error(message, pyproject_path, annotate) == expected

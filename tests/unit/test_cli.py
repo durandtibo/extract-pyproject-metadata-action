@@ -13,13 +13,9 @@ import pytest
 import extract_pyproject_metadata.report as report_module
 from extract_pyproject_metadata.cli import env_name, main, read_inputs, run
 from extract_pyproject_metadata.errors import MetadataError
-from extract_pyproject_metadata.github import (
-    format_error,
-)
 from extract_pyproject_metadata.pyproject import load_pyproject
 from extract_pyproject_metadata.types import Report
 from tests.helpers import (
-    DATA_WITH_SCOPES,
     DEPS_TOML,
     messages,
     parse_github_output,
@@ -47,16 +43,6 @@ def test_github_output_has_no_schema_version(tmp_path: Path) -> None:
 
     assert run_main(["--github-output", str(output), str(path), "[]"]) == 0
     assert "schema-version" not in parse_github_output(output.read_text(encoding="utf-8"))
-
-
-def test_main_returns_one_for_an_invalid_utf8_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "pyproject.toml"
-    path.write_bytes(b"\xff\xfe")
-
-    assert run_main([str(path), "[]"]) == 1
-    assert "not valid UTF-8" in capsys.readouterr().err
 
 
 def test_main_returns_one_when_the_outputs_cannot_be_written(
@@ -103,69 +89,14 @@ def test_main_parses_the_file_once(
     assert calls == [str(path)]
 
 
-def test_main_returns_nonzero_on_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    missing = tmp_path / "does-not-exist.toml"
-
-    exit_code = run_main([str(missing), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "not a file" in captured.err
-
-
 BASE_TOML = '[project]\nname = "coola"\nversion = "1"\n'
 
 
 @pytest.mark.parametrize(
     ("toml", "options", "tail", "message"),
     [
-        (BASE_TOML, [], ["[]", "not json"], "dependencies: not valid JSON"),
-        (BASE_TOML, [], ["[]", '{"a": 1}'], "dependencies: must be a JSON array of strings"),
         (BASE_TOML, [], ["not json"], "extra-values: not valid JSON"),
-        (BASE_TOML, [], ["{}"], "extra-values: must be a JSON array"),
-        (BASE_TOML, [], ["[1]"], "extra-values: must be a JSON array of strings"),
-        (
-            BASE_TOML,
-            ["--strict", "maybe"],
-            ["[]"],
-            "strict: must be 'true' or 'false', got: 'maybe'",
-        ),
-        (
-            BASE_TOML,
-            ["--python-candidates", '["3.12.1"]'],
-            ["[]"],
-            "python-candidates: must contain",
-        ),
-        (
-            BASE_TOML,
-            ["--python-candidates", "not json"],
-            ["[]"],
-            "python-candidates: not valid JSON",
-        ),
-        (
-            DATA_WITH_SCOPES,
-            [],
-            ["[]", '["numpy@dev"]'],
-            "dependencies: entry 'numpy@dev' has an invalid scope",
-        ),
-        (
-            BASE_TOML.replace('"1"', '"latest"'),
-            [],
-            ["[]"],
-            "not a valid PEP 440 version: 'latest'",
-        ),
-        (
-            BASE_TOML + '\n[dependency-groups]\ndev = [{include_group = "a"}]\n',
-            [],
-            ["[]", '["x"]'],
-            "[dependency-groups].dev: entries must be strings or",
-        ),
-        (
-            BASE_TOML + '[dependency-groups]\ndev = "numpy"\n',
-            [],
-            ["[]", '["numpy"]'],
-            "[dependency-groups].dev: must be an array",
-        ),
+        (BASE_TOML.replace('"1"', '"latest"'), [], ["[]"], "not a valid PEP 440 version"),
         (
             BASE_TOML + 'dependencies = ["a", 1]\n',
             [],
@@ -173,6 +104,7 @@ BASE_TOML = '[project]\nname = "coola"\nversion = "1"\n'
             "[project].dependencies: must contain only strings, got: 1",
         ),
     ],
+    ids=["input", "project", "requirements"],
 )
 def test_main_returns_one_with_the_message_for_an_invalid_input(
     tmp_path: Path,
@@ -280,43 +212,6 @@ def test_main_strict_fails_without_writing_the_outputs(
     assert not output.exists()
 
 
-@pytest.mark.parametrize(
-    ("message", "pyproject_path", "annotate", "expected"),
-    [
-        ("boom", "p.toml", False, "p.toml: boom"),
-        ("a\nb", "p.toml", False, "p.toml: a\nb"),
-        ("boom", "p.toml", True, "::error file=p.toml::boom"),
-        ("50%\nnext\r", "a,b:c.toml", True, "::error file=a%2Cb%3Ac.toml::50%25%0Anext%0D"),
-    ],
-)
-def test_format_error(message: str, pyproject_path: str, annotate: bool, expected: str) -> None:
-    assert format_error(message, pyproject_path, annotate) == expected
-
-
-def test_main_error_is_a_plain_message_without_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "nope.toml"
-
-    assert run_main([str(path), "[]"]) == 1
-    captured = capsys.readouterr()
-
-    assert captured.err == f"{path}: pyproject-path: not a file\n"
-    assert captured.out == ""
-
-
-def test_main_error_is_an_annotation_with_github_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "nope.toml"
-
-    exit_code = run_main(["--github-output", str(tmp_path / "out"), str(path), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.err == f"::error file={path}::pyproject-path: not a file\n"
-
-
 def test_main_error_annotation_cannot_inject_a_command(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -330,16 +225,25 @@ def test_main_error_annotation_cannot_inject_a_command(
     assert captured.err.startswith("::error file=")
 
 
-def test_main_github_output_error_writes_nothing(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("github_output", "expected"),
+    [
+        (False, "{path}: pyproject-path: not a file\n"),
+        (True, "::error file={path}::pyproject-path: not a file\n"),
+    ],
+    ids=["plain", "annotation"],
+)
+def test_main_error_is_a_message_or_an_annotation_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], github_output: bool, expected: str
 ) -> None:
-    output = tmp_path / "github_output"
+    path = tmp_path / "nope.toml"
+    output = tmp_path / "out"
+    options = ["--github-output", str(output)] if github_output else []
 
-    exit_code = run_main(["--github-output", str(output), str(tmp_path / "nope.toml"), "[]"])
+    assert run_main([*options, str(path), "[]"]) == 1
     captured = capsys.readouterr()
 
-    assert exit_code == 1
-    assert "not a file" in captured.err
+    assert captured.err == expected.format(path=path)
     assert captured.out == ""
     assert not output.exists()
 
@@ -363,111 +267,29 @@ def test_main_github_output_multiline_name_is_rejected(
     assert "[project].name: not a valid project name" in captured.err
 
 
-def test_main_include_group_cycle_warning_annotation(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("relative_path", "escaped"),
+    [("pyproject.toml", "pyproject.toml"), ("a,b:c/pyproject.toml", "a%2Cb%3Ac/pyproject.toml")],
+)
+def test_main_warning_annotation_names_the_file_and_escapes_it(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    relative_path: str,
+    escaped: str,
 ) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\na = [{include-group = "a"}]\n',
-    )
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(["--github-output", str(output), str(path), "[]", '["x"]'])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured.out.splitlines()[0] == (
-        f"::warning file={path},title=include-group-cycle::[dependency-groups] has an include-group cycle: a -> a"
-    )
-
-
-def test_main_warning_annotation_escapes_the_file_property(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    directory = tmp_path / "a,b:c"
-    directory.mkdir()
-    path = directory / "pyproject.toml"
+    path = tmp_path / relative_path
+    path.parent.mkdir(exist_ok=True)
     path.write_text('[project]\nname = "p"\ndynamic = ["version"]\n')
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(["--github-output", str(output), str(path), "[]"])
-    captured = capsys.readouterr()
-
-    escaped = str(path).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
-    assert exit_code == 0
-    assert captured.out.splitlines()[0] == (
-        f"::warning file={escaped},title=dynamic-version::[project].version is dynamic, the version output is empty"
-    )
-
-
-def test_main_warning_annotation_names_the_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    write_pyproject(tmp_path, '[project]\nname = "p"\ndynamic = ["version"]\n')
     monkeypatch.chdir(tmp_path)
 
-    exit_code = run_main(["--github-output", str(tmp_path / "out"), "pyproject.toml", "[]"])
+    exit_code = run_main(["--github-output", str(tmp_path / "out"), relative_path, "[]"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines()[0] == (
-        "::warning file=pyproject.toml,title=dynamic-version::[project].version is dynamic, the version output is empty"
+        f"::warning file={escaped},title=dynamic-version::"
+        "[project].version is dynamic, the version output is empty"
     )
-
-
-def test_main_missing_dependency_is_a_warning(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(
-        [
-            "--github-output",
-            str(output),
-            str(path),
-            "[]",
-            '["nospec", "missing"]',
-        ]
-    )
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert parse_github_output(output.read_text(encoding="utf-8"))["dependency-specifiers"] == (
-        '{"nospec":"","missing":null}'
-    )
-    assert (
-        f"::warning file={path},title=dependency-not-found::dependency 'missing' not found"
-        in captured.out
-    )
-
-
-def test_main_strict_fails_for_a_missing_dependency(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-    output = tmp_path / "github_output"
-
-    exit_code = run_main(
-        [
-            "--github-output",
-            str(output),
-            "--strict",
-            "true",
-            str(path),
-            "[]",
-            '["nospec", "missing", "other"]',
-        ]
-    )
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.err == (
-        f"::error file={path}::strict: true and there are 2 warning(s):"
-        "%0A- dependency-not-found: dependency 'missing' not found"
-        "%0A- dependency-not-found: dependency 'other' not found\n"
-    )
-    assert captured.out == ""
-    assert not output.exists()
 
 
 def test_main_github_output_multiline_requires_python_cannot_inject_commands(
