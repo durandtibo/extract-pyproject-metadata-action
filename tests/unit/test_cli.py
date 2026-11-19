@@ -702,8 +702,9 @@ def test_read_inputs_uses_the_defaults_of_the_inputs_that_are_not_set() -> None:
     assert inputs.python_candidates == ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
 
-def test_read_inputs_empty_python_candidates_is_the_default() -> None:
-    assert read_inputs({"INPUT_PYTHON_CANDIDATES": ""}) == read_inputs({})
+def test_read_inputs_empty_python_candidates_is_an_error() -> None:
+    with pytest.raises(MetadataError, match=r"^python-candidates: not valid JSON: ''"):
+        read_inputs({"INPUT_PYTHON_CANDIDATES": ""})
 
 
 def test_read_inputs_invalid_value() -> None:

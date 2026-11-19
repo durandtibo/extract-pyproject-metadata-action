@@ -40,9 +40,8 @@ inputs:
   python-candidates:
     description: >
       JSON array of "major.minor" Python versions, without leading zeros, to choose from for the
-      python-versions output (e.g. '["3.11","3.12"]'); empty for the supported
-      CPython versions, listed in the README
-    default: ""
+      python-versions output (e.g. '["3.11","3.12"]'); '[]' for no candidate
+    default: '["3.11","3.12","3.13","3.14","3.15"]'
 
   strict:
     description: >

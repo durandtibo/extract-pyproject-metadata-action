@@ -156,28 +156,21 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 
 <!-- inputs:start -->
 
-| Name                | Description                                                                                                                                                                                                                                                                                                                                                         | Default               |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| `pyproject-path`    | Path to pyproject.toml                                                                                                                                                                                                                                                                                                                                              | `pyproject.toml`      |
-| `extra-values`      | JSON array of additional values to prepend to the extras read from pyproject.toml, for callers that need a non-package value in the list too (e.g. '[""]' for a "no extra" baseline, or '["all"]').                                                                                                                                                                 | `[]`                  |
-| `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", `extra:<name>` or `group:<name>` is looked up there only (e.g. '["pytest@group:dev"]'). A name that is not a valid package name is an error. | `[]`                  |
-| `python-candidates` | JSON array of "major.minor" Python versions, without leading zeros, to choose from for the python-versions output (e.g. '["3.11","3.12"]'); empty for the supported CPython versions, listed in the README                                                                                                                                                          | (see the description) |
-| `strict`            | Set to "true" to fail when there is any warning (a dynamic version, a dependency that is not found, ...), instead of only reporting it ("true" or "false")                                                                                                                                                                                                          | `false`               |
+| Name                | Description                                                                                                                                                                                                                                                                                                                                                         | Default                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `pyproject-path`    | Path to pyproject.toml                                                                                                                                                                                                                                                                                                                                              | `pyproject.toml`                       |
+| `extra-values`      | JSON array of additional values to prepend to the extras read from pyproject.toml, for callers that need a non-package value in the list too (e.g. '[""]' for a "no extra" baseline, or '["all"]').                                                                                                                                                                 | `[]`                                   |
+| `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", `extra:<name>` or `group:<name>` is looked up there only (e.g. '["pytest@group:dev"]'). A name that is not a valid package name is an error. | `[]`                                   |
+| `python-candidates` | JSON array of "major.minor" Python versions, without leading zeros, to choose from for the python-versions output (e.g. '["3.11","3.12"]'); '[]' for no candidate                                                                                                                                                                                                   | `["3.11","3.12","3.13","3.14","3.15"]` |
+| `strict`            | Set to "true" to fail when there is any warning (a dynamic version, a dependency that is not found, ...), instead of only reporting it ("true" or "false")                                                                                                                                                                                                          | `false`                                |
 
 <!-- inputs:end -->
 
 `strict` is a boolean input: the value must be `true` or `false`, the case and the
 surrounding spaces are ignored, and any other value fails the step. The list of Python
-candidates is yours to maintain, as the action does not know which versions exist. By
-default it is:
-
-<!-- candidates:start -->
-
-`["3.11","3.12","3.13","3.14","3.15"]`
-<!-- candidates:end -->
-
-A Python that is released after this tag is not in the default: pass it in
-`python-candidates`. The action does not read the date or the network, so the same tag and
+candidates is yours to maintain, as the action does not know which versions exist. A Python
+that is released after this tag is not in the default of `python-candidates`: pass it in the
+input (an empty string is invalid, `[]` means no candidate). The action does not read the date or the network, so the same tag and
 the same inputs always give the same outputs.
 
 ## Outputs
@@ -392,8 +385,8 @@ fails when they are out of date, as the CI does. `test-data/<case>/` holds the g
 `ci-action.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only
 when a key is renamed, removed or changes type.
 
-To release: update the default `python-candidates` in `python_versions.py` (every October;
-`maintenance.yaml` opens an issue), check that `packaging` is current
+To release: update the default `python-candidates` in `python_versions.py` **and** in
+`action.yaml` (every October; `maintenance.yaml` opens an issue; a test fails if they differ), check that `packaging` is current
 (`make vendor-packaging`), run `make check` and `make docs`, push the tag `vX.Y.Z` and create
 the GitHub release with its notes. Tags are immutable: a published tag is never moved or
 deleted, a fix is a new version, and workflows pin the exact tag (`@vX.Y.Z`).

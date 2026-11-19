@@ -34,3 +34,15 @@ assert_failed() {
 count_pycache() {
 	find . -name __pycache__ -not -path './.git/*' | wc -l | tr -d ' '
 }
+
+# Print the default of an input of action.yaml (the value of its "default:" line, without quotes).
+action_default() {
+	awk -v name="$1" '
+		$0 == "  " name ":" { found = 1; next }
+		found && /^    default:/ {
+			sub(/^    default: */, "")
+			gsub(/^[\047"]|[\047"]$/, "")
+			print
+			exit
+		}' "${ACTION_PATH:-action.yaml}"
+}

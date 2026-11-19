@@ -644,8 +644,12 @@ jobs:
         env:
           CASE: ${{ matrix.case }}
         run: |
+          source scripts/test-helper.sh
           file="test-data/$CASE/inputs.json"
-          if [ -f "$file" ]; then inputs="$(jq -c . "$file")"; else inputs='{}'; fi
+          if [ -f "$file" ]; then given="$(jq -c . "$file")"; else given='{}'; fi
+          # The default of the action, unless the case sets python-candidates.
+          inputs="$(jq -c --arg candidates "$(action_default python-candidates)" \
+            '{"python-candidates": $candidates} + .' <<<"$given")"
           echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
 
       - name: 🧪 Run the action on the case (local)
@@ -656,7 +660,7 @@ jobs:
           pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
           extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
           dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
-          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '' }}
+          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] }}
           strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
 
       - name: 🧪 Run the action on the case (released)
@@ -667,7 +671,7 @@ jobs:
           pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
           extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
           dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
-          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] || '' }}
+          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] }}
           strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
 
       - name: ✓ Compare the json output with the golden file
