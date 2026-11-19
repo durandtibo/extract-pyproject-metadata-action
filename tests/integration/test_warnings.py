@@ -112,3 +112,42 @@ def test_every_code_has_a_case() -> None:
 
 def test_the_readme_lists_every_code_in_order() -> None:
     assert _readme_codes() == list(WARNING_CODES)
+
+
+def _strict_report(tmp_path: Path, toml: str, dependencies: str, *, strict: bool) -> Report:
+    path = write_pyproject(tmp_path, toml)
+    options = ["--strict", "true"] if strict else []
+    return build_report(parse_inputs_args(*options, str(path), "[]", dependencies))
+
+
+DYNAMIC_EXTRAS = PROJECT + 'version = "1"\ndynamic = ["optional-dependencies"]\n'
+DYNAMIC_AND_SET_DEPENDENCIES = (
+    PROJECT + 'version = "1"\ndependencies = ["x"]\ndynamic = ["dependencies"]\n'
+)
+
+
+def test_a_dynamic_optional_dependencies_warns_without_a_lookup(tmp_path: Path) -> None:
+    report = _strict_report(tmp_path, DYNAMIC_EXTRAS, "[]", strict=False)
+
+    assert report["extras"] == []
+    assert [w["code"] for w in report["warnings"]] == ["dynamic-dependencies"]
+
+
+def test_a_dynamic_optional_dependencies_fails_strict_without_a_lookup(tmp_path: Path) -> None:
+    with pytest.raises(
+        MetadataError,
+        match=r"^strict: true and there are 1 warning\(s\):\n- dynamic-dependencies: ",
+    ):
+        _strict_report(tmp_path, DYNAMIC_EXTRAS, "[]", strict=True)
+
+
+def test_a_dynamic_dependencies_that_is_set_does_not_warn_without_a_lookup(tmp_path: Path) -> None:
+    report = _strict_report(tmp_path, DYNAMIC_AND_SET_DEPENDENCIES, "[]", strict=True)
+
+    assert report["warnings"] == []
+
+
+def test_a_dynamic_dependencies_that_is_set_warns_with_a_lookup(tmp_path: Path) -> None:
+    report = _strict_report(tmp_path, DYNAMIC_AND_SET_DEPENDENCIES, '["x"]', strict=False)
+
+    assert [w["code"] for w in report["warnings"]] == ["static-and-dynamic"]

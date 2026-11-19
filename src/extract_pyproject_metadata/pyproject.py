@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata._vendor.packaging.version import InvalidVersion, Version
@@ -18,9 +18,14 @@ from extract_pyproject_metadata.checks import (
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.types import Project, ReportWarning
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 __all__ = [
-    "READ_FIELDS",
+    "ALWAYS_READ_FIELDS",
+    "LOOKUP_FIELDS",
     "UTF8_BOM",
+    "dynamic_field_warnings",
     "load_pyproject",
     "read_extra_names",
     "read_group_names",
@@ -31,11 +36,15 @@ __all__ = [
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
 
-# The fields of ``[project]`` that the action reads (here by ``read_project``, and by
-# ``requirements.collect_requirements``). Any other field is ignored, so it never warns.
-READ_FIELDS = frozenset(
-    {"name", "version", "requires-python", "dependencies", "optional-dependencies"}
-)
+# The fields of ``[project]`` that ``read_project`` always reads (the outputs name, version,
+# requires-python and extras). ``LOOKUP_FIELDS`` are read only for a lookup of a dependency
+# (``requirements.collect_requirements``). Any other field is ignored, so it never warns.
+ALWAYS_READ_FIELDS = ("name", "version", "requires-python", "optional-dependencies")
+LOOKUP_FIELDS = ("dependencies",)
+
+# The fields whose value is a list of requirements: when one is dynamic and not set, the
+# action cannot read it.
+_REQUIREMENT_FIELDS = frozenset({"dependencies", "optional-dependencies"})
 
 
 def load_pyproject(pyproject_path: str) -> dict[str, Any]:
@@ -106,7 +115,7 @@ def read_project(
     project = get_table(data, "project", "[project]")
     dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic")
     name = _read_name(project, dynamic)
-    warnings = _static_and_dynamic_warnings(project, dynamic)
+    warnings = dynamic_field_warnings(project, dynamic, ALWAYS_READ_FIELDS)
     version, version_warnings = _read_version(project, dynamic)
     warnings.extend(version_warnings)
     requires_python = check_str(project.get("requires-python", ""), "[project].requires-python")
@@ -156,30 +165,46 @@ def _read_name(project: dict[str, Any], dynamic: list[str]) -> str:
     return name
 
 
-def _static_and_dynamic_warnings(
-    project: dict[str, Any], dynamic: list[str]
+def dynamic_field_warnings(
+    project: dict[str, Any], dynamic: Iterable[str], fields: tuple[str, ...]
 ) -> list[ReportWarning]:
-    """Describe the fields that the action reads (``READ_FIELDS``), that are set in
-    ``[project]`` and also listed in ``dynamic``.
+    """Describe the ``fields`` that are listed in ``dynamic`` and that the action cannot trust.
 
-    PEP 621 forbids it. The static value is the one that is read. Any other field is ignored.
+    A field that is set and also dynamic gets ``static-and-dynamic`` (PEP 621 forbids it; the
+    static value is the one that is read). A requirement field (``dependencies`` or
+    ``optional-dependencies``) that is dynamic and not set gets ``dynamic-dependencies`` (the
+    build backend computes it, so no requirement can be read from it). A field outside
+    ``fields`` is ignored.
 
     Args:
         project: The ``[project]`` table.
         dynamic: The ``[project].dynamic`` array.
+        fields: The fields to check, ``ALWAYS_READ_FIELDS`` or ``LOOKUP_FIELDS``.
 
     Returns:
         One warning per such field, in the order of ``dynamic``, without duplicates.
     """
-    return [
-        ReportWarning(
-            "static-and-dynamic",
-            f"[project].{field} is set and also listed in [project].dynamic, "
-            "which PEP 621 forbids; the static value is used",
-        )
-        for field in dict.fromkeys(dynamic)
-        if field in READ_FIELDS and field in project
-    ]
+    warnings: list[ReportWarning] = []
+    for field in dict.fromkeys(dynamic):
+        if field not in fields:
+            continue
+        if field in project:
+            warnings.append(
+                ReportWarning(
+                    "static-and-dynamic",
+                    f"[project].{field} is set and also listed in [project].dynamic, "
+                    "which PEP 621 forbids; the static value is used",
+                )
+            )
+        elif field in _REQUIREMENT_FIELDS:
+            warnings.append(
+                ReportWarning(
+                    "dynamic-dependencies",
+                    f"[project].{field} is dynamic, it cannot be read, "
+                    "so no requirement is found in it",
+                )
+            )
+    return warnings
 
 
 def _read_version(

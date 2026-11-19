@@ -497,12 +497,9 @@ def test_collect_requirements_reports_a_cycle_once() -> None:
         ({"project": {}}, []),
         ({"project": {"dynamic": ["version"]}}, []),
         ({"project": {"dynamic": ["dependencies"]}}, ["dependencies"]),
-        ({"project": {"dynamic": ["optional-dependencies"]}}, ["optional-dependencies"]),
-        (
-            {"project": {"dynamic": ["optional-dependencies", "dependencies"]}},
-            ["dependencies", "optional-dependencies"],
-        ),
-        ({"project": {"dynamic": ["dependencies"], "dependencies": ["a"]}}, []),
+        # optional-dependencies is checked by read_project, not here.
+        ({"project": {"dynamic": ["optional-dependencies"]}}, []),
+        ({"project": {"dynamic": ["optional-dependencies", "dependencies"]}}, ["dependencies"]),
     ],
 )
 def test_collect_requirements_warns_about_the_dynamic_fields(data: dict, fields: list[str]) -> None:
@@ -797,14 +794,13 @@ def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
     ]
 
 
-def test_dependency_dynamic_fields_add_one_warning_each() -> None:
+def test_dependency_dynamic_dependencies_adds_one_warning_with_a_lookup() -> None:
     data = {"project": {"dynamic": ["dependencies", "optional-dependencies"]}}
 
     _, warnings = extract_dependency_specifiers(data, ["numpy"])
 
     assert messages(warnings) == [
         "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
-        "[project].optional-dependencies is dynamic, it cannot be read, so no requirement is found in it",
         "dependency 'numpy' not found",
     ]
 
@@ -815,10 +811,13 @@ def test_dependency_dynamic_dependencies_does_not_warn_when_nothing_is_requested
     assert extract_dependency_specifiers(data, []) == ({}, [])
 
 
-def test_dependency_static_value_wins_over_dynamic_without_warning() -> None:
+def test_dependency_static_value_wins_over_dynamic_with_a_warning() -> None:
     data = {"project": {"dynamic": ["dependencies"], "dependencies": ["numpy>=1"]}}
 
-    assert extract_dependency_specifiers(data, ["numpy"]) == ({"numpy": ">=1"}, [])
+    specifiers, warnings = extract_dependency_specifiers(data, ["numpy"])
+
+    assert specifiers == {"numpy": ">=1"}
+    assert [w.code for w in warnings] == ["static-and-dynamic"]
 
 
 REQUIREMENTS = [
