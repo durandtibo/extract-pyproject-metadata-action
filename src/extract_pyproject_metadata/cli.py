@@ -38,10 +38,10 @@ reads the object can check it.
 
 With ``GITHUB_OUTPUT`` (set by GitHub in a workflow), appends the action
 outputs to the file it names (with a delimiter so that values may contain line breaks).
-They are ``name``, ``normalized-name``, ``file-name``,
-``version``, ``normalized-version``, ``requires-python``, ``python-versions``,
-``python-min``, ``python-max``, ``extras``, ``groups``, ``dependency-specifiers`` and
-``json`` (the JSON object that is printed without the variable, in compact form). It also
+They are the outputs of ``action.yaml``: the keys of the JSON object above in ``kebab-case``
+(``dependency_requirements``, ``warnings`` and ``schema_version`` are only in ``json``), and
+``json`` (the JSON object that is printed without the variable, in compact form).
+It also
 prints to stdout one ``::warning file=<path>,title=<code>::`` workflow command per warning,
 where ``<path>`` is the pyproject path, so that GitHub attaches the annotation to the file,
 followed by a one-line log line of the outputs. Warnings are printed on stdout

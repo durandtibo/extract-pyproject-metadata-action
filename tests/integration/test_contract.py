@@ -10,6 +10,7 @@ import pytest
 
 import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.errors import MetadataError
+from extract_pyproject_metadata.github import format_outputs
 from extract_pyproject_metadata.inputs import parse_dependencies
 from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
 from extract_pyproject_metadata.report import build_report
@@ -72,11 +73,12 @@ def test_readme_documents_the_inputs_and_outputs_of_action_yaml(section: str, he
     assert sorted(readme_table_names(heading)) == sorted(action_section_keys(section))
 
 
-def test_module_docstring_lists_the_outputs_of_action_yaml() -> None:
-    docstring = " ".join((extract_metadata_module.__doc__ or "").split())
-    section = docstring.split("appends the action outputs", 1)[1].split("It also prints", 1)[0]
+def test_the_outputs_are_the_outputs_of_action_yaml(tmp_path: Path) -> None:
+    path = write_pyproject(tmp_path, '[project]\nname = "coola"\nversion = "1.2.3"\n')
 
-    assert sorted(re.findall(r"``([a-z-]+)``", section)) == sorted(action_section_keys("outputs"))
+    outputs = format_outputs(extract_report(path, "[]"))
+
+    assert sorted(outputs) == sorted(action_section_keys("outputs"))
 
 
 def test_module_docstring_lists_the_keys_of_the_json() -> None:
