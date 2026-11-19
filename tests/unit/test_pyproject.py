@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.pyproject import (
+    READ_FIELDS,
     _read_name,
     _read_version,
     _static_and_dynamic_warnings,
@@ -20,6 +22,7 @@ from extract_pyproject_metadata.pyproject import (
     read_groups,
     read_project,
 )
+from extract_pyproject_metadata.requirements import collect_requirements
 from extract_pyproject_metadata.types import Project, ReportWarning
 from tests.helpers import extract, extract_with_warnings, messages, write_pyproject
 
@@ -843,3 +846,65 @@ def test_read_groups_does_not_change_the_table() -> None:
     read_groups(table)
 
     assert table == {"Dev": ["a"], "dev": ["b"]}
+
+
+SET_VALUES: dict[str, Any] = {
+    "name": "a",
+    "version": "1.0",
+    "requires-python": ">=3.11",
+    "dependencies": ["numpy"],
+    "optional-dependencies": {"test": ["pytest"]},
+}
+
+
+@pytest.mark.parametrize("field", ["description", "classifiers", "readme", "license", "urls"])
+def test_read_project_a_field_that_is_not_read_does_not_warn_when_static_and_dynamic(
+    field: str,
+) -> None:
+    data = {"project": {"name": "a", "version": "1.0", "dynamic": [field], field: "x"}}
+
+    _, warnings = read_project(data, [])
+
+    assert warnings == []
+
+
+@pytest.mark.parametrize("field", ["version", "requires-python", "dependencies"])
+def test_read_project_a_field_that_is_read_warns_when_static_and_dynamic(field: str) -> None:
+    project = {"name": "a", "version": "1.0", "dynamic": [field], field: SET_VALUES[field]}
+
+    _, warnings = read_project({"project": project}, [])
+
+    assert [w.code for w in warnings] == ["static-and-dynamic"]
+    assert f"[project].{field} is set and also listed" in warnings[0].message
+
+
+def test_static_and_dynamic_warnings_for_every_read_field() -> None:
+    warnings = _static_and_dynamic_warnings(SET_VALUES, sorted(READ_FIELDS))
+
+    assert [w.code for w in warnings] == ["static-and-dynamic"] * len(READ_FIELDS)
+
+
+def test_read_fields_are_the_fields_that_the_readers_read() -> None:
+    class Recorder(dict[str, Any]):
+        accessed: set[str]
+
+        def get(self, key: str, default: Any = None) -> Any:
+            self.accessed.add(key)
+            return super().get(key, default)
+
+        def __getitem__(self, key: str) -> Any:
+            self.accessed.add(key)
+            return super().__getitem__(key)
+
+        def __contains__(self, key: object) -> bool:
+            self.accessed.add(str(key))
+            return super().__contains__(key)
+
+    project = Recorder(SET_VALUES)
+    project.accessed = set()
+    data = {"project": project}
+
+    read_project(data, [])
+    collect_requirements(data, frozenset())
+
+    assert project.accessed - {"dynamic"} == READ_FIELDS

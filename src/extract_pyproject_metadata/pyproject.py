@@ -19,6 +19,7 @@ from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.types import Project, ReportWarning
 
 __all__ = [
+    "READ_FIELDS",
     "UTF8_BOM",
     "load_pyproject",
     "read_extra_names",
@@ -29,6 +30,12 @@ __all__ = [
 
 # The UTF-8 byte order mark that some editors write at the start of a file.
 UTF8_BOM = b"\xef\xbb\xbf"
+
+# The fields of ``[project]`` that the action reads (here by ``read_project``, and by
+# ``requirements.collect_requirements``). Any other field is ignored, so it never warns.
+READ_FIELDS = frozenset(
+    {"name", "version", "requires-python", "dependencies", "optional-dependencies"}
+)
 
 
 def load_pyproject(pyproject_path: str) -> dict[str, Any]:
@@ -84,7 +91,7 @@ def read_project(
 
     Returns:
         A tuple ``(project, warnings)``. ``warnings`` lists the warning messages (for example
-        when the version is dynamic, or when a field is both set and listed in ``dynamic``).
+        when the version is dynamic, or when a field that the action reads is both set and listed in ``dynamic``).
 
     Raises:
         MetadataError: If ``[project]`` is not a table (the first error found is reported,
@@ -152,10 +159,10 @@ def _read_name(project: dict[str, Any], dynamic: list[str]) -> str:
 def _static_and_dynamic_warnings(
     project: dict[str, Any], dynamic: list[str]
 ) -> list[ReportWarning]:
-    """Describe the fields that are set in ``[project]`` and also listed
-    in ``dynamic``.
+    """Describe the fields that the action reads (``READ_FIELDS``), that are set in
+    ``[project]`` and also listed in ``dynamic``.
 
-    PEP 621 forbids it. The static value is the one that is read.
+    PEP 621 forbids it. The static value is the one that is read. Any other field is ignored.
 
     Args:
         project: The ``[project]`` table.
@@ -171,7 +178,7 @@ def _static_and_dynamic_warnings(
             "which PEP 621 forbids; the static value is used",
         )
         for field in dict.fromkeys(dynamic)
-        if field in project
+        if field in READ_FIELDS and field in project
     ]
 
 
