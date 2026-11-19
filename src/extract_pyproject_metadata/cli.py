@@ -1,66 +1,22 @@
-r"""Extract project metadata and dependency specifiers from a
-pyproject.toml.
+"""Entry point of the action: read the inputs from the environment, build the report and
+write the outputs.
 
-The metadata is the project name and version (and their normalized forms), the
-name as it is written in the file names of wheels and sdists, ``requires-python``,
-and the optional-dependency extras and dependency groups. The program also selects
-the Python versions that ``requires-python`` allows, and looks up the dependencies that
-it is asked to.
+The program takes no argument (the launcher ignores any). The inputs are the ``INPUT_*``
+variables of the action (named by ``env_name``; an input that is not set has its default of
+``inputs.DEFAULT_INPUTS``). A local run is:
 
-Usage:
-    The program takes no argument (the launcher ignores any). The inputs of the action are read from the environment
-    variables ``INPUT_PYPROJECT_PATH``, ``INPUT_EXTRA_VALUES``, ``INPUT_DEPENDENCIES``,
-    ``INPUT_PYTHON_CANDIDATES`` and ``INPUT_STRICT`` (an input that is not set has the default
-    of ``action.yaml``). A local run is:
+    INPUT_PYPROJECT_PATH=path/to/pyproject.toml python scripts/extract_metadata.py
 
-        INPUT_PYPROJECT_PATH=path/to/pyproject.toml python scripts/extract_metadata.py
+Without ``GITHUB_OUTPUT``, the ``json`` object is printed to stdout. With it (set by GitHub in
+a workflow), the outputs are appended to the file it names and the annotations and the log line
+are printed to stdout.
 
-A name of ``INPUT_DEPENDENCIES`` (a JSON array) may be followed by ``@project``,
-``@extra:<name>`` or ``@group:<name>`` to look it up in ``[project].dependencies``, one
-extra or one dependency group only (``numpy@extra:fast``); the key of the result is the entry
-as written.
+The exit code is 0, or 1 with ``<field>: <problem>`` on stderr (with ``GITHUB_OUTPUT``, also an
+``::error`` annotation).
 
-Without ``GITHUB_OUTPUT``, prints a single JSON object to stdout (non-ASCII
-characters are kept as they are, as in the action outputs):
-    {"name": ..., "normalized_name": ..., "file_name": ...,
-     "version": ..., "normalized_version": ..., "requires_python": ...,
-     "extras": [...], "groups": [...],
-     "python_versions": [...], "python_min": ..., "python_max": ...,
-     "dependency_specifiers": {...}, "dependency_requirements": {...},
-     "warnings": [...], "schema_version": 1}
-
-"warnings" lists the suspicious but non-fatal input as objects with a ``code`` (a stable
-identifier, see ``warning_codes.py``) and a ``message`` (for a human, it may be reworded).
-
-"schema_version" is the version of this JSON object: it increases when a key is
-renamed, removed or changes type, not when a key is added, so that a tool that
-reads the object can check it.
-
-With ``GITHUB_OUTPUT`` (set by GitHub in a workflow), appends the action
-outputs to the file it names (with a delimiter so that values may contain line breaks).
-They are the outputs of ``action.yaml``: the keys of the JSON object above in ``kebab-case``
-(``dependency_requirements``, ``warnings`` and ``schema_version`` are only in ``json``), and
-``json`` (the JSON object that is printed without the variable, in compact form).
-It also
-prints to stdout one ``::warning file=<path>,title=<code>::`` workflow command per warning,
-where ``<path>`` is the pyproject path, so that GitHub attaches the annotation to the file,
-followed by a one-line log line of the outputs. Warnings are printed on stdout
-because GitHub only parses workflow commands there.
-
-With ``INPUT_STRICT=true``, any warning is an error instead: the outputs are not
-written and the message lists the warnings. A requested dependency that is not
-found (a ``null`` specifier) and a dynamic ``version`` are warnings.
-
-``python_versions`` lists the ``INPUT_PYTHON_CANDIDATES`` (a JSON array of
-"major.minor" strings) that ``[project].requires-python`` allows, sorted ascending as
-numbers and without duplicates; ``python_min`` is the first of them and ``python_max`` the
-last (each an empty string if there is none).
-
-Exits with 1 and a message ``<field>: <problem>`` on stderr (with ``GITHUB_OUTPUT``, an
-``::error file=<path>::`` workflow command, so that GitHub shows an error annotation on the
-file) if an input is invalid, the file is missing, cannot be read, is not UTF-8 or is not
-valid TOML, a field that is read has the wrong type or is missing, ``INPUT_STRICT=true`` and
-there is a warning, or the outputs cannot be written.
+The inputs and outputs are defined in ``action.yaml``, the keys of the ``json`` object in
+``types.Report``, the warning codes in ``warning_codes.py``, and the causes of failure in the
+README.
 """
 
 from __future__ import annotations

@@ -12,9 +12,8 @@ versions) and which dependency specifiers to install. Reading them from the file
 build, test and publish jobs in sync with what `pip install` installs.
 
 The action only **reads** the file: it never runs project code or a build backend, and
-values from the file cannot become shell code, workflow commands or Markdown. It needs a
-Python 3.11 or later on `PATH` (for example from `actions/setup-python`) and nothing
-else: no installation, no network. It runs on Linux and macOS. Windows is not supported, on purpose.
+values from the file cannot become shell code, workflow commands or Markdown. It needs
+nothing to install and no network (see [Prerequisites](#prerequisites)).
 
 ## Table of Contents
 
@@ -172,8 +171,8 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 surrounding spaces are ignored, and any other value fails the step. The list of Python
 candidates is yours to maintain, as the action does not know which versions exist. A Python
 that is released after this tag is not in the default of `python-candidates`: pass it in the
-input (an empty string is invalid, `[]` means no candidate). The action does not read the date or the network, so the same tag and
-the same inputs always give the same outputs.
+input (an empty string is invalid, `[]` means no candidate). The action does not read the date or
+the network, so the same tag and the same inputs always give the same outputs.
 
 ## Outputs
 
@@ -215,7 +214,8 @@ ask the build backend for it.
 `[project].dependencies`, then in every extra (in file order), then in every dependency
 group (in file order, `include-group` expanded), and the **first** requirement wins;
 environment markers are never evaluated. To read one place only, follow the name with `@`
-and the place. Names are compared per PEP 503.
+and the place. Names are compared per PEP 503. When a package has several requirements,
+`dependency_requirements` in the `json` output lists all of them with their `marker`.
 
 | Entry              | Searched in                                                                | Key in the result  |
 | ------------------ | -------------------------------------------------------------------------- | ------------------ |
@@ -298,7 +298,7 @@ Fields that the action does not output (`description`, `license`, `authors`,
 
 ## How it works
 
-1. `scripts/run.sh` finds a Python 3.11 or later on `PATH` and starts the program.
+1. `scripts/run.sh` finds a suitable Python on `PATH` and starts the program.
 2. The inputs are read from the environment and validated before the file is read.
 3. `pyproject.toml` is parsed with `tomllib`; only the fields that the action outputs are
    read and validated.
@@ -315,9 +315,9 @@ Fields that the action does not output (`description`, `license`, `authors`,
 **Cause:** an input or a field of the file is invalid (see [Failures](#failures)).
 **Solution:** fix the field named in the message; the annotation points to the file.
 
-### No Python 3.11 or later was found
+### No suitable Python was found
 
-**Cause:** the runner has no suitable `python3` or `python` on `PATH`.
+**Cause:** the runner does not meet the [Prerequisites](#prerequisites).
 **Solution:** add `actions/setup-python` before the action.
 
 ### `version` is empty
@@ -346,22 +346,13 @@ No. It only reads the file; it never runs project code or a build backend.
 
 Set it as the job output and read it with `fromJSON`, as in [Recipes](#recipes).
 
-### Why is the newest Python missing from `python-versions`?
-
-The action does not read the date or the network. Pass the version in `python-candidates`.
-
-### Are environment markers evaluated?
-
-No. When a package has several requirements, `dependency_requirements` in the `json`
-output lists all of them with their `marker`.
-
 ## Limitations
 
-- **Linux and macOS only.** Windows is not supported, on purpose.
-- **Python 3.11 or later** must be on `PATH`; the action installs none.
+- **Platform and Python:** see [Prerequisites](#prerequisites).
 - **Static values only.** A field in `dynamic` has no value.
-- **First match wins** when a dependency is looked up without a scope.
-- **Fixed default candidates.** New Python versions need `python-candidates`.
+- **Dependency lookup:** first match wins and markers are not evaluated, see
+  [Looking up a dependency in one place](#looking-up-a-dependency-in-one-place).
+- **Python candidates:** a new Python version needs `python-candidates`, see [Inputs](#inputs).
 
 ## Development
 
