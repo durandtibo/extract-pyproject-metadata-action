@@ -37,33 +37,30 @@ def _compact_json(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
 
+# The keys of the report that are not outputs of their own: they are only in the ``json`` output.
+_JSON_ONLY = frozenset({"dependency_requirements", "warnings", "schema_version"})
+
+
 def format_outputs(metadata: Report) -> dict[str, str]:
-    """Convert the metadata dict into the string outputs of the action.
+    """Convert the report into the string outputs of the action.
+
+    An output is a key of the report in ``kebab-case``: a string as it is, any other value as
+    compact JSON.
 
     Args:
         metadata: The report built by ``build_report``.
 
     Returns:
-        A dict mapping each output name of ``action.yaml`` to its value, with
-        JSON values in compact form. ``json`` is the whole report, the object
-        that the script prints to stdout (with the names in ``snake_case``,
+        A dict mapping each output name of ``action.yaml`` to its value. ``json`` is the whole
+        report, the object that the script prints to stdout (with the names in ``snake_case``,
         the ``warnings`` and the ``schema_version``).
     """
-    return {
-        "name": metadata["name"],
-        "normalized-name": metadata["normalized_name"],
-        "file-name": metadata["file_name"],
-        "version": metadata["version"],
-        "normalized-version": metadata["normalized_version"],
-        "requires-python": metadata["requires_python"],
-        "python-versions": _compact_json(metadata["python_versions"]),
-        "python-min": metadata["python_min"],
-        "python-max": metadata["python_max"],
-        "extras": _compact_json(metadata["extras"]),
-        "groups": _compact_json(metadata["groups"]),
-        "dependency-specifiers": _compact_json(metadata["dependency_specifiers"]),
-        "json": _compact_json(metadata),
+    outputs = {
+        key.replace("_", "-"): value if isinstance(value, str) else _compact_json(value)
+        for key, value in metadata.items()
+        if key not in _JSON_ONLY
     }
+    return {**outputs, "json": _compact_json(metadata)}
 
 
 def new_delimiter() -> str:
