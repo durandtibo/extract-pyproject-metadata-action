@@ -38,6 +38,10 @@ test: ## Run the tests with the coverage gate
 test-properties: ## Run the property-based tests (needs the property group)
 	$(PYTHON_RUN) pytest -q tests/properties
 
+.PHONY: check-export
+check-export: ## Check that the exported files are the files the action needs
+	./dev/check_export.sh
+
 .PHONY: docs
 docs: ## Generate the tables of README.md from action.yaml
 	$(PYTHON_RUN) python scripts/generate_docs.py

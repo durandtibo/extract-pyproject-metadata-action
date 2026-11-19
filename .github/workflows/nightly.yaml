@@ -1,5 +1,6 @@
 # Nightly workflow testing the latest published version of the action, to catch regressions in
-# what consumers pick up (nightly-test-released.yaml). The current code is tested nightly by ci.yaml.
+# what consumers pick up: it calls ci-action.yaml with `use-released: true`. The current code is
+# tested nightly by ci.yaml.
 
 name: Nightly Tests
 on:
@@ -21,6 +22,7 @@ jobs:
     needs: get-matrix
     permissions:
       contents: read
-    uses: ./.github/workflows/nightly-test-released.yaml
+    uses: ./.github/workflows/ci-action.yaml
     with:
+      use-released: true
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
