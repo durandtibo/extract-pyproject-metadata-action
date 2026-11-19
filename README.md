@@ -1,8 +1,10 @@
 # extract-pyproject-metadata-action
 
 [![CI](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/ci.yaml/badge.svg)](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/ci.yaml)
-[![Nightly Tests](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/nightly.yaml/badge.svg)](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/nightly.yaml)
-[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
+[![Nightly](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/nightly.yaml/badge.svg)](https://github.com/durandtibo/extract-pyproject-metadata-action/actions/workflows/nightly.yaml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/durandtibo/extract-pyproject-metadata-action/badge)](https://scorecard.dev/viewer/?uri=github.com/durandtibo/extract-pyproject-metadata-action)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/tag/durandtibo/extract-pyproject-metadata-action?label=release)](https://github.com/durandtibo/extract-pyproject-metadata-action/tags)
 
 A GitHub Action that reads a `pyproject.toml` and exposes the values that drive a
 workflow: what to build (name, version), what to test (extras, dependency groups, Python
