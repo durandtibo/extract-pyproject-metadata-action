@@ -1,15 +1,6 @@
 SHELL = /bin/bash
 
-include .make/help.mk
-include .make/makefile.mk
-include .make/markdown.mk
-include .make/self.mk
-include .make/shell.mk
-include .make/toml.mk
-include .make/uv.mk
-include .make/yaml.mk
-
-.DEFAULT_GOAL := help
+include .make/all.mk
 
 PYTHON_RUN ?= uv run
 
