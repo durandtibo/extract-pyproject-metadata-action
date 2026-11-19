@@ -1,163 +1,166 @@
 # Target state of `extract-pyproject-metadata-action`
 
-Review date: 2026-11-19. Reviewed commit: `a8f7f17` (`main`, clean). The latest tag is
-`v0.3.0`, so every change below is a breaking or additive change for **`v0.4.0`**.
-Windows support and floating tags (`v0`, `STABLE_REF`) are decisions of the maintainer and are
-not reopened.
+Review date: 2026-11-19. Reviewed commit: `f55fba2` (`main`, clean). The latest tag is
+`v0.3.0`; the changes below are for **`v0.4.0`**. Windows support and floating tags (`v0`,
+`STABLE_REF`) are decisions of the maintainer and are not reopened.
 
-This file **replaces** the previous review (still in the git history). That round is
-implemented and released in `v0.3.0`: 5 inputs, 13 outputs, a sorted `python-versions`, one entry
-point, a layered package, three golden cases on the real action. What is left is small. One
-**behaviour defect** against the properties, one **hypothesis disproved** by measurement (the
-`packaging` group resolver), some **dead or duplicated code**, and one **convention** (the empty
-default of `python-candidates`) that hides the real default. The action does not need a
-redesign; it needs a few corrections and a rule against growth.
+This file **replaces** the previous review (in the git history). Its five PRs (#267 to #271)
+are merged: `static-and-dynamic` narrowed to the fields that are read, one
+`lookup_dependencies`, output names derived from the report keys, the default of
+`python-candidates` in `action.yaml`, the unit tests consolidated. That round was about code
+shape. This one found **two behaviour defects and one broken check on `main`**, all verified by
+running the code, plus three smaller simplifications. The interface (5 inputs, 13 outputs) does
+not need a redesign.
 
 Structure: **1** properties, **2** measured state, **3** findings, **4** target behaviour,
 **5** target code, **6** tests, **7** CI and release, **8** what does not change, **9**
-migration plan, **10** decisions for the maintainer.
+migration plan, **10** decisions for the maintainer, then what was and was not verified.
 
 ---
 
 ## 1. Properties of the action
 
 They come from `README.md`, `CLAUDE.md` and `action.yaml`, made explicit and ordered. When two
-conflict, the lower number wins. Every proposal below is judged against them, and a change that
-cannot name the property it serves is not made.
+conflict, the lower number wins. Every proposal is judged against them; a change that cannot
+name the property it serves is not made.
 
-| #   | Property                        | Meaning                                                                                                                                                                                              | How it is checked                                                            |
-| --- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| P1  | **Single purpose**              | Read a `pyproject.toml` and expose what drives a workflow: what to build (name, version), what to test (extras, groups, Python versions), what to install (specifiers).                              | A new output must say which of the three questions it answers.               |
-| P2  | **Read-only and safe**          | Never runs project code or a build backend; writes only `$GITHUB_OUTPUT`. A value from the file or an input cannot become shell code, a workflow command or Markdown.                                | `test_output_injection.py`; inputs go through `env:`; no `${{ }}` in `run:`. |
-| P3  | **Zero install, no network**    | Needs only a Python >= 3.11 on `PATH`. Nothing is installed or downloaded; `packaging` is vendored.                                                                                                  | `run.sh` installs nothing; `test_run_sh.py`; `test_vendor.py`.               |
-| P4  | **Deterministic and immutable** | The same tag and the same inputs give the same outputs, whatever the date or the machine. A tag is never moved; callers pin `@vX.Y.Z`. No default depends on the clock or the network.               | Golden cases; `CLAUDE.md` (no tag created from a PR).                        |
-| P5  | **Strict, clear failures**      | Invalid input fails before anything is written, with one `<field>: <problem>` message, an `::error` annotation and never a traceback. Suspicious input is a coded warning; `strict` makes it fatal. | `test_error_format.py`, `test_warnings.py`, `test_limits.py`.                |
-| P6  | **Reads only what it outputs**  | A field that no output uses is neither read, nor validated, nor a cause of a warning or of a failure, `strict` included.                                                                             | `README.md` ("Failures"); a test per field (see F1: **not met today**).      |
-| P7  | **Small, stable interface**     | Few inputs and outputs, scalars as plain strings, collections as JSON for `fromJSON`; `json` has a `schema_version`. A rename or a type change is breaking. Every default is visible in `action.yaml`. | `test_contract.py` (`action.yaml` against README and code).                  |
-| P8  | **Simple and fast**             | Standard library plus vendored `packaging`; no clever code a reader must decode; one name or one rule has one definition; a run costs far less than starting the runner.                            | Measured in 2; reviewed here.                                                |
-| P9  | **Maintainable**                | One concern per module, imports go one way, 100 % coverage, docs generated from `action.yaml`, one task runner (`make`), the cheapest test level for each behaviour.                                 | `test_layers.py`, `make check`, `make docs-check`, CI.                       |
-| P10 | **Linux and macOS only**        | No Windows code, matrix cell, test or doc.                                                                                                                                                           | `CLAUDE.md`.                                                                 |
+| #   | Property                        | Meaning                                                                                                                                                                                                                                                            | How it is checked                                                                   |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| P1  | **Single purpose**              | Read a `pyproject.toml` and expose what drives a workflow: what to build (name, version), what to test (extras, groups, Python versions), what to install (specifiers).                                                                                            | A new output must say which of the three questions it answers.                      |
+| P2  | **Read-only and safe**          | Never runs project code or a build backend; writes only `$GITHUB_OUTPUT`. A value from the file or an input cannot become shell code, a workflow command or Markdown.                                                                                              | `test_output_injection.py`; inputs go through `env:`; no `${{ }}` in `run:`.        |
+| P3  | **Zero install, no network**    | Needs only a Python >= 3.11 on `PATH`. Nothing is installed or downloaded; `packaging` is vendored.                                                                                                                                                                | `run.sh` installs nothing; `test_run_sh.py`; `test_vendor.py`.                      |
+| P4  | **Deterministic and immutable** | The same tag and inputs give the same outputs, whatever the date or the machine. A tag is never moved; callers pin `@vX.Y.Z`. No default depends on the clock or the network.                                                                                      | Golden cases; `CLAUDE.md` (no tag created from a PR).                               |
+| P5  | **Strict, clear failures**      | Invalid input fails before anything is written, with one `<field>: <problem>` message, an `::error` annotation and never a traceback. Suspicious input is a coded warning; `strict` makes it fatal. **An output that cannot be trusted is never silent** (see F2). | `test_error_format.py`, `test_warnings.py`, `test_limits.py`.                       |
+| P6  | **Reads only what it outputs**  | A field that no output uses is neither read, nor validated, nor a cause of a warning or a failure, `strict` included. The converse of P5: what an output reads is checked, what it does not read is ignored.                                                       | README "Failures"; a test per field.                                                |
+| P7  | **Small, stable interface**     | Few inputs and outputs, scalars as plain strings, collections as JSON for `fromJSON`; `json` has a `schema_version`. A rename or a type change is breaking. Every default is visible in `action.yaml`.                                                             | `test_contract.py` (`action.yaml` against README and code).                         |
+| P8  | **Simple and fast**             | Standard library plus vendored `packaging`; no clever code a reader must decode; **one fact has one definition** (code, docstring or README, not three); a run costs far less than starting the runner.                                                            | Measured in 2; reviewed here.                                                       |
+| P9  | **Maintainable**                | One concern per module, imports go one way, 100 % coverage, docs generated from `action.yaml`, one task runner (`make`), the cheapest test level for each behaviour. **Every check is green on `main`.**                                                           | `test_layers.py`, `make check`, `make docs-check`, CI.                              |
+| P10 | **Linux and macOS only**        | No Windows code, matrix cell, test or doc.                                                                                                                                                                                                                         | `CLAUDE.md`.                                                                        |
+| P11 | **Ships only what it needs**    | The exported archive is `action.yaml`, `LICENSE`, `scripts/run.sh`, `scripts/extract_metadata.py` and the package. A file added to the repository is **not** shipped unless someone decides it is.                                                                 | `make check-export`, `ci-export.yaml`, `tests/integration/test_export.py` (see F1). |
 
-P6 was implicit in the README ("Fields that the action does not output ... are not read and not
-validated"); it is promoted to a property because F1 is a violation of it.
+Changes from the previous review: P5 gains the clause "never silent", P8 states "one fact has
+one definition", P9 states "green on `main`", and P11 is new (it was in `CLAUDE.md` but not a
+property, and F1 violates it).
 
 ---
 
 ## 2. Measured state
 
-Measured on 2026-11-19, Python 3.15.2, macOS, on `a8f7f17`.
+Measured on 2026-11-19, Python 3.14.10 (the venv), macOS, on `f55fba2`.
 
-| What                      | Value                                                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Package (no `_vendor`)    | 12 modules, **1,691 lines** (`requirements.py` 350, `pyproject.py` 276, `github.py` 202, `inputs.py` 183, `cli.py` 166)                                       |
-| Tests                     | **6,332 lines** (3.7x the package), **1,080 tests in 10.2 s**, all green                                                                                      |
-| Static checks             | `ruff check src scripts tests`: pass. `pyright`: 0 errors. (`make check` and the coverage gate were **not** run in this review.)                              |
-| Run of the action         | **~96 ms** per run (10 runs: 0.96 s). The import is ~83 ms with `-X importtime`, of which 26 ms is `packaging.tags`, pulled in by `packaging.utils`           |
-| Interface                 | 5 inputs, 13 outputs, 9 warning codes, `schema_version` 1                                                                                                     |
-| Vendored `packaging` 26.3 | 28 tracked files, 11.7 k lines; used: `version`, `specifiers`, `requirements`, `utils` (and what they import). Not used: `dependency_groups`, `pylock`, `metadata` |
-| Workflows                 | `ci.yaml` calls lint, types, python (unit on the OS x Python matrix, properties), action (local) and export; `nightly.yaml` runs the released action; 3 golden cases |
+| What                      | Value                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Package (no `_vendor`)    | 12 modules, **1,636 lines** (was 1,691)                                                                                         |
+| Tests                     | **6,206 lines** (3.8x the package), **391 test functions, 1,083 cases in 12 s**: 1,082 pass, **1 fails** (`test_export.py`, F1) |
+| Static checks             | `ruff check src scripts tests`: pass. `pyright`: 0 errors. (`make check`, the coverage gate and pre-commit were **not** run.)   |
+| Run of the action         | **~150 ms** per `run.sh` run including `bash` (10 runs: 1.5 s). Nothing to optimize (see 8)                                     |
+| Interface                 | 5 inputs, 13 outputs, 9 warning codes, `schema_version` 1                                                                       |
+| Vendored `packaging`      | 28 tracked files, 12.7 k lines of Python; used: `version`, `specifiers`, `requirements`, `utils`                                |
+| Largest unit-test modules | `test_requirements.py` 999 lines (78 tests), `test_pyproject.py` 862 (72), `test_cli.py` 646 (35, was 795)                      |
+| Workflows                 | 16 files, 1,489 lines; `ci-action.yaml` alone is 681 lines with 17 local/released twin pairs                                    |
 
-Conclusion: P8 holds on speed. 96 ms is nothing next to a checkout and `setup-python`; the 26 ms
-of `packaging.tags` is not worth a patched vendored copy (see 8). The cost that matters is
-reading and maintenance cost, which is what the findings below address.
+Conclusion: P8 holds on speed and on code size. The package shrank, the interface is stable,
+and every one of the 1,082 passing tests is cheap. What does not hold is **P9 on `main`** (a red
+check nobody saw because `make check` was not part of the last merge) and two violations of
+P5 and P6 that the previous round's own change (#267) left behind.
 
 ---
 
 ## 3. Findings
 
-Ordered by value. "Fix" points to the section of the target. Each one was checked by running the
-code or reading the lines named.
+Ordered by value. Each was checked by running the code or reading the lines named.
 
-| #   | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Property | Fix |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --- |
-| F1  | **`static-and-dynamic` fails `strict` for fields that no output uses.** `pyproject._static_and_dynamic_warnings` warns for **any** field that is set and also in `dynamic`. Verified: a file with `classifiers` and `description` both set and in `dynamic` gives two warnings, and `strict: true` fails with exit 1, although neither field is read. The README says such fields are "not read and not validated".                                                  | P6, P5   | 4.2 |
-| F2  | **The group resolver of `packaging` is not a replacement for `_Expansion`** (hypothesis F4 of the previous review, now measured). `DependencyGroupResolver` turns a cycle, an unknown group, an invalid requirement, a typo (`include_group`) and two spellings of one group name into an `ExceptionGroup` (errors, not the warnings of P5); on the 25-level diamond it returns **33,554,432** requirements in 0.6 s (the `_MAX_GROUP_EXPANSIONS` guard exists for this); a 3,000-level chain raises `RecursionError`. | P5, P8   | 8   |
-| F3  | **`flatten_group` is dead code in production.** It is public (`__all__`), and only `tests/unit/test_requirements.py` calls it; `_gather` builds `_Expansion` itself. A public function with no caller invites a second way to do the same thing.                                                                                                                                                                                                                 | P8, P9   | 5.1 |
-| F4  | **Two lookups over one list.** `lookup_specifiers` and `lookup_requirements` both call `find_requirements` for each entry; the specifier is the first requirement of the same list. `build_report` calls both and merges their warnings by hand.                                                                                                                                                                                                                | P8       | 5.1 |
-| F5  | **The output names have six definitions**: `types.Report` keys (`snake_case`), `github.format_outputs` (the same names again in `kebab-case`, one line each), `github._SUMMARY_FIELDS`, the `cli.py` docstring, `action.yaml` and the README. Tests keep them equal; a new output is a change in six places.                                                                                                                                                      | P8, P9   | 5.2 |
-| F6  | **`python-candidates` has a hidden default.** `action.yaml` gives `""` and the README table says "(see the description)"; the real list is a constant in `python_versions.py`, applied by `parse_inputs` (`values[...] or DEFAULT_PYTHON_CANDIDATES`) and rendered by a special case in `generate_docs.py`. It is the only input whose default is not the value in `action.yaml`.                                                                                  | P7, P8   | 4.3 |
-| F7  | **Unit tests are large for what they cover**: `test_cli.py` 795 lines for a 166-line module, `test_requirements.py` 993 for 350, `test_pyproject.py` 845 for 276. They hold many one-assertion tests that differ by a literal, and part of `test_cli.py` re-tests what `test_golden.py` and `test_cli_process.py` already prove.                                                                                                                                   | P9       | 6   |
-| F8  | **Stringly-typed `source`.** `"project"`, `"extra:<n>"` and `"group:<n>"` are built in `inputs.parse_dependencies` and again in `requirements._gather`, and compared as strings. It works and is covered by tests; it is a risk only when a fourth kind of place appears.                                                                                                                                                                                       | P8       | 8   |
+| #   | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Property | Fix |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | --- |
+| F1  | **The export check is red on `main`.** `bash dev/check_export.sh` exits 1: the archive contains `.python-version` (added in #265) and `CODEOWNERS`, which `.gitattributes` does not ignore. `pytest tests/integration/test_export.py` fails the same way, so `make check` and `ci-export.yaml` fail. Root cause: `.gitattributes` is a **deny list** (every file to hide is named), so each new root file is shipped until someone notices.                              | P11, P9  | 4.1 |
+| F2  | **A dynamic `optional-dependencies` gives an empty `extras` output, silently.** Verified: `dynamic = ["optional-dependencies"]` and no lookup gives `"extras": []`, `warnings: []`, exit 0, **also with `strict: true`**. `extras` is the main input of a test matrix: the matrix is empty (or just the `extra-values` baseline) and nothing says why. The `dynamic-dependencies` warning exists but is only raised when `dependencies` (the lookup input) is not empty. | P5       | 4.2 |
+| F3  | **`static-and-dynamic` fires for `dependencies` when nothing reads it.** Verified: `dependencies = ["x"]` and `dynamic = ["dependencies"]` with no lookup fails `strict` (exit 1). `dependencies` is in `READ_FIELDS` (#267), but `[project].dependencies` is only read for a lookup; `dynamic-dependencies` already says so ("only when `dependencies` is not empty"), `static-and-dynamic` does not. The same defect as the previous F1, one field left.               | P6       | 4.2 |
+| F4  | **The module docstring of `cli.py` is the fourth copy of the interface.** 70 lines restate the inputs, the JSON keys, `strict`, the Python-versions rule and the failure causes, which `action.yaml`, the generated README tables and `types.Report` already define. It has already drifted once (it still describes the output list by hand after #269 derived it). A docstring that says everything is a docstring nobody keeps right.                                 | P8       | 5.2 |
+| F5  | **The three largest unit-test modules did not shrink in #271.** `test_cli.py` went from 795 to 646 lines; `test_requirements.py` (993 to 999) and `test_pyproject.py` (845 to 862) grew, with the F1 tests of the last round. The ratio is 3.8x the package. The behaviours are covered; the cost is the reading and the editing of many cases that differ by a literal.                                                                                                 | P9       | 6   |
+| F6  | **The README states some facts more than once.** "Python 3.11 or later" six times, the Windows decision three times, "environment markers are not evaluated" three times, "the action does not read the date or the network" twice, across Features, Prerequisites, Troubleshooting, FAQ and Limitations. Each repeat is a place to forget in the next change.                                                                                                           | P8       | 5.3 |
 
-What was checked and found **good**, so it is not touched: the `env:` wiring of inputs, the
-random `$GITHUB_OUTPUT` delimiter and the escaping (`github.py`), validation of all inputs in
-one place (`inputs.py`), requirement tables read only for a lookup, `MetadataError` with a field
-prefix, `-I -B` in `run.sh`, one entry point (`cli.run`), the layered imports enforced by
-`test_layers.py` and now described identically in `CLAUDE.md`, pinned actions with `ratchet`
-comments, no `concurrency`, `permissions: {}`, `timeout-minutes` on every job, three golden
-cases for the real action, and the local and released twin steps.
+What was checked and found **good**, so it is not touched: the `env:` wiring of the inputs, the
+random `$GITHUB_OUTPUT` delimiter and the escaping, validation of all inputs in one place
+(`parse_inputs`, including the default of `python-candidates` now in `action.yaml`), requirement
+tables read only for a lookup, `MetadataError` with a field prefix, `-I -B` in `run.sh`, one
+entry point, the layered imports enforced by `test_layers.py`, output names derived from
+`Report`, one `lookup_dependencies`, pinned actions with `ratchet` comments, no `concurrency`,
+`permissions: {}`, `timeout-minutes` on every job, the local and released twin steps, the three
+golden cases on the real action.
 
 ---
 
-## 4. Target behaviour (the interface)
+## 4. Target behaviour
 
-The interface stays **5 inputs and 13 outputs**. One behaviour is narrowed (F1), one default
-becomes visible (F6), and the rest is unchanged.
+The interface stays **5 inputs and 13 outputs**, `schema_version` stays `1` (no key is renamed,
+removed or retyped). Two warnings change their condition (F2, F3). Nothing else is user visible.
 
-### 4.1 Inputs and outputs: unchanged
+### 4.1 What is shipped is an allow list (F1)
 
-| Input               | Default                | Note                                                                         |
-| ------------------- | ---------------------- | ---------------------------------------------------------------------------- |
-| `pyproject-path`    | `pyproject.toml`       |                                                                              |
-| `extra-values`      | `[]`                   | prepended to the extras (`'[""]'` adds a "no extra" job)                     |
-| `dependencies`      | `[]`                   | `name`, `name@project`, `name@extra:<n>`, `name@group:<n>`; first match wins |
-| `python-candidates` | the list (see 4.3)     | explicit, so the output depends on the tag and the inputs only (P4)          |
-| `strict`            | `false`                | boolean; any warning is an error                                             |
+`.gitattributes` denies by default and names what the action needs. It was run in a clone with
+the repository's own `dev/check_export.sh`: `✅ The exported files are the expected ones (51
+entries)`.
 
-Outputs: `name`, `normalized-name`, `file-name`, `version`, `normalized-version`,
-`requires-python`, `python-versions`, `python-min`, `python-max`, `extras`, `groups`,
-`dependency-specifiers`, `json`. `schema_version` stays `1`: no key is renamed, removed or
-retyped.
+```gitattributes
+# Ship only what the action needs at runtime. Nothing is shipped unless it is listed below:
+# a new file at the root (a dotfile, CODEOWNERS, a lock file, ...) stays out of the release.
+# When the action starts using a new file, un-ignore it here and add it to dev/check_export.sh.
+* export-ignore
+/action.yaml -export-ignore
+/LICENSE -export-ignore
+/scripts/ -export-ignore
+/scripts/run.sh -export-ignore
+/scripts/extract_metadata.py -export-ignore
+/src/ -export-ignore
+/src/** -export-ignore
+```
 
-Rejected additions, each a new surface (P7) for a need that `json` already covers: an input
-that selects which warnings are fatal; a warning for an unscoped lookup that matches several
-different specifiers (`dependency_requirements` lists them all); marker evaluation; an output
-for the Python classifiers.
+- It deletes the 23 lines that name what is hidden, and the class of defect behind F1: the
+  failure mode of a new file becomes "not shipped" (visible at the first run of the action) and
+  not "shipped by accident".
+- `dev/check_export.sh` stays as it is (the expected set is the contract).
+- `tests/integration/test_export.py` has tests that append one line to `.gitattributes`
+  (`/action.yaml export-ignore`, ...): they keep working (the last matching line wins). The test
+  "a file that the action does not need is exported" must append `/tests/ -export-ignore`
+  instead of removing an ignore line; rewrite it, and run it **before** the change (it must
+  fail on a mutation that exports a file) and after.
+- `CLAUDE.md`: the sentence "`.gitattributes` marks everything else `export-ignore`" becomes
+  literally true; add "the default is `export-ignore`".
 
-### 4.2 `static-and-dynamic` only concerns the fields the action reads (F1)
+### 4.2 A warning for every dependency field the action cannot read (F2, F3)
 
-A field of `[project]` that is set and listed in `dynamic` is a warning **only if the action
-reads it**: `name`, `version`, `requires-python`, `dependencies`, `optional-dependencies`. Any
-other field (`description`, `classifiers`, `readme`, ...) is ignored, as the rest of the
-file. The `dynamic-version` and `dynamic-dependencies` warnings are unchanged.
+The rule is one sentence, and it is the one P5 and P6 already imply: **a field of `[project]`
+that an output depends on is checked when that output is computed.**
 
-- It is a behaviour change: a file that failed `strict` only because of `classifiers` or
-  `description` now passes. Call it out in the PR and the release notes.
-- The list of fields is one constant next to the code that reads them (`pyproject.py`), and a
-  test checks that each field of it is read by `read_project` or `collect_requirements`, so the
-  list cannot drift.
-- The README warning table row changes to "A field that the action reads is set and also in
-  `dynamic`".
+| Field                                | Read when                           | `static-and-dynamic`                       | `dynamic-dependencies` (set and dynamic: no; unset and dynamic: yes) |
+| ------------------------------------ | ----------------------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| `name`, `version`, `requires-python` | always                              | always                                     | n/a (`version` has `dynamic-version`; `name` is an error)            |
+| `optional-dependencies`              | always (the `extras` output)        | **always**                                 | **always** (today: only with a lookup: F2)                           |
+| `dependencies`                       | only with a lookup (`dependencies`) | **only with a lookup** (today: always: F3) | only with a lookup (unchanged)                                       |
 
-### 4.3 The default of `python-candidates` is in `action.yaml` (F6)
+- F2 is a behaviour change: a file with a dynamic `optional-dependencies` now warns on every
+  run, and fails `strict`. That is the intent: `extras` is empty because the action cannot read
+  them, and a release job that asked for `strict` wants to know.
+- F3 is a behaviour change in the other direction: `strict` stops failing on a `dependencies`
+  that is set and dynamic when no dependency is looked up.
+- The code of the warning, `dynamic-dependencies`, is unchanged (stable codes, P7); its row in
+  the generated README table changes to "`optional-dependencies`, or `dependencies` when
+  `dependencies` is not empty, is in `dynamic` and not set".
+- No new input, no new code, no new output.
 
-`action.yaml` carries the real default, `'["3.11","3.12","3.13","3.14","3.15"]'`; the README
-table shows it (no "see the description"); the empty string stops meaning "the default" and
-becomes an invalid value (`python-candidates: not valid JSON: ''`), like every other empty
-JSON input. `[]` still means "no candidate".
+### 4.3 Everything else: unchanged
 
-- The constant `DEFAULT_PYTHON_CANDIDATES` stays, for a local run without `INPUT_*`;
-  `test_contract.py` checks that it equals the default of `action.yaml`, as it already does for
-  the other four inputs.
-- Deleted: the `or DEFAULT_PYTHON_CANDIDATES` line of `parse_inputs`, the empty default and the
-  sentence "empty for the supported CPython versions" in `action.yaml`, the `candidates` block
-  and `render_candidates` of `generate_docs.py`, and the `|| ''` of the golden steps in
-  `ci-action.yaml`.
-- The October task is unchanged, with one more line to edit; a test fails if the two differ.
-- A caller that passes `python-candidates: ""` explicitly (nobody documented does) gets a clear
-  error and removes the line. This is the only breaking part.
-
-### 4.4 Failure and warning model: unchanged
-
-Nine warning codes (the wording of one changes, 4.2), the same `<field>: <problem>` errors, the
-same `strict` behaviour (the error lists the warnings, nothing is written).
+Failure model (`<field>: <problem>`, `::error`, no traceback), the nine warning codes, `strict`,
+the `json` schema, the lookup scopes (`name`, `@project`, `@extra:<n>`, `@group:<n>`; first match
+wins; markers never evaluated). The rejected additions of the previous review stay rejected
+(section 8).
 
 ---
 
-## 5. Target architecture
+## 5. Target code
 
-The shape stays: a launcher, a package split by concern, imports going one way. The changes
-are deletions, and one table that replaces six.
+The shape stays: a launcher, a package split by concern, imports going one way
+(`tests/test_layers.py` is the only place that defines the ranks).
 
 ```text
 action.yaml                      wiring only (inputs -> env, outputs <- step outputs)
@@ -171,189 +174,212 @@ src/extract_pyproject_metadata/
   report  cli                                          (build_report; read_inputs, main, run)
 ```
 
-The ranks are the ones of `tests/test_layers.py`, which stays the only place that defines them.
+### 5.1 One function for the two dynamic warnings (F2, F3)
 
-### 5.1 One lookup, no dead function (F3, F4)
-
-- Delete `flatten_group`. The tests of the expansion go through `collect_requirements` (the
-  public path), or through `_Expansion` when they test the expansion alone, as the package's own
-  tests do for private classes.
-- Replace `lookup_specifiers`, `lookup_requirements` and `find_requirements` by one
-  `lookup_dependencies(requirements, lookups) -> tuple[dict[str, list[Requirement]], list[ReportWarning]]`:
-  every match of each entry in search order, plus one `dependency-not-found` warning per empty
-  list. `build_report` derives the two outputs from it:
-  `specifiers[text] = matches[0].specifier if matches else None`, and
-  `dependency_requirements[text] = [asdict-like dict of each match]`.
-- `Requirement` keeps its fields; the `dict[str, str]` of `dependency_requirements` is built
-  in one place (`build_report`), not in the lookup.
-
-Net: ~30 lines of code and the tests of two functions; one rule ("what is a match") in one
-function.
-
-### 5.2 One table for the output names (F5)
-
-`format_outputs` is derived from the `Report` keys, not written twice:
+In `pyproject.py`, the constant and the function take the fields as an argument; `read_project`
+and `requirements._gather` each name the fields they read:
 
 ```python
-# The keys of the report that are not outputs of their own: they are only in the json output.
-_JSON_ONLY = {"dependency_requirements", "warnings", "schema_version"}
+# The fields of [project] that read_project always reads (the outputs name, version,
+# requires-python and extras). [project].dependencies is read only for a lookup (_gather).
+ALWAYS_READ_FIELDS = ("name", "version", "requires-python", "optional-dependencies")
+LOOKUP_FIELDS = ("dependencies",)
 
-def format_outputs(report: Report) -> dict[str, str]:
-    outputs = {
-        key.replace("_", "-"): value if isinstance(value, str) else _compact_json(value)
-        for key, value in report.items()
-        if key not in _JSON_ONLY
-    }
-    return {**outputs, "json": _compact_json(report)}
+
+def dynamic_field_warnings(
+    project: dict[str, Any], dynamic: frozenset[str], fields: tuple[str, ...]
+) -> list[ReportWarning]:
+    """static-and-dynamic for a field that is set and dynamic, dynamic-dependencies for a
+    dependency field that is dynamic and not set, among ``fields``."""
 ```
 
-- The rule is stated once: an output is a report key in `kebab-case`, a string as is, any other
-  value as compact JSON. `test_contract.py` already checks the result against `action.yaml`,
-  so a missing or extra output still fails a test.
-- `_SUMMARY_FIELDS` stays (it is a choice of what to log, not a copy of the names). The `cli.py`
-  docstring stops listing the outputs and points to `action.yaml`; the README keeps its
-  generated table. That is four definitions instead of six, and only one of them written by hand
-  in code (`Report`).
-- If the key order of `Report` is the output order of the action, nothing else changes: the
-  golden `expected.json` files are byte-identical (a test, `test_golden.py`, proves it).
+- `read_project` calls it with `ALWAYS_READ_FIELDS`; `_gather` calls it with `LOOKUP_FIELDS` and
+  **no longer** builds the `dynamic-dependencies` warning of `optional-dependencies` itself (it
+  moved to `read_project`: one place per field, no duplicate to deduplicate).
+- `dynamic-version` stays in `_read_version` (it is an error-or-warning decision about one
+  field, not a rule over a list).
+- The test that keeps the two tuples equal to what the readers touch (written for #267) checks
+  both: `ALWAYS_READ_FIELDS` against `read_project`, `LOOKUP_FIELDS` against
+  `collect_requirements`.
 
-### 5.3 Fields read by the action, once (F1)
+Net: about +10 lines in `pyproject.py`, -8 in `requirements.py`; one rule per field.
 
-`pyproject.py` holds `READ_FIELDS = frozenset({...})`, used by `_static_and_dynamic_warnings`
-and by the test that keeps it in step with the readers (4.2). No other module changes.
+### 5.2 A docstring that does not restate the interface (F4)
+
+The module docstring of `cli.py` keeps what only `cli.py` knows, in about 15 lines: no
+argument; the inputs are the `INPUT_*` variables (named by `env_name`, defaults in
+`inputs.DEFAULT_INPUTS`); without `GITHUB_OUTPUT` the `json` object is printed, with it the outputs
+are written and the annotations printed; exit code 0 or 1 with `<field>: <problem>` on stderr. It
+**points to** `action.yaml` (inputs and outputs), `types.Report` (the keys of the `json`),
+`warning_codes.py` (the codes) and the README (the failure causes). Delete the JSON sketch, the
+description of `strict` and of `python_versions`, the failure list and the log-line paragraph:
+each already has an owner. A test or a reviewer cannot keep two lists in step, and one list
+cannot drift.
+
+### 5.3 Say each fact once in the README (F6)
+
+Keep the README's job (what it does, how to use it, the reference tables, the failure causes)
+and move each repeated fact to **one** section:
+
+| Fact                                       | Stays in                 | Removed from                                          |
+| ------------------------------------------ | ------------------------ | ----------------------------------------------------- |
+| Python 3.11 or later on `PATH`             | Prerequisites            | the intro, Troubleshooting, FAQ, Limitations          |
+| Linux and macOS only                       | Prerequisites            | the intro, Limitations                                |
+| No date, no network: new Python = an input | Inputs (below the table) | FAQ ("Why is the newest Python missing"), Limitations |
+| Markers are never evaluated                | Looking up a dependency  | FAQ, Limitations                                      |
+| First match wins                           | Looking up a dependency  | Limitations                                           |
+
+- **Limitations** becomes a four-line pointer list (or disappears into Prerequisites and the
+  lookup section); **FAQ** keeps only the questions that have no section (install/run, matrix);
+  **Troubleshooting** keeps one entry per cause and links to Failures.
+- `tests/integration/test_readme.py` pins the fixtures and the generated blocks, not the
+  prose, so it keeps passing; `README.md` loses about 40 lines and nothing of the behaviour.
+- The README keeps telling the current behaviour only, no history (a test checks it).
 
 ### 5.4 Unchanged on purpose
 
-`inputs.py` (the one place that validates the input strings), `checks.py`, `errors.py`,
-`warning_codes.py`, `python_versions.py` (the probe of `X.Y.0 ... X.Y.99` and `X.Y.9999` stays: the
-simplest exact rule with the public API of `SpecifierSet`), `_Expansion` and its two limits
-(see F2), `run.sh` and the launcher.
+`inputs.py`, `checks.py`, `errors.py`, `python_versions.py` (the probe `X.Y.0 ... X.Y.99` and
+`X.Y.9999` stays: the simplest exact rule with the public API of `SpecifierSet`), `_Expansion`
+and its two limits, `github.py`, `report.py`, `run.sh` and the launcher.
 
 ---
 
 ## 6. Tests
 
-The suite is the reason these changes are safe: 1,080 tests, 10 s, properties, golden cases,
-injection, process-level tests. The target is **fewer tests per behaviour, not fewer behaviours**,
-and a rule against growth:
+Do not add tests for coverage's sake; the 100 % gate is met. Add and move only for the
+findings:
 
-- **Add**: the three tests of F1 (a field that is not read, set and dynamic, gives no warning
-  and `strict` passes; a field that is read still warns, one case per field of `READ_FIELDS`;
-  `READ_FIELDS` equals the set the readers use). Write each one first, check that it fails on
-  `main`.
-- **Add**: `python-candidates: ""` is an error (4.3); `test_contract.py` compares the
-  default of `action.yaml` with `DEFAULT_PYTHON_CANDIDATES`.
-- **Delete with the code**: the tests of `flatten_group`, `lookup_specifiers`,
-  `lookup_requirements` and `find_requirements` (replaced by tests of `lookup_dependencies` that
-  assert whole results against a literal), the empty-default branch of `test_inputs.py`.
-- **Consolidate** (F7), without removing a behaviour: in `test_cli.py`, keep what only `cli`
-  decides (the environment to inputs mapping, the exit codes, UTF-8 streams, the `GITHUB_OUTPUT`
-  switch) and move output-shaped checks ("this file gives this `json`") to a `test-data/<case>/`
-  golden case, which is one directory instead of one function. Merge tests that differ by a
-  literal into `pytest.mark.parametrize`. No target in lines: the rule is that a new test does not
-  re-test an assertion that a golden case or another test already makes.
-- **Keep**: a test per bug fixed, checked to fail without the fix; one behaviour per test;
-  `match` on every `pytest.raises`; the 100 % gate; no `# pragma: no cover`.
+- **Add first, check that each fails on `main`** (the repository rule for a fixed bug):
+  - F2: dynamic `optional-dependencies`, no set value, no lookup: one `dynamic-dependencies`
+    warning, `extras` empty, `strict` fails. Add a golden case
+    `test-data/dynamic-optional-dependencies/` (`pyproject.toml` and `expected.json`): one
+    directory, not a function.
+  - F3: `dependencies` set and dynamic, no lookup: no warning, `strict` passes; with a lookup:
+    `static-and-dynamic`.
+  - F1: the existing `test_the_exported_files_...` is the failing test; it passes with 4.1. Add
+    the mutation test of 4.1 (a new root file is not exported).
+  - The two-tuples test of 5.1.
+- **Delete with the code**: the `optional-dependencies` branch of `_gather`'s dynamic warning and
+  its test; the tests of the `READ_FIELDS` constant that 5.1 replaces.
+- **Consolidate (F5)**, without removing a behaviour, in the order of value:
+  1. `test_requirements.py` (78 tests): the tests that assert one warning for one TOML input
+     become one `parametrize` of `(toml, expected_warnings)`; the shape of `collect_requirements`
+     is asserted once against a literal per source (project, extra, group, include).
+  2. `test_pyproject.py` (72 tests): the type errors of each field (`name`, `version`,
+     `requires-python`, `dynamic`, extras, groups) are one table `(toml, message)`, as
+     `test_inputs.py` already does for the inputs.
+  3. `test_cli.py` (35 tests): keep only what `cli` decides (environment to inputs, exit codes,
+     UTF-8 streams, the `GITHUB_OUTPUT` switch); any "this file gives this report" is a golden
+     case.
+     The rule that stops regrowth: **a test of an output shape is a golden case; a unit test names
+     a branch.** No target in lines, and the ratio to the package is a smell, not a gate.
+- **Keep**: one behaviour per test, `match` on every `pytest.raises`, no `# pragma: no cover`,
+  properties and injection tests untouched.
 
 ---
 
-## 7. CI, release and tooling
+## 7. CI and release
 
-The workflows follow `CLAUDE.md` and have no finding. In particular, the testing strategy is
-met: logic at level 1 (`ci-python`), wiring at level 2 (`ci-action`, `use-released: false`) and
-level 3 (nightly, `use-released: true`), with local and released twin steps; the OS x Python
-matrix comes from `durandtibo/workflow-config-action` through `lib-get-test-matrix.yaml`;
-`make` targets in steps.
+The workflows follow `CLAUDE.md`; the only finding is that **`ci-export.yaml` is red** (F1), and
+it was merged red because the merge did not require `make check` to pass locally and CI results
+were not awaited. After 4.1 it is green. Process, not code: before the merge of a PR, `make
+check` runs and CI is green (the PR description says which was run).
 
-Two follow-ups of section 4, in the same PRs as their code:
+Follow-ups in the same PRs as their code:
 
-- `ci-action.yaml`: with 4.3 the golden steps pass `python-candidates` from `inputs.json` or
-  the default of the action; remove the `|| ''` fallback and check with `actionlint` when
-  available. The `golden` cases keep `minimal`, `readme-example` and `python-candidates-none`.
-- `maintenance.yaml`: the weekly Python check compares the released CPython versions with the
-  default in `python_versions.py`; it should also say that `action.yaml` must change (4.3).
-  The release checklist in the README gets the same sentence.
+- `ci-action.yaml`: add the golden case of F2 only if it covers a new input or output (it does
+  not: the three golden cases of the real action stay `minimal`, `readme-example`,
+  `python-candidates-none`; the new case is checked by `test_golden.py` alone).
+- After `v0.4.0`: update the pinned SHA and tag of the released steps in `ci-action.yaml`. A
+  check of a behaviour the last release does not have (F2, F3) carries
+  `if: ${{ !inputs.use-released }}` until then. Today none of the 17 twin pairs checks F2 or F3,
+  so nothing needs the guard.
+- `maintenance.yaml` already tells the maintainer to change `python_versions.py` and
+  `action.yaml` together; no change.
 
 Releases stay manual (tag by the maintainer, GitHub release with notes, workflows pin the exact
-tag). After `v0.4.0`, update the pinned SHA and tag of the released steps in `ci-action.yaml`;
-a check of a feature the last release does not have carries `if: ${{ !inputs.use-released }}`
-until then (F1 changes a behaviour and `python-candidates: ""` becomes an error, so the
-released twin of these checks needs it).
-
-The workflows cannot be run locally: each PR says so and does not claim they pass.
+tag). The workflows cannot be run locally: each PR says so and does not claim they pass.
 
 ---
 
 ## 8. What does not change, and why
 
-| Candidate                                                              | Decision | Reason                                                                                                                                                                                                   |
-| ---------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DependencyGroupResolver` instead of `_Expansion`                      | **No**   | Measured (F2): its failures are errors, not the warnings of P5; two spellings of a group raise; the diamond is exponential; deep chains raise `RecursionError`. Keep `_Expansion` and its limits.          |
-| Deleting the unused vendored modules (`dependency_groups`, `pylock`)   | No       | The copy is the wheel's `packaging/` verbatim, auditable against the recorded SHA-256 and replaced by one command. 11.7 k lines in a tag tarball cost nothing at run time; a patched copy costs every update. |
-| Trimming `packaging.tags` out of the import (26 ms of ~96 ms)          | No       | Needs a patched vendored copy, or an import trick, to save time nobody sees on a runner.                                                                                                                 |
-| Merging the two interpreter probes of `run.sh` (~35 ms)                | No       | One `exec` with the check inside the script means Python that must parse on an old interpreter to print a clean error. Worse than 35 ms.                                                                |
-| A Python default derived from the date or the network                  | No       | Breaks P3 and P4. A new Python is a release, or an input.                                                                                                                                                |
-| Python versions from the `Programming Language :: Python` classifiers  | No       | Not mandatory and not validated; a second source for what `requires-python` and `python-candidates` already say (P1, P7).                                                                                |
-| Evaluating environment markers                                         | No       | Needs an environment to evaluate against; `dependency_requirements` has every marker, the workflow picks.                                                                                                |
-| Resolving a dynamic version                                            | No       | Needs the build backend: breaks P2. It is a warning, and `strict` makes it fatal.                                                                                                                        |
-| A `$GITHUB_STEP_SUMMARY`                                               | No       | Needs Markdown escaping (P2) for nothing a workflow can use.                                                                                                                                             |
-| A typed `Source` instead of the `"extra:<n>"` strings (F8)             | No       | The string is also the public `source` value of the JSON; a type would be converted back at the border. Revisit when a fourth kind of place exists.                                                      |
-| `strict` as a list of codes, or fewer warning codes                    | No       | Each code is a distinct, testable cause and the table is generated; a list input is more surface (P7) for a need that checking `warnings` in `json` already covers.                                      |
-| One definition for `WarningCode` (`Literal`) and `WARNING_CODES`       | No       | A `Literal` cannot be built from a dict for the type checker; a test compares them. Two lines per new code.                                                                                              |
-| Folding the twin `local` / `released` steps of `ci-action.yaml`        | No       | `CLAUDE.md` requires them (the `uses:` of a step cannot be an expression) and a test checks every pair. The cost is length, not complexity.                                                              |
-| Windows, `STABLE_REF`, a moving tag                                    | No       | Decisions of the maintainer (P10, P4).                                                                                                                                                                   |
-| `concurrency` in workflows                                             | No       | Forbidden by `CLAUDE.md`; `bot-cancel-stale-queued-runs.yaml` does it.                                                                                                                                   |
+| Candidate                                                                  | Decision | Reason                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A smaller interface (drop `python-min`, `python-max`, `file-name`, ...)    | **No**   | Each output answers a P1 question that a workflow **cannot compute in an expression** (the last item of an array, a string replace, PEP 440 normalization). `json` is not a substitute inside a `matrix`. |
+| Preserving the written order of a specifier (`>=1.20,<3`)                  | No       | `packaging` stores a sorted set (`<3,>=1.20`); both are valid and deterministic. Keeping the text means re-parsing the requirement by hand (a second parser: P8).                                         |
+| Evaluating environment markers, a warning for several different specifiers | No       | Needs an environment, or more surface (P7). `dependency_requirements` has every requirement and its marker; the workflow picks.                                                                           |
+| `DependencyGroupResolver` instead of `_Expansion`                          | No       | Measured last round: its failures are errors, not warnings; the diamond is exponential; deep chains raise `RecursionError`.                                                                               |
+| Deleting the unused vendored modules, or trimming `packaging.tags`         | No       | The copy is the wheel's `packaging/` verbatim, replaced by one command. A patched copy costs every update to save ~26 ms nobody sees on a runner.                                                         |
+| Merging the two interpreter probes of `run.sh` (~35 ms)                    | No       | One `exec` with the check inside Python means a script that must parse on an old interpreter to print a clean error. Worse than 35 ms.                                                                    |
+| A Python default derived from the date or the network                      | No       | Breaks P3 and P4. A new Python is a release, or an input.                                                                                                                                                 |
+| Resolving a dynamic version, a `$GITHUB_STEP_SUMMARY`                      | No       | The first needs the build backend (P2); the second needs Markdown escaping for nothing a workflow uses.                                                                                                   |
+| A typed `Source` instead of `"extra:<n>"` strings                          | No       | The string is the public `source` of the JSON; a type would be converted back at the border. Revisit with a fourth kind of place.                                                                         |
+| `strict` as a list of codes, fewer warning codes                           | No       | Each code is a distinct, testable cause and the table is generated; a list is more surface (P7) for a need that `warnings` in `json` already covers.                                                      |
+| Moving the `strict` check out of `build_report` into `cli`                 | No       | Would move 4 lines and one test for no gain; the report and its fatal warnings are one decision (the outputs are not written).                                                                            |
+| Cutting the released (level 3) twin of the edge-case jobs                  | No       | `CLAUDE.md` requires the twin and a test checks every pair; the cost is the length of `ci-action.yaml` (681 lines), not complexity. If its upkeep ever hurts, change the rule in `CLAUDE.md` first (D4).  |
+| Windows, `STABLE_REF`, a moving tag, `concurrency`                         | No       | Decisions of the maintainer (P10, P4) or forbidden by `CLAUDE.md`.                                                                                                                                        |
 
 ---
 
 ## 9. Migration plan
 
-Stacked or independent PRs, each small and reviewable on its own, from an up to date `main`,
-branch names per `CLAUDE.md`. `make fix`, `make check` and `make docs` before each commit.
+Independent PRs, each small and reviewable alone, from an up to date `main`, branch names per
+`CLAUDE.md`. `make fix`, `make check` and `make docs` before each commit; CI green before the
+merge.
 
-| PR  | Branch                              | Content                                                                                                                                                              | Behaviour change                                             |
-| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 1   | `bugfix/static-and-dynamic-scope`   | 4.2 and 5.3: `READ_FIELDS`, the narrowed warning, three tests (failing first), README row, golden case if one covers it.                                              | **Yes**: no warning for a field the action does not read     |
-| 2   | `refactor/single-dependency-lookup` | 5.1: delete `flatten_group`; one `lookup_dependencies`; `build_report` derives the two outputs; tests move to the new function.                                       | none (outputs identical, checked by the golden cases)        |
-| 3   | `refactor/derive-output-names`      | 5.2: `format_outputs` derived from `Report`; the `cli.py` docstring points to `action.yaml`.                                                                          | none (`expected.json` files unchanged)                       |
-| 4   | `feat/visible-python-default`       | 4.3 and 7: default in `action.yaml`, `parse_inputs` and `generate_docs.py` simplified, `ci-action.yaml` and `maintenance.yaml` updated, contract test, README.         | **Yes**: `python-candidates: ""` is an error                 |
-| 5   | `test/consolidate-unit-tests`       | 6: parametrize and move output-shaped checks to golden cases; no behaviour removed, coverage stays 100 %. Do it after 2 and 3, which delete tests of their own.      | none                                                         |
+| PR  | Branch                             | Content                                                                                                                                                           | Behaviour change                                                                                                                         |
+| --- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `bugfix/export-allow-list`         | 4.1: deny-by-default `.gitattributes`, the rewritten mutation test, `CLAUDE.md` sentence. Makes `make check` and `ci-export` green.                               | none for the action; the archive is the expected set                                                                                     |
+| 2   | `bugfix/dynamic-dependency-fields` | 4.2 and 5.1: `ALWAYS_READ_FIELDS`, `LOOKUP_FIELDS`, `dynamic_field_warnings`, the golden case, the tests (failing first), the README warning rows.                | **Yes**: a dynamic `optional-dependencies` warns (and fails `strict`); a `dependencies` set and dynamic no longer warns without a lookup |
+| 3   | `docs/single-source-docs`          | 5.2 and 5.3: the short `cli.py` docstring; the README repeats removed. `make docs-check` unchanged.                                                               | none                                                                                                                                     |
+| 4   | `test/consolidate-unit-tests-2`    | 6: parametrize `test_requirements.py` and `test_pyproject.py`, move output-shaped cases of `test_cli.py` to golden cases. After 2 (which touches the same files). | none (coverage stays 100 %)                                                                                                              |
 
-Order: 1 first (the only defect), then 2 and 3 in any order, 4 alone (it is the breaking one and
-touches `action.yaml`), 5 last. Release only after all merged: **the maintainer** updates the
-checklist, pushes `v0.4.0` (never from a PR, never moved) and writes the release notes: F1 and
-the empty `python-candidates` are the two entries that need a sentence each.
+Order: 1 first (red check), 2 second (the two defects), 3 and 4 in any order after 2. PRs 1 and 2
+are independent and can be reviewed in parallel. Release only after the merges: **the maintainer**
+pushes `v0.4.0` (never from a PR, never moved) and writes the release notes: the two warning
+changes of PR 2 are the only user-visible entries.
 
-**Expected result** (estimates, not measurements): package ~1,640 lines (from 1,691), tests
-smaller by the deleted and merged tests with every behaviour kept, one rule for "what is a match",
-one rule for output names, a README table that shows the real default of every input, and a
-`strict` that never fails on a field the action does not output. The run stays ~96 ms and the
-interface stays 5 inputs and 13 outputs.
+**Expected result** (estimates, not measurements): a green `main`; `strict` that fails exactly
+for what an output cannot trust, and never for what no output reads; the package at about the
+same size (1,640 lines); one list of the interface per fact (`action.yaml`, `Report`,
+`WARNING_CODES`, the README tables); a README about 40 lines shorter; unit tests smaller by the
+merged cases, every behaviour kept; the same 5 inputs, 13 outputs and run time.
 
 ---
 
 ## 10. Decisions for the maintainer
 
-| #   | Question                                                                                                                           | Recommendation                                                                                                                                                                         |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Narrow `static-and-dynamic` to the fields the action reads (4.2)? It lets a `strict` run pass on a file that failed before.         | **Yes.** It is the README's own rule (P6); a field the action does not output cannot be the reason a release job fails.                                                                |
-| D2  | Put the default list of `python-candidates` in `action.yaml` and make `""` an error (4.3)?                                         | **Yes.** One more line to edit each October, guarded by a test, against a README that finally shows the real default and no special case in the generator. Keep the sentinel if you prefer one edit. |
-| D3  | Derive the output names from `Report` (5.2) at the price of a rule ("kebab-case of the key; a string as is, the rest as JSON")?   | **Yes.** The rule is simple, and `test_contract.py` still checks the result against `action.yaml`.                                                                                      |
-| D4  | Consolidate the unit tests (6) without a target in lines?                                                                          | **Yes**, but last, and only by merging and moving: no behaviour loses its test, coverage stays 100 %.                                                                                  |
-| D5  | Warn when an unscoped lookup matches several different specifiers?                                                                 | **No** (4.1). `dependency_requirements` lists every match with its marker; a warning is more surface for a case a workflow can already test.                                            |
+| #   | Question                                                                                                                                                 | Recommendation                                                                                                                                                                                    |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Make `.gitattributes` deny by default (4.1)?                                                                                                             | **Yes.** It fixes the red check, removes the cause, and was verified against the repository's own `check_export.sh`.                                                                              |
+| D2  | Warn (and fail `strict`) when `optional-dependencies` is dynamic and not set, even with no lookup (4.2)? It makes a release job that passed before fail. | **Yes.** An empty `extras` that is silently wrong breaks a test matrix far from the cause (P5). A caller who does not care leaves `strict` off: the annotation is then the only change.           |
+| D3  | Stop warning for a set-and-dynamic `dependencies` when nothing is looked up (4.2)?                                                                       | **Yes.** It is P6, and consistent with `dynamic-dependencies`.                                                                                                                                    |
+| D4  | Let the released twin (level 3) run only `test` and `golden`, and the edge cases locally?                                                                | **No, not now.** The twin catches drift of the runner (Python, `bash`) on the released tag, which is its point. Revisit only if `ci-action.yaml` becomes a burden; it needs a `CLAUDE.md` change. |
+| D5  | Trim the README repeats (5.3) and the `cli.py` docstring (5.2)?                                                                                          | **Yes**, as one docs PR with no behaviour change.                                                                                                                                                 |
+| D6  | Consolidate the three largest unit-test modules again (6)?                                                                                               | **Yes**, last, and only by merging into tables and moving shapes to golden cases. The last pass shrank one of three modules.                                                                      |
 
 ---
 
 ## Verification status of this review
 
-**Read**: `action.yaml`, `README.md`, `CLAUDE.md`, `run.sh`, the launcher, `pyproject.toml`,
-`.gitattributes`, `dev/check_export.sh`, `ci.yaml`, `ci-python.yaml`, `nightly.yaml`, the head of
-`maintenance.yaml`, the job and step list of `ci-action.yaml`, `test_layers.py`, and the whole
-package except `checks.py`, `errors.py` and `warning_codes.py`. **Run**: the full test suite (1,080
-passed, 10.2 s), `ruff check src scripts tests` (pass), `pyright` (0 errors), ten runs of the
-launcher, an import-time profile, a `strict` run on a file with `classifiers` and `description`
-(F1: two warnings, exit 1), and the `DependencyGroupResolver` spike (F2) with a script outside the
-repository. **Not run**: `make check` (so not the coverage gate, format check or pre-commit),
+**Read**: `action.yaml`, `README.md`, `CLAUDE.md`, the previous `review/target_state.md`,
+`run.sh`, the launcher, `.gitattributes`, `dev/check_export.sh`, `pyproject.toml`,
+`scripts/test-helper.sh`, the head of `maintenance.yaml`, and every module of the package
+except `_vendor` (`cli`, `report`, `types`, `inputs`, `pyproject`, `requirements`, `github`,
+`checks`, `python_versions`, `warning_codes`). **Not read in full**: `ci-action.yaml` (steps
+counted with `grep`: 17 `-local` and 17 `-released` ids), `test_layers.py` and the test modules
+(sizes and test counts only), the other workflows, `generate_docs.py`.
+
+**Run**: the full suite (1,082 passed, **1 failed**: `test_export.py`), `ruff check src
+scripts tests` (pass), `pyright` (0 errors), `bash dev/check_export.sh` (**fails**, diff:
+`.python-version`, `CODEOWNERS`), ten runs of `run.sh` (~150 ms each), three probes of the
+program on files outside the repository: a set-and-dynamic `dependencies` with `strict` (F3:
+exit 1), a dynamic `optional-dependencies` with `strict` (F2: exit 0, `extras: []`, no warning),
+a file with a normalized name and a lookup (the outputs in the README are current); and the
+deny-by-default `.gitattributes` in a throw-away clone with `check_export.sh` (passes, 51
+entries). **Not run**: `make check` (so not the format check, the coverage gate or pre-commit),
 `make docs-check`, `actionlint`, any GitHub workflow. The line counts after the changes are
-estimates. The tests that 4.2 and 4.3 add have not been written: F1 and F2 are reproduced by
-running the code, not by a test in the repository.
+estimates. None of the proposed code or tests is written; F2 and F3 are reproduced by running
+the program, not by a test in the repository, and the only change made by this review is this
+file (the scratch files are outside the repository).
