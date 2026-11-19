@@ -11,7 +11,11 @@ from extract_pyproject_metadata._vendor.packaging.utils import canonicalize_name
 from extract_pyproject_metadata.checks import check_array, check_string_array, get_table, is_table
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import PROJECT_SCOPE
-from extract_pyproject_metadata.pyproject import read_groups
+from extract_pyproject_metadata.pyproject import (
+    LOOKUP_FIELDS,
+    dynamic_field_warnings,
+    read_groups,
+)
 from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 
 __all__ = [
@@ -150,15 +154,6 @@ class _Expansion:
         return self.expand(included, path)
 
 
-def _dynamic_warning(field: str) -> ReportWarning:
-    """Describe a dependency field that is dynamic, so cannot be
-    read."""
-    return ReportWarning(
-        "dynamic-dependencies",
-        f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it",
-    )
-
-
 def _gather(
     data: dict[str, Any], dynamic: frozenset[str]
 ) -> tuple[list[tuple[str, str]], list[ReportWarning]]:
@@ -170,9 +165,9 @@ def _gather(
         dynamic: The fields of ``[project].dynamic``, as read by ``read_project``.
 
     Returns:
-        A tuple ``(requirements, warnings)``. ``warnings`` has one message per dependency
-        field that is dynamic (the build backend computes it, so it cannot be read), per
-        include-group cycle and per ``include-group`` that names no group. Each requirement
+        A tuple ``(requirements, warnings)``. ``warnings`` has one message for
+        ``[project].dependencies`` when it is dynamic (see ``dynamic_field_warnings``; the
+        extras are checked by ``read_project``), per include-group cycle and per ``include-group`` that names no group. Each requirement
         is a tuple ``(scope, requirement)``. ``scope`` is ``"project"`` for
         ``[project].dependencies``, ``"extra:<name>"`` for an extra and ``"group:<name>"``
         for a dependency group (the requirements that its ``include-group`` entries add
@@ -198,11 +193,7 @@ def _gather(
         scope = f"extra:{canonicalize_name(extra)}"
         reqs.extend((scope, raw) for raw in check_string_array(extra_reqs, label))
     groups = get_table(data, "dependency-groups", "[dependency-groups]")
-    warnings = [
-        _dynamic_warning(field)
-        for field in ("dependencies", "optional-dependencies")
-        if field in dynamic and field not in project
-    ]
+    warnings = dynamic_field_warnings(project, dynamic, LOOKUP_FIELDS)
     # read_groups merges the spellings of a group name (PEP 503), so each group is expanded
     # once, from the first spelling: expanding each spelling would repeat its requirements.
     table = read_groups(groups)
@@ -226,7 +217,7 @@ def collect_requirements(
         dynamic: The fields of ``[project].dynamic``, as read by ``read_project``.
 
     Returns:
-        A tuple ``(requirements, warnings)``. ``warnings`` lists the dynamic dependency fields,
+        A tuple ``(requirements, warnings)``. ``warnings`` lists the dynamic ``dependencies``,
         the include-group problems (without duplicates) and one message per requirement string
         that cannot be parsed, which is skipped.
 

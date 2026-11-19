@@ -12,10 +12,11 @@ import pytest
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_string_array
 from extract_pyproject_metadata.pyproject import (
-    READ_FIELDS,
+    ALWAYS_READ_FIELDS,
+    LOOKUP_FIELDS,
     _read_name,
     _read_version,
-    _static_and_dynamic_warnings,
+    dynamic_field_warnings,
     load_pyproject,
     read_extra_names,
     read_group_names,
@@ -263,8 +264,8 @@ def test_read_project_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -
         [project]
         name = "coola"
         version = "1.2.3"
-        dependencies = ["numpy"]
-        dynamic = ["dependencies", "readme", "dependencies", "version"]
+        optional-dependencies = {test = ["pytest"]}
+        dynamic = ["optional-dependencies", "readme", "optional-dependencies", "version"]
         """,
     )
 
@@ -272,7 +273,7 @@ def test_read_project_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -
 
     assert messages(warnings) == [
         (
-            "[project].dependencies is set and also listed in [project].dynamic, "
+            "[project].optional-dependencies is set and also listed in [project].dynamic, "
             "which PEP 621 forbids; the static value is used"
         ),
         (
@@ -553,7 +554,9 @@ def test_read_name_not_a_project_name(name: str) -> None:
 def test_static_and_dynamic_warnings() -> None:
     project = {"name": "a", "version": "1", "description": "d"}
 
-    warnings = _static_and_dynamic_warnings(project, ["version", "readme", "version", "name"])
+    warnings = dynamic_field_warnings(
+        project, ["version", "readme", "version", "name"], ALWAYS_READ_FIELDS
+    )
 
     assert {w.code for w in warnings} == {"static-and-dynamic"}
     assert messages(warnings) == [
@@ -569,7 +572,7 @@ def test_static_and_dynamic_warnings() -> None:
 
 
 def test_static_and_dynamic_warnings_none() -> None:
-    assert _static_and_dynamic_warnings({"name": "a"}, ["version"]) == []
+    assert dynamic_field_warnings({"name": "a"}, ["version"], ALWAYS_READ_FIELDS) == []
 
 
 @pytest.mark.parametrize("version", ["1.0-RC1", "1.2.3", "v1.0"])
@@ -820,7 +823,7 @@ def test_read_project_a_field_that_is_not_read_does_not_warn_when_static_and_dyn
     assert warnings == []
 
 
-@pytest.mark.parametrize("field", ["version", "requires-python", "dependencies"])
+@pytest.mark.parametrize("field", ["version", "requires-python", "optional-dependencies"])
 def test_read_project_a_field_that_is_read_warns_when_static_and_dynamic(field: str) -> None:
     project = {"name": "a", "version": "1.0", "dynamic": [field], field: SET_VALUES[field]}
 
@@ -830,33 +833,84 @@ def test_read_project_a_field_that_is_read_warns_when_static_and_dynamic(field: 
     assert f"[project].{field} is set and also listed" in warnings[0].message
 
 
-def test_static_and_dynamic_warnings_for_every_read_field() -> None:
-    warnings = _static_and_dynamic_warnings(SET_VALUES, sorted(READ_FIELDS))
+def test_read_project_a_dependencies_field_does_not_warn_without_a_lookup() -> None:
+    project = {"name": "a", "version": "1.0", "dynamic": ["dependencies"], "dependencies": ["x"]}
 
-    assert [w.code for w in warnings] == ["static-and-dynamic"] * len(READ_FIELDS)
+    _, warnings = read_project({"project": project}, [])
+
+    assert warnings == []
 
 
-def test_read_fields_are_the_fields_that_the_readers_read() -> None:
-    class Recorder(dict[str, Any]):
-        accessed: set[str]
+def test_read_project_a_dynamic_optional_dependencies_warns_that_it_cannot_be_read() -> None:
+    project = {"name": "a", "version": "1.0", "dynamic": ["optional-dependencies"]}
 
-        def get(self, key: str, default: Any = None) -> Any:
-            self.accessed.add(key)
-            return super().get(key, default)
+    _, warnings = read_project({"project": project}, [])
 
-        def __getitem__(self, key: str) -> Any:
-            self.accessed.add(key)
-            return super().__getitem__(key)
+    assert warnings == [
+        ReportWarning(
+            "dynamic-dependencies",
+            "[project].optional-dependencies is dynamic, it cannot be read, "
+            "so no requirement is found in it",
+        )
+    ]
 
-        def __contains__(self, key: object) -> bool:
-            self.accessed.add(str(key))
-            return super().__contains__(key)
 
+def test_dynamic_field_warnings_for_every_field() -> None:
+    fields = (*ALWAYS_READ_FIELDS, *LOOKUP_FIELDS)
+
+    warnings = dynamic_field_warnings(SET_VALUES, sorted(fields), fields)
+
+    assert [w.code for w in warnings] == ["static-and-dynamic"] * len(fields)
+
+
+def test_dynamic_field_warnings_ignores_the_fields_outside_fields() -> None:
+    assert dynamic_field_warnings(SET_VALUES, ["dependencies"], ALWAYS_READ_FIELDS) == []
+    assert dynamic_field_warnings({}, ["dependencies"], ALWAYS_READ_FIELDS) == []
+
+
+@pytest.mark.parametrize("field", ["version", "requires-python"])
+def test_dynamic_field_warnings_a_dynamic_field_that_is_not_set_is_not_a_dependency_warning(
+    field: str,
+) -> None:
+    assert dynamic_field_warnings({}, [field], ALWAYS_READ_FIELDS) == []
+
+
+class Recorder(dict[str, Any]):
+    """A ``[project]`` table that records the keys that are read."""
+
+    accessed: set[str]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        self.accessed.add(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        self.accessed.add(key)
+        return super().__getitem__(key)
+
+    def __contains__(self, key: object) -> bool:
+        self.accessed.add(str(key))
+        return super().__contains__(key)
+
+
+def record_accesses() -> tuple[Recorder, dict[str, Any]]:
+    """A recorder of the keys of ``[project]`` and the parsed data that holds it."""
     project = Recorder(SET_VALUES)
     project.accessed = set()
-    data = {"project": project}
+    return project, {"project": project}
+
+
+def test_always_read_fields_are_the_fields_that_read_project_reads() -> None:
+    project, data = record_accesses()
 
     read_project(data, [])
+
+    assert project.accessed - {"dynamic"} == set(ALWAYS_READ_FIELDS)
+
+
+def test_lookup_fields_are_the_fields_that_collect_requirements_reads() -> None:
+    project, data = record_accesses()
+
     collect_requirements(data, frozenset())
 
-    assert project.accessed - {"dynamic"} == READ_FIELDS
+    assert project.accessed - set(ALWAYS_READ_FIELDS) == set(LOOKUP_FIELDS)

@@ -15,8 +15,9 @@ __all__ = ["WARNING_CODES"]
 WARNING_CODES: dict[WarningCode, tuple[str, str]] = {
     "static-and-dynamic": (
         (
-            "A field that the action reads (`name`, `version`, `requires-python`, `dependencies`, "
-            "`optional-dependencies`) has a value and is also in `dynamic` (forbidden by PEP 621)."
+            "A field that the action reads (`name`, `version`, `requires-python`, "
+            "`optional-dependencies`, and `dependencies` when `dependencies` is not empty) has a "
+            "value and is also in `dynamic` (forbidden by PEP 621)."
         ),
         "The static value is used.",
     ),
@@ -55,8 +56,8 @@ WARNING_CODES: dict[WarningCode, tuple[str, str]] = {
     ),
     "dynamic-dependencies": (
         (
-            "`dependencies` or `optional-dependencies` is in `dynamic` and not set (only when "
-            "`dependencies` is not empty)."
+            "`optional-dependencies`, or `dependencies` when `dependencies` is not empty, is in "
+            "`dynamic` and not set."
         ),
         "No requirement is found in it.",
     ),
