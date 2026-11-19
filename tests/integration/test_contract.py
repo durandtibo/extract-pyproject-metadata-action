@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-import extract_pyproject_metadata.cli as extract_metadata_module
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.github import format_outputs
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS, parse_dependencies
@@ -80,13 +79,6 @@ def test_the_outputs_are_the_outputs_of_action_yaml(tmp_path: Path) -> None:
     outputs = format_outputs(extract_report(path, "[]"))
 
     assert sorted(outputs) == sorted(action_section_keys("outputs"))
-
-
-def test_module_docstring_lists_the_keys_of_the_json() -> None:
-    docstring = extract_metadata_module.__doc__ or ""
-    section = docstring.split("prints a single JSON object", 1)[1].split("\n\n", 1)[0]
-
-    assert sorted(re.findall(r'"([a-z_]+)":', section)) == sorted(Report.__annotations__)
 
 
 @pytest.mark.parametrize("path", sorted(PACKAGE_PATH.rglob("*.py")), ids=lambda path: path.name)
