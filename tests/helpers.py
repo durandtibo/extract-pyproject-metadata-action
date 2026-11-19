@@ -20,11 +20,7 @@ from extract_pyproject_metadata._vendor.packaging.specifiers import InvalidSpeci
 from extract_pyproject_metadata.inputs import parse_dependencies, parse_string_array
 from extract_pyproject_metadata.pyproject import load_pyproject
 from extract_pyproject_metadata.report import build_report
-from extract_pyproject_metadata.requirements import (
-    collect_requirements,
-    lookup_requirements,
-    lookup_specifiers,
-)
+from extract_pyproject_metadata.requirements import collect_requirements, lookup_dependencies
 from extract_pyproject_metadata.types import Inputs, Report
 
 ROOT_PATH = Path(__file__).resolve().parents[1]
@@ -89,9 +85,10 @@ def extract_dependency_specifiers(
     ones of the requirements, then the ones of the lookup)."""
     dynamic = dynamic_fields(data)
     requirements, warnings = collect_requirements(data, dynamic)
-    result, lookup_warnings = lookup_specifiers(
+    matches, lookup_warnings = lookup_dependencies(
         requirements, parse_dependencies(json.dumps(dependencies))
     )
+    result = {text: reqs[0].specifier if reqs else None for text, reqs in matches.items()}
     return result, [*(warnings if dependencies else []), *lookup_warnings]
 
 
@@ -101,7 +98,13 @@ def extract_dependency_requirements(
     """List all the requirements of ``dependencies`` in parsed data."""
     dynamic = dynamic_fields(data)
     requirements, _ = collect_requirements(data, dynamic)
-    return lookup_requirements(requirements, parse_dependencies(json.dumps(dependencies)))
+    matches, _ = lookup_dependencies(requirements, parse_dependencies(json.dumps(dependencies)))
+    return {
+        text: [
+            {"specifier": req.specifier, "marker": req.marker, "source": req.source} for req in reqs
+        ]
+        for text, reqs in matches.items()
+    }
 
 
 def specifiers(path: Path, dependencies_json: str) -> dict:
