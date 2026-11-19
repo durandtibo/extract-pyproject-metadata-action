@@ -138,8 +138,8 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 
 Files are prefixed by role:
 
-- `ci.yaml`: entry point for pull requests, pushes to `main`, a nightly schedule and manual runs. It holds no steps,
-  only jobs that call the reusable `ci-*.yaml` workflows below.
+- `ci.yaml`: entry point for pull requests, pushes to `main`, a nightly schedule and
+  manual runs. It holds no steps, only jobs that call the reusable `ci-*.yaml` workflows below.
   - `ci-lint.yaml`: ruff, pre-commit hooks and the generated README tables.
   - `ci-type-checking.yaml`: pyright.
   - `ci-python.yaml`: the Python tests: unit and integration on the OS and Python matrix, and the
@@ -218,7 +218,8 @@ Conventions:
   `inputs.json` (the action inputs of the case, by input name) and the
   `expected.json` (the `json` output). `tests/integration/test_golden.py` checks
   every case without GitHub; `UPDATE_GOLDEN=1 pytest tests/integration/test_golden.py`
-  rewrites the files (review the diff). Adding a case is adding a directory (it is checked by `test_golden.py`; add it to the
+  rewrites the files (review the diff). Adding a case is adding a directory (it is checked by
+  `test_golden.py`; add it to the
   `golden` matrix only if it covers a new input or output).
 - The integration workflow `.github/workflows/ci-action.yaml` (`uses: ./`)
   checks only the wiring: the `golden` job runs the real action on three

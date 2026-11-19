@@ -137,7 +137,7 @@ lists the warnings, nothing is written). If 5.3 is adopted, `include-group-cycle
 The shape stays: a launcher, a package split by concern, imports going one way. The changes
 are deletions and one correction of the documentation.
 
-```
+```text
 action.yaml                      wiring only (inputs -> env, outputs <- step outputs)
 scripts/run.sh                   find Python >= 3.11, exec the launcher
 scripts/extract_metadata.py      launcher: sys.path.insert(src), raise SystemExit(run())
