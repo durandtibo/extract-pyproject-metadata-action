@@ -140,8 +140,9 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   `permissions: {}` at the workflow level (it grants nothing), never a grant.
 - Only ship what the action needs at runtime: `action.yaml`, `LICENSE`, `scripts/run.sh`,
   `scripts/extract_metadata.py` and the package `src/extract_pyproject_metadata/` are exported,
-  and `.gitattributes` marks everything else `export-ignore`. When the action starts using a new
-  file, un-ignore it there and add it to `dev/check_export.sh`. Never make the action read tests,
+  and `.gitattributes` marks everything else `export-ignore` (the default is `export-ignore` and
+  the files above are un-ignored: a new file is not shipped unless it is listed there). When the
+  action starts using a new file, un-ignore it there and add it to `dev/check_export.sh`. Never make the action read tests,
   fixtures (`test-data/`) or other repo files that are not exported. Check the exported set with
   `make check-export` (`git archive --worktree-attributes HEAD | tar t`).
 - Check workflow changes with `actionlint` when available.
