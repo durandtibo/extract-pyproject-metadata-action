@@ -51,11 +51,11 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
 ## Supported platforms
 
 - Linux and macOS only (`os_matrix` of `durandtibo/workflow-config-action`), on the Python
-  versions of its `python_versions` (3.11 is the oldest: `tomllib`), as the README says. **Windows is not supported, and that is a deliberate,
-  final decision of the maintainer.** Do not add `windows-latest` to any matrix,
-  do not add Windows-specific code, branches, tests or documentation, and do not
-  propose or re-add Windows support, even as a small or optional change. If a
-  failure only happens on Windows, it is out of scope.
+  versions of its `python_versions` (3.11 is the oldest: `tomllib`), as the README says.
+  **Windows is not supported, and that is a deliberate, final decision of the maintainer.** Do
+  not add `windows-latest` to any matrix, do not add Windows-specific code, branches, tests or
+  documentation, and do not propose or re-add Windows support, even as a small or optional
+  change. If a failure only happens on Windows, it is out of scope.
 
 ## Environment
 
