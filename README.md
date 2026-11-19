@@ -160,7 +160,7 @@ file name of the wheel (`file-name` is the name as written in file names, `my_pa
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | `pyproject-path`    | Path to pyproject.toml                                                                                                                                                                                                                                                                                                                                              | `pyproject.toml`      |
 | `extra-values`      | JSON array of additional values to prepend to the extras read from pyproject.toml, for callers that need a non-package value in the list too (e.g. '[""]' for a "no extra" baseline, or '["all"]').                                                                                                                                                                 | `[]`                  |
-| `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", "extra:<name>" or "group:<name>" is looked up there only (e.g. '["pytest@group:dev"]'). A name that is not a valid package name is an error. | `[]`                  |
+| `dependencies`      | JSON array of package names whose version specifier is looked up in [project].dependencies, [project.optional-dependencies] and [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@" and "project", `extra:<name>` or `group:<name>` is looked up there only (e.g. '["pytest@group:dev"]'). A name that is not a valid package name is an error. | `[]`                  |
 | `python-candidates` | JSON array of "major.minor" Python versions, without leading zeros, to choose from for the python-versions output (e.g. '["3.11","3.12"]'); empty for the supported CPython versions, listed in the README                                                                                                                                                          | (see the description) |
 | `strict`            | Set to "true" to fail when there is any warning (a dynamic version, a dependency that is not found, ...), instead of only reporting it ("true" or "false")                                                                                                                                                                                                          | `false`               |
 
@@ -204,7 +204,8 @@ the same inputs always give the same outputs.
 
 Scalars are plain strings; arrays and objects are compact JSON strings for `fromJSON`.
 The `json` output is the whole result with real JSON values (`fromJSON(...json).extras`),
-plus `dependency_requirements`, the `warnings` (items `{"code", "message"}`) and the `schema_version` (`1`). The step logs a
+plus `dependency_requirements`, the `warnings` (items `{"code", "message"}`) and the
+`schema_version` (`1`). The step logs a
 one-line `📦` log line of the outputs, with line breaks escaped. The line shows `name`,
 `version`, `requires-python`, `python-versions`, `python-min`, `python-max`, `extras`,
 `groups`, `dependency-specifiers`.
@@ -388,12 +389,13 @@ gate), `make docs` (regenerates the tables of this file from `action.yaml`); `ma
 fails when they are out of date, as the CI does. `test-data/<case>/` holds the golden cases: a
 `pyproject.toml`, the `inputs.json` and the `expected.json` (the `json` output), checked by
 `tests/integration/test_golden.py` and, for three of them, with the real action by
-`ci-action.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only when a key is renamed,
-removed or changes type.
+`ci-action.yaml`, which can only run on GitHub. The `schema_version` of `json` changes only
+when a key is renamed, removed or changes type.
 
-To release: update the default `python-candidates` in `python_versions.py` (every October; `maintenance.yaml` opens an issue), check
-that `packaging` is current (`make vendor-packaging`), run `make check` and `make docs`,
-push the tag `vX.Y.Z` and create the GitHub release with its notes. Tags are immutable: a published tag is never moved or
+To release: update the default `python-candidates` in `python_versions.py` (every October;
+`maintenance.yaml` opens an issue), check that `packaging` is current
+(`make vendor-packaging`), run `make check` and `make docs`, push the tag `vX.Y.Z` and create
+the GitHub release with its notes. Tags are immutable: a published tag is never moved or
 deleted, a fix is a new version, and workflows pin the exact tag (`@vX.Y.Z`).
 
 ## Contributing

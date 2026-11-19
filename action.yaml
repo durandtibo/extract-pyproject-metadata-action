@@ -32,7 +32,7 @@ inputs:
       JSON array of package names whose version specifier is looked up in
       [project].dependencies, [project.optional-dependencies] and
       [dependency-groups] (e.g. '["invoke-tasklib"]'). A name followed by "@"
-      and "project", "extra:<name>" or "group:<name>" is looked up there only
+      and "project", `extra:<name>` or `group:<name>` is looked up there only
       (e.g. '["pytest@group:dev"]'). A name that is not a valid package name
       is an error.
     default: "[]"

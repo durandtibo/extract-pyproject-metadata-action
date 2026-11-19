@@ -4,6 +4,9 @@ include .make/all.mk
 
 PYTHON_RUN ?= uv run
 
+.PHONY: all
+all: check ## Run the Python checks (alias of check)
+
 .PHONY: install
 install: install-uv ## Install the dependencies and the dev group in .venv
 	uv sync --group dev --group property
