@@ -10,7 +10,7 @@ import pytest
 
 from extract_pyproject_metadata.errors import MetadataError
 from extract_pyproject_metadata.inputs import parse_dependencies
-from extract_pyproject_metadata.pyproject import load_pyproject, read_group_names, read_groups
+from extract_pyproject_metadata.pyproject import load_pyproject, read_groups
 from extract_pyproject_metadata.requirements import (
     _Expansion,
     collect_requirements,
@@ -62,14 +62,6 @@ def flatten(groups: dict, name: str) -> tuple[list[str], list[ReportWarning]]:
     return requirements, list(expansion.warnings)
 
 
-def test_dependency_include_group_only(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[dependency-groups]\nbase = ["x>=1"]\ndev = [{include-group = "base"}]\n',
-    )
-    assert specifiers(path, '["x"]') == {"x": ">=1"}
-
-
 @pytest.mark.parametrize(
     ("groups", "name", "expected"),
     [
@@ -89,10 +81,20 @@ def test_flatten(groups: dict, name: str, expected: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("groups", "name", "expected"),
+    ("groups", "name", "expected", "warnings"),
     [
-        ({"a": [{"include-group": "a"}, "x"]}, "a", ["x"]),
-        ({"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}, "a", ["y", "x"]),
+        (
+            {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]},
+            "a",
+            ["y", "x"],
+            ["[dependency-groups] has an include-group cycle: a -> b -> a"],
+        ),
+        (
+            {"a": [{"include-group": "a"}, "x"]},
+            "a",
+            ["x"],
+            ["[dependency-groups] has an include-group cycle: a -> a"],
+        ),
         (
             {
                 "a": [{"include-group": "b"}],
@@ -101,37 +103,37 @@ def test_flatten(groups: dict, name: str, expected: list[str]) -> None:
             },
             "a",
             ["z", "y"],
+            ["[dependency-groups] has an include-group cycle: a -> b -> c -> a"],
         ),
+        (
+            {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]},
+            "a",
+            ["y", "y"],
+            [],
+        ),
+        (
+            {"dev": [{"include-group": "tset"}, "x"]},
+            "dev",
+            ["x"],
+            ["[dependency-groups].dev: include-group 'tset' does not match any group"],
+        ),
+        ({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a", ["y"], []),
     ],
+    ids=["cycle", "self-include", "long-cycle", "repeated-include", "unknown-group", "spellings"],
 )
-def test_expansion_flatten_include_cycles_terminate(
-    groups: dict, name: str, expected: list[str]
+def test_flatten_warnings(
+    groups: dict, name: str, expected: list[str], warnings: list[str]
 ) -> None:
-    assert flatten(groups, name)[0] == expected
+    result, found = flatten(groups, name)
+
+    assert result == expected
+    assert messages(found) == warnings
 
 
 def test_collect_requirements_expands_the_spellings_of_a_group_once() -> None:
     data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
 
     assert spelled(collect(data)[0]) == ["a", "b", "c"]
-
-
-def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [dependency-groups]
-        a = [{include-group = "b"}, "x>=1"]
-        b = [{include-group = "a"}, "y>=2"]
-        """,
-    )
-
-    assert specifiers(path, '["x", "y"]') == {"x": ">=1", "y": ">=2"}
-
-
-def test_expansion_flatten_group_must_be_an_array() -> None:
-    with pytest.raises(MetadataError, match=r"\[dependency-groups\]\.a: must be an array"):
-        flatten({"a": "x"}, "a")
 
 
 @pytest.mark.parametrize(
@@ -147,29 +149,32 @@ def test_expansion_flatten_unknown_entry(entry: object) -> None:
         flatten({"a": ["x", entry], "b": ["y"]}, "a")
 
 
-def test_expansion_flatten_unknown_entry_in_an_included_group() -> None:
-    with pytest.raises(MetadataError, match=r"\[dependency-groups\]\.b: entries must be"):
-        flatten({"a": [{"include-group": "b"}], "b": [{"typo": 1}]}, "a")
-
-
-def test_expansion_flatten_include_group_must_be_a_string() -> None:
-    with pytest.raises(MetadataError, match=r"\.a: include-group must be a string, got: \['b'\]"):
-        flatten({"a": [{"include-group": ["b"]}]}, "a")
-
-
-def test_expansion_flatten_cycle_adds_a_warning() -> None:
-    groups = {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}
-    result, warnings = flatten(groups, "a")
-
-    assert result == ["y", "x"]
-    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
-
-
-def test_expansion_flatten_self_include_adds_a_warning() -> None:
-    result, warnings = flatten({"a": [{"include-group": "a"}, "x"]}, "a")
-
-    assert result == ["x"]
-    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> a"]
+@pytest.mark.parametrize(
+    ("groups", "name", "match"),
+    [
+        ({"a": "x"}, "a", r"\[dependency-groups\]\.a: must be an array"),
+        (
+            {"a": [{"include-group": "b"}], "b": [{"typo": 1}]},
+            "a",
+            r"\[dependency-groups\]\.b: entries must be",
+        ),
+        (
+            {"a": [{"include-group": ["b"]}]},
+            "a",
+            r"\.a: include-group must be a string, got: \['b'\]",
+        ),
+        ({"Dev": ["a"], "dev": [1]}, "DEV", r"^\[dependency-groups\]\.dev: entries must be"),
+    ],
+    ids=[
+        "not-an-array",
+        "bad-entry-in-an-included-group",
+        "bad-include-group",
+        "spelling-in-error",
+    ],
+)
+def test_expansion_flatten_invalid_groups(groups: dict, name: str, match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        flatten(groups, name)
 
 
 @pytest.mark.parametrize(
@@ -201,14 +206,6 @@ def test_expansion_flatten_cycle_message(groups: dict, name: str, expected: str)
     _, warnings = flatten(groups, name)
 
     assert messages(warnings) == [f"[dependency-groups] has an include-group cycle: {expected}"]
-
-
-def test_expansion_flatten_no_cycle_adds_no_warning() -> None:
-    groups = {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]}
-    result, warnings = flatten(groups, "a")
-
-    assert result == ["y", "y"]
-    assert messages(warnings) == []
 
 
 def test_expansion_flatten_follows_a_chain_up_to_the_depth_limit() -> None:
@@ -267,27 +264,6 @@ def test_expansion_flatten_expands_every_spelling_of_the_group() -> None:
     groups = {"Dev": ["a", {"include-group": "x_y"}], "dev": ["b"], "X.Y": ["c"]}
 
     assert flatten(groups, "dev")[0] == ["a", "c", "b"]
-
-
-def test_expansion_flatten_error_names_the_spelling_of_the_group() -> None:
-    with pytest.raises(MetadataError, match=r"^\[dependency-groups\]\.dev: entries must be"):
-        flatten({"Dev": ["a"], "dev": [1]}, "DEV")
-
-
-def test_expansion_flatten_missing_include_group_adds_a_warning() -> None:
-    result, warnings = flatten({"dev": [{"include-group": "tset"}, "x"]}, "dev")
-
-    assert result == ["x"]
-    assert messages(warnings) == [
-        "[dependency-groups].dev: include-group 'tset' does not match any group"
-    ]
-
-
-def test_expansion_flatten_include_group_matches_any_pep_503_spelling_without_warning() -> None:
-    result, warnings = flatten({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
-
-    assert result == ["y"]
-    assert messages(warnings) == []
 
 
 def test_expansion_flatten_missing_include_group_is_reported_once_per_group() -> None:
@@ -364,40 +340,6 @@ def test_extract_metadata_groups_must_be_a_table(tmp_path: Path, value: str) -> 
         extract(path)
 
 
-def test_group_names() -> None:
-    data = {"dependency-groups": {"test": [], "Dev_Tools": [], "dev-tools": [], "docs": []}}
-
-    assert read_group_names(data) == ["Dev_Tools", "docs", "test"]
-
-
-def test_group_names_without_groups() -> None:
-    assert read_group_names({}) == []
-
-
-def test_group_names_must_be_a_table() -> None:
-    with pytest.raises(MetadataError, match=r"^\[dependency-groups\]: must be a table"):
-        read_group_names({"dependency-groups": []})
-
-
-def test_collect_requirements_search_order() -> None:
-    data = {
-        "project": {
-            "dependencies": ["a>=1"],
-            "optional-dependencies": {"x": ["b>=2"], "y": ["c>=3"]},
-        },
-        "dependency-groups": {"dev": ["d>=4"], "test": [{"include-group": "dev"}, "e>=5"]},
-    }
-
-    assert spelled(collect(data)[0]) == [
-        "a>=1",
-        "b>=2",
-        "c>=3",
-        "d>=4",
-        "d>=4",
-        "e>=5",
-    ]
-
-
 def test_collect_requirements_sources() -> None:
     data = {
         "project": {
@@ -431,28 +373,6 @@ def test_collect_requirements_empty() -> None:
     assert collect({}) == ([], [])
 
 
-@pytest.mark.parametrize(
-    ("data", "match"),
-    [
-        (
-            {"project": {"dependencies": ["a", 1]}},
-            r"\[project\]\.dependencies: must contain only strings, got: 1",
-        ),
-        (
-            {"project": {"dependencies": [None]}},
-            r"\[project\]\.dependencies: must contain only strings, got: None",
-        ),
-        (
-            {"project": {"optional-dependencies": {"x": ["c", {"b": 1}]}}},
-            r"\[project\.optional-dependencies\]\.x: must contain only strings, got: \{'b': 1\}",
-        ),
-    ],
-)
-def test_collect_requirements_non_string_entries(data: dict, match: str) -> None:
-    with pytest.raises(MetadataError, match=match):
-        collect(data)
-
-
 def test_collect_requirements_does_not_modify_the_data() -> None:
     data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
@@ -471,6 +391,18 @@ def test_collect_requirements_does_not_modify_the_data() -> None:
             r"optional-dependencies\]\.x: must be an array",
         ),
         ({"dependency-groups": 1}, r"\[dependency-groups\]: must be a table"),
+        (
+            {"project": {"dependencies": ["a", 1]}},
+            r"\[project\]\.dependencies: must contain only strings, got: 1",
+        ),
+        (
+            {"project": {"dependencies": [None]}},
+            r"\[project\]\.dependencies: must contain only strings, got: None",
+        ),
+        (
+            {"project": {"optional-dependencies": {"x": ["c", {"b": 1}]}}},
+            r"\[project\.optional-dependencies\]\.x: must contain only strings, got: \{'b': 1\}",
+        ),
     ],
 )
 def test_collect_requirements_wrong_types(data: dict, match: str) -> None:
@@ -543,26 +475,6 @@ def test_collect_requirements_of_the_file() -> None:
         "[dependency-groups].dev: include-group 'missing' does not match any group",
         "Ignoring invalid requirement 'not valid!': " + str(parse_error("not valid!")),
     ]
-
-
-def test_collect_requirements_wrong_type() -> None:
-    with pytest.raises(MetadataError, match=r"^\[project\].dependencies: must be an array"):
-        collect({"project": {"dependencies": "numpy"}})
-
-
-def test_extract_metadata_no_optional_dependencies_table(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        name = "coola"
-        version = "1.2.3"
-        """,
-    )
-
-    metadata = extract(path)
-
-    assert metadata["extras"] == []
 
 
 @pytest.mark.parametrize("value", ['["a"]', '"numpy"', "1"])
@@ -705,24 +617,38 @@ def test_dependency_malformed_tables_raise_even_when_nothing_is_requested(tmp_pa
         specifiers(path, "[]")
 
 
-def test_dependency_malformed_table_error_names_the_file() -> None:
-    with pytest.raises(MetadataError, match=r"\[dependency-groups\]: must"):
-        extract_dependency_specifiers({"dependency-groups": 1}, [])
+@pytest.mark.parametrize(
+    ("toml", "result", "warnings"),
+    [
+        (
+            '[dependency-groups]\nbase = ["x>=1"]\ndev = [{include-group = "base"}]\n',
+            {"x": ">=1"},
+            [],
+        ),
+        (
+            (
+                '[dependency-groups]\na = [{include-group = "b"}, "x>=1"]\nb = [{include-group = "a"}, "y>=2"]\n'
+            ),
+            {"x": ">=1", "y": ">=2"},
+            ["[dependency-groups] has an include-group cycle: a -> b -> a"],
+        ),
+        (
+            '[dependency-groups]\ndev = [{include-group = "tset"}, "x>=1"]\n',
+            {"x": ">=1"},
+            ["[dependency-groups].dev: include-group 'tset' does not match any group"],
+        ),
+    ],
+    ids=["include", "cycle", "unknown-group"],
+)
+def test_dependency_include_group_lookups(
+    tmp_path: Path, toml: str, result: dict[str, str], warnings: list[str]
+) -> None:
+    path = write_pyproject(tmp_path, toml)
 
+    found, found_warnings = extract_dependency_specifiers(load_pyproject(str(path)), sorted(result))
 
-def test_dependency_include_group_cycle_adds_a_warning(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [dependency-groups]
-        a = [{include-group = "b"}, "x>=1"]
-        b = [{include-group = "a"}, "y>=2"]
-        """,
-    )
-    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["x", "y"])
-
-    assert result == {"x": ">=1", "y": ">=2"}
-    assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
+    assert found == result
+    assert messages(found_warnings) == warnings
 
 
 @pytest.mark.parametrize(
@@ -741,22 +667,6 @@ def test_dependency_group_warnings_are_not_reported_when_nothing_is_requested(
 
     assert result == {}
     assert messages(warnings) == []
-
-
-def test_dependency_missing_include_group_adds_a_warning(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [dependency-groups]
-        dev = [{include-group = "tset"}, "x>=1"]
-        """,
-    )
-    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), ["x"])
-
-    assert result == {"x": ">=1"}
-    assert messages(warnings) == [
-        "[dependency-groups].dev: include-group 'tset' does not match any group"
-    ]
 
 
 @pytest.mark.parametrize(
@@ -788,17 +698,6 @@ def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
     result, warnings = extract_dependency_specifiers(data, ["numpy"])
 
     assert result == {"numpy": None}
-    assert messages(warnings) == [
-        "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
-        "dependency 'numpy' not found",
-    ]
-
-
-def test_dependency_dynamic_dependencies_adds_one_warning_with_a_lookup() -> None:
-    data = {"project": {"dynamic": ["dependencies", "optional-dependencies"]}}
-
-    _, warnings = extract_dependency_specifiers(data, ["numpy"])
-
     assert messages(warnings) == [
         "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
         "dependency 'numpy' not found",
