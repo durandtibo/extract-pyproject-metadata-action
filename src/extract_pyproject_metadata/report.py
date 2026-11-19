@@ -11,11 +11,7 @@ from extract_pyproject_metadata.pyproject import load_pyproject, read_project
 from extract_pyproject_metadata.python_versions import (
     compatible_python_versions,
 )
-from extract_pyproject_metadata.requirements import (
-    collect_requirements,
-    lookup_requirements,
-    lookup_specifiers,
-)
+from extract_pyproject_metadata.requirements import collect_requirements, lookup_dependencies
 from extract_pyproject_metadata.types import Inputs, Report, ReportWarning
 
 __all__ = ["SCHEMA_VERSION", "build_report"]
@@ -51,10 +47,18 @@ def build_report(inputs: Inputs) -> Report:
     requirements: dict[str, list[dict[str, str]]] = {}
     lookup_warnings: list[ReportWarning] = []
     if inputs.dependencies:
-        # The requirements of the file are read and parsed once, for both lookups.
         found, found_warnings = collect_requirements(data, project.dynamic)
-        specifiers, missing_warnings = lookup_specifiers(found, inputs.dependencies)
-        requirements = lookup_requirements(found, inputs.dependencies)
+        matches, missing_warnings = lookup_dependencies(found, inputs.dependencies)
+        # The specifier of an entry is the one of its first match (``""`` if it has none); the
+        # environment markers are not evaluated.
+        specifiers = {text: reqs[0].specifier if reqs else None for text, reqs in matches.items()}
+        requirements = {
+            text: [
+                {"specifier": req.specifier, "marker": req.marker, "source": req.source}
+                for req in reqs
+            ]
+            for text, reqs in matches.items()
+        }
         lookup_warnings = [*found_warnings, *missing_warnings]
     warnings.extend(python_warnings)
     warnings.extend(lookup_warnings)

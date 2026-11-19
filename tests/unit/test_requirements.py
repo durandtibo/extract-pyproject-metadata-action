@@ -14,10 +14,7 @@ from extract_pyproject_metadata.pyproject import load_pyproject, read_group_name
 from extract_pyproject_metadata.requirements import (
     _Expansion,
     collect_requirements,
-    find_requirements,
-    flatten_group,
-    lookup_requirements,
-    lookup_specifiers,
+    lookup_dependencies,
 )
 from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 from tests.helpers import (
@@ -58,6 +55,13 @@ def placed(requirements: list[Requirement]) -> list[tuple[str, str]]:
     return [(req.source, f"{req.name}{req.specifier}") for req in requirements]
 
 
+def flatten(groups: dict, name: str) -> tuple[list[str], list[ReportWarning]]:
+    """Expand a group of a ``[dependency-groups]`` table alone."""
+    expansion = _Expansion(read_groups(groups))
+    requirements = expansion.expand(name)
+    return requirements, list(expansion.warnings)
+
+
 def test_dependency_include_group_only(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -80,8 +84,8 @@ def test_dependency_include_group_only(tmp_path: Path) -> None:
         ({"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": ["z"]}, "a", ["z"]),
     ],
 )
-def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
-    assert flatten_group(groups, name)[0] == expected
+def test_flatten(groups: dict, name: str, expected: list[str]) -> None:
+    assert flatten(groups, name)[0] == expected
 
 
 @pytest.mark.parametrize(
@@ -100,10 +104,10 @@ def test_flatten_group(groups: dict, name: str, expected: list[str]) -> None:
         ),
     ],
 )
-def test_flatten_group_include_cycles_terminate(
+def test_expansion_flatten_include_cycles_terminate(
     groups: dict, name: str, expected: list[str]
 ) -> None:
-    assert flatten_group(groups, name)[0] == expected
+    assert flatten(groups, name)[0] == expected
 
 
 def test_collect_requirements_expands_the_spellings_of_a_group_once() -> None:
@@ -125,123 +129,123 @@ def test_dependency_include_group_cycle_in_pyproject(tmp_path: Path) -> None:
     assert specifiers(path, '["x", "y"]') == {"x": ">=1", "y": ">=2"}
 
 
-def test_flatten_group_group_must_be_an_array() -> None:
+def test_expansion_flatten_group_must_be_an_array() -> None:
     with pytest.raises(MetadataError, match=r"\[dependency-groups\]\.a: must be an array"):
-        flatten_group({"a": "x"}, "a")
+        flatten({"a": "x"}, "a")
 
 
 @pytest.mark.parametrize(
     "entry",
     [{"include_group": "b"}, {}, {"include-group": "b", "extra": 1}, 1, None, ["x"], 1.5],
 )
-def test_flatten_group_unknown_entry(entry: object) -> None:
+def test_expansion_flatten_unknown_entry(entry: object) -> None:
     with pytest.raises(
         MetadataError,
         match=r"\[dependency-groups\]\.a: entries must be strings or "
         r"\{'include-group': <name>\} tables, got: ",
     ):
-        flatten_group({"a": ["x", entry], "b": ["y"]}, "a")
+        flatten({"a": ["x", entry], "b": ["y"]}, "a")
 
 
-def test_flatten_group_unknown_entry_in_an_included_group() -> None:
+def test_expansion_flatten_unknown_entry_in_an_included_group() -> None:
     with pytest.raises(MetadataError, match=r"\[dependency-groups\]\.b: entries must be"):
-        flatten_group({"a": [{"include-group": "b"}], "b": [{"typo": 1}]}, "a")
+        flatten({"a": [{"include-group": "b"}], "b": [{"typo": 1}]}, "a")
 
 
-def test_flatten_group_include_group_must_be_a_string() -> None:
+def test_expansion_flatten_include_group_must_be_a_string() -> None:
     with pytest.raises(MetadataError, match=r"\.a: include-group must be a string, got: \['b'\]"):
-        flatten_group({"a": [{"include-group": ["b"]}]}, "a")
+        flatten({"a": [{"include-group": ["b"]}]}, "a")
 
 
-def test_flatten_group_cycle_adds_a_warning() -> None:
+def test_expansion_flatten_cycle_adds_a_warning() -> None:
     groups = {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]}
-    result, warnings = flatten_group(groups, "a")
+    result, warnings = flatten(groups, "a")
 
     assert result == ["y", "x"]
     assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> b -> a"]
 
 
-def test_flatten_group_self_include_adds_a_warning() -> None:
-    result, warnings = flatten_group({"a": [{"include-group": "a"}, "x"]}, "a")
+def test_expansion_flatten_self_include_adds_a_warning() -> None:
+    result, warnings = flatten({"a": [{"include-group": "a"}, "x"]}, "a")
 
     assert result == ["x"]
     assert messages(warnings) == ["[dependency-groups] has an include-group cycle: a -> a"]
 
 
-def test_flatten_group_cycle_message_starts_at_the_smallest_group() -> None:
+def test_expansion_flatten_cycle_message_starts_at_the_smallest_group() -> None:
     groups = {
         "c": [{"include-group": "a"}],
         "a": [{"include-group": "b"}],
         "b": [{"include-group": "c"}],
     }
-    _, warnings = flatten_group(groups, "b")
+    _, warnings = flatten(groups, "b")
 
     assert messages(warnings) == [
         "[dependency-groups] has an include-group cycle: a -> b -> c -> a"
     ]
 
 
-def test_flatten_group_cycle_does_not_include_the_path_leading_to_it() -> None:
+def test_expansion_flatten_cycle_does_not_include_the_path_leading_to_it() -> None:
     groups = {
         "a": [{"include-group": "b"}],
         "b": [{"include-group": "c"}],
         "c": [{"include-group": "b"}],
     }
-    _, warnings = flatten_group(groups, "a")
+    _, warnings = flatten(groups, "a")
 
     assert messages(warnings) == ["[dependency-groups] has an include-group cycle: b -> c -> b"]
 
 
-def test_flatten_group_cycle_uses_canonical_names() -> None:
+def test_expansion_flatten_cycle_uses_canonical_names() -> None:
     groups = {"My_Group": [{"include-group": "my-group"}]}
-    _, warnings = flatten_group(groups, "My_Group")
+    _, warnings = flatten(groups, "My_Group")
 
     assert messages(warnings) == [
         "[dependency-groups] has an include-group cycle: my-group -> my-group"
     ]
 
 
-def test_flatten_group_no_cycle_adds_no_warning() -> None:
+def test_expansion_flatten_no_cycle_adds_no_warning() -> None:
     groups = {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]}
-    result, warnings = flatten_group(groups, "a")
+    result, warnings = flatten(groups, "a")
 
     assert result == ["y", "y"]
     assert messages(warnings) == []
 
 
-def test_flatten_group_follows_a_chain_up_to_the_depth_limit() -> None:
-    result, warnings = flatten_group(chain_of_groups(100), "g0")
+def test_expansion_flatten_follows_a_chain_up_to_the_depth_limit() -> None:
+    result, warnings = flatten(chain_of_groups(100), "g0")
 
     assert result == ["numpy>=1"]
     assert messages(warnings) == []
 
 
-def test_flatten_group_rejects_a_chain_deeper_than_the_limit() -> None:
+def test_expansion_flatten_rejects_a_chain_deeper_than_the_limit() -> None:
     with pytest.raises(
         MetadataError,
         match=r"^\[dependency-groups\]: include-group entries are nested more than 100 levels deep",
     ):
-        flatten_group(chain_of_groups(101), "g0")
+        flatten(chain_of_groups(101), "g0")
 
 
-def test_flatten_group_rejects_a_chain_longer_than_the_recursion_limit() -> None:
+def test_expansion_flatten_rejects_a_chain_longer_than_the_recursion_limit() -> None:
     with pytest.raises(MetadataError, match="nested more than 100 levels deep"):
-        flatten_group(chain_of_groups(5000), "g0")
+        flatten(chain_of_groups(5000), "g0")
 
 
-def test_flatten_group_expands_a_diamond_within_the_budget() -> None:
-    result, warnings = flatten_group(diamond_of_groups(10), "g0")
+def test_expansion_flatten_expands_a_diamond_within_the_budget() -> None:
+    result, warnings = flatten(diamond_of_groups(10), "g0")
 
     assert result == ["numpy>=1"] * 1024
     assert messages(warnings) == []
 
 
-def test_flatten_group_rejects_an_exponential_expansion() -> None:
+def test_expansion_flatten_rejects_an_exponential_expansion() -> None:
     with pytest.raises(
         MetadataError,
         match=r"^\[dependency-groups\]: include-group entries expand more than 10000 groups in total",
     ):
-        flatten_group(diamond_of_groups(25), "g0")
+        flatten(diamond_of_groups(25), "g0")
 
 
 def test_expansion_shares_the_budget_between_the_included_groups() -> None:
@@ -261,19 +265,19 @@ def test_expansion_reads_the_groups_by_normalized_name() -> None:
     assert expansion.expand("missing") == []
 
 
-def test_flatten_group_expands_every_spelling_of_the_group() -> None:
+def test_expansion_flatten_expands_every_spelling_of_the_group() -> None:
     groups = {"Dev": ["a", {"include-group": "x_y"}], "dev": ["b"], "X.Y": ["c"]}
 
-    assert flatten_group(groups, "dev")[0] == ["a", "c", "b"]
+    assert flatten(groups, "dev")[0] == ["a", "c", "b"]
 
 
-def test_flatten_group_error_names_the_spelling_of_the_group() -> None:
+def test_expansion_flatten_error_names_the_spelling_of_the_group() -> None:
     with pytest.raises(MetadataError, match=r"^\[dependency-groups\]\.dev: entries must be"):
-        flatten_group({"Dev": ["a"], "dev": [1]}, "DEV")
+        flatten({"Dev": ["a"], "dev": [1]}, "DEV")
 
 
-def test_flatten_group_missing_include_group_adds_a_warning() -> None:
-    result, warnings = flatten_group({"dev": [{"include-group": "tset"}, "x"]}, "dev")
+def test_expansion_flatten_missing_include_group_adds_a_warning() -> None:
+    result, warnings = flatten({"dev": [{"include-group": "tset"}, "x"]}, "dev")
 
     assert result == ["x"]
     assert messages(warnings) == [
@@ -281,14 +285,14 @@ def test_flatten_group_missing_include_group_adds_a_warning() -> None:
     ]
 
 
-def test_flatten_group_include_group_matches_any_pep_503_spelling_without_warning() -> None:
-    result, warnings = flatten_group({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
+def test_expansion_flatten_include_group_matches_any_pep_503_spelling_without_warning() -> None:
+    result, warnings = flatten({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a")
 
     assert result == ["y"]
     assert messages(warnings) == []
 
 
-def test_flatten_group_missing_include_group_is_reported_once_per_group() -> None:
+def test_expansion_flatten_missing_include_group_is_reported_once_per_group() -> None:
     groups = {"a": [{"include-group": "nope"}], "b": [{"include-group": "a"}]}
     _, warnings = collect({"dependency-groups": groups})
 
@@ -839,21 +843,21 @@ def lookups(*entries: str) -> list[Lookup]:
     return parse_dependencies(json.dumps(list(entries)))
 
 
-def test_lookup_specifiers() -> None:
-    assert lookup_specifiers(REQUIREMENTS, lookups("Numpy", "tqdm", "other")) == (
-        {"Numpy": ">=1", "tqdm": "", "other": None},
-        [ReportWarning("dependency-not-found", "dependency 'other' not found")],
+def test_lookup_dependencies() -> None:
+    assert lookup_dependencies(
+        REQUIREMENTS, lookups("NumPy", "numpy@extra:fast", "numpy@extra:slow", "other")
+    ) == (
+        {
+            "NumPy": [REQUIREMENTS[0], REQUIREMENTS[2], REQUIREMENTS[3]],
+            "numpy@extra:fast": [REQUIREMENTS[2]],
+            "numpy@extra:slow": [],
+            "other": [],
+        },
+        [
+            ReportWarning("dependency-not-found", "dependency 'numpy@extra:slow' not found"),
+            ReportWarning("dependency-not-found", "dependency 'other' not found"),
+        ],
     )
-
-
-def test_lookup_specifiers_uses_the_first_requirement_and_does_not_warn_on_a_conflict() -> None:
-    requirements = [
-        Requirement("a", "==2", "", "project"),
-        Requirement("a", "==1", "", "group:dev"),
-        Requirement("a", "==2", "", "extra:x"),
-    ]
-
-    assert lookup_specifiers(requirements, lookups("a")) == ({"a": "==2"}, [])
 
 
 @pytest.mark.parametrize(
@@ -863,25 +867,32 @@ def test_lookup_specifiers_uses_the_first_requirement_and_does_not_warn_on_a_con
         ("Numpy@project", [REQUIREMENTS[0]]),
         ("numpy@extra:Fast", [REQUIREMENTS[2]]),
         ("numpy@group:dev", [REQUIREMENTS[3]]),
-        ("numpy@extra:slow", []),
         ("tqdm@group:dev", []),
-        ("other", []),
     ],
 )
-def test_find_requirements(entry: str, expected: list[Requirement]) -> None:
-    assert find_requirements(REQUIREMENTS, lookups(entry)[0]) == expected
+def test_lookup_dependencies_matches_the_place_of_the_entry(
+    entry: str, expected: list[Requirement]
+) -> None:
+    assert lookup_dependencies(REQUIREMENTS, lookups(entry))[0] == {entry: expected}
 
 
-def test_lookup_requirements() -> None:
-    assert lookup_requirements(REQUIREMENTS, lookups("NumPy", "numpy@extra:fast", "other")) == {
-        "NumPy": [
-            {"specifier": ">=1", "marker": "python_version < '3.12'", "source": "project"},
-            {"specifier": "<3", "marker": "", "source": "extra:fast"},
-            {"specifier": "", "marker": "", "source": "group:dev"},
-        ],
-        "numpy@extra:fast": [{"specifier": "<3", "marker": "", "source": "extra:fast"}],
-        "other": [],
-    }
+def test_lookup_dependencies_keeps_every_match_and_does_not_warn_on_a_conflict() -> None:
+    requirements = [
+        Requirement("a", "==2", "", "project"),
+        Requirement("a", "==1", "", "group:dev"),
+    ]
+
+    assert lookup_dependencies(requirements, lookups("a")) == ({"a": requirements}, [])
+
+
+def test_lookup_dependencies_does_not_mutate_its_arguments() -> None:
+    requirements = list(REQUIREMENTS)
+    entries = lookups("numpy", "other")
+
+    lookup_dependencies(requirements, entries)
+
+    assert requirements == REQUIREMENTS
+    assert entries == lookups("numpy", "other")
 
 
 @pytest.mark.parametrize(
@@ -978,9 +989,13 @@ def test_extract_dependency_requirements_wrong_type() -> None:
 def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
     requirements, _ = collect({"project": {"dependencies": ["a>=1"]}})
 
-    specifiers, warnings = lookup_specifiers(requirements, lookups("a", "b", "c@group:dev"))
+    matches, warnings = lookup_dependencies(requirements, lookups("a", "b", "c@group:dev"))
 
-    assert specifiers == {"a": ">=1", "b": None, "c@group:dev": None}
+    assert [(text, len(reqs)) for text, reqs in matches.items()] == [
+        ("a", 1),
+        ("b", 0),
+        ("c@group:dev", 0),
+    ]
     assert messages(warnings) == [
         "dependency 'b' not found",
         "dependency 'c@group:dev' not found",
@@ -990,4 +1005,4 @@ def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
 def test_no_warning_when_every_dependency_is_found() -> None:
     requirements, _ = collect({"project": {"dependencies": ["a>=1"]}})
 
-    assert lookup_specifiers(requirements, lookups("a")) == ({"a": ">=1"}, [])
+    assert lookup_dependencies(requirements, lookups("a"))[1] == []

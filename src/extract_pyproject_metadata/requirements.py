@@ -16,10 +16,7 @@ from extract_pyproject_metadata.types import Lookup, ReportWarning, Requirement
 
 __all__ = [
     "collect_requirements",
-    "find_requirements",
-    "flatten_group",
-    "lookup_requirements",
-    "lookup_specifiers",
+    "lookup_dependencies",
 ]
 
 # Limits that turn a pathological dependency-groups table into an error instead of a Python
@@ -153,25 +150,6 @@ class _Expansion:
         return self.expand(included, path)
 
 
-def flatten_group(groups: dict[str, Any], name: str) -> tuple[list[str], list[ReportWarning]]:
-    """Return requirement strings of a dependency group, expanding
-    include-group.
-
-    Args:
-        groups: The ``[dependency-groups]`` table.
-        name: The group to expand.
-
-    Returns:
-        A tuple ``(requirements, warnings)``, without duplicate warnings.
-
-    Raises:
-        MetadataError: See ``_Expansion.expand``.
-    """
-    expansion = _Expansion(read_groups(groups))
-    requirements = expansion.expand(name)
-    return requirements, list(expansion.warnings)
-
-
 def _dynamic_warning(field: str) -> ReportWarning:
     """Describe a dependency field that is dynamic, so cannot be
     read."""
@@ -254,7 +232,7 @@ def collect_requirements(
 
     Raises:
         MetadataError: If a table or a value has the wrong type, or an include-group limit is
-            exceeded (see ``_gather`` and ``flatten_group``).
+            exceeded (see ``_gather`` and ``_Expansion.expand``).
     """
     scoped, warnings = _gather(data, dynamic)
     warnings = list(dict.fromkeys(warnings))
@@ -278,73 +256,32 @@ def collect_requirements(
     return requirements, warnings
 
 
-def find_requirements(requirements: list[Requirement], lookup: Lookup) -> list[Requirement]:
-    """Return the requirements of the package of ``lookup``, in search
-    order.
-
-    Args:
-        requirements: The requirements, as returned by ``collect_requirements``.
-        lookup: The entry to look up.
-
-    Returns:
-        The requirements of that package in the place of the entry (everywhere when it has
-        none); empty if the package is not found.
-    """
-    return [
-        req
-        for req in requirements
-        if req.name == lookup.name and lookup.source in {None, req.source}
-    ]
-
-
-def lookup_specifiers(
+def lookup_dependencies(
     requirements: list[Requirement], lookups: list[Lookup]
-) -> tuple[dict[str, str | None], list[ReportWarning]]:
-    """Look up the specifier of each requested package.
+) -> tuple[dict[str, list[Requirement]], list[ReportWarning]]:
+    """Look up the requested packages.
 
     Args:
         requirements: The requirements, as returned by ``collect_requirements``.
         lookups: The entries to look up.
 
     Returns:
-        A tuple ``(specifiers, warnings)``. ``specifiers`` maps each entry, as written, to the
-        specifier of the **first** requirement of the search order (the environment markers
-        are not evaluated), ``""`` if it has none, or ``None`` if the package is not found.
-        ``warnings`` has one message per package that is not found.
+        A tuple ``(matches, warnings)``. ``matches`` maps each entry, as written, to all the
+        requirements of its package, in search order (the environment markers are not
+        evaluated): in the place of the entry, or everywhere when it has none. The list is
+        empty if the package is not found. ``warnings`` has one ``dependency-not-found``
+        warning per entry that has no match.
     """
-    result: dict[str, str | None] = {}
+    matches: dict[str, list[Requirement]] = {}
     warnings: list[ReportWarning] = []
     for lookup in lookups:
-        matches = find_requirements(requirements, lookup)
-        if not matches:
-            result[lookup.text] = None
+        matches[lookup.text] = [
+            req
+            for req in requirements
+            if req.name == lookup.name and lookup.source in {None, req.source}
+        ]
+        if not matches[lookup.text]:
             warnings.append(
                 ReportWarning("dependency-not-found", f"dependency {lookup.text!r} not found")
             )
-            continue
-        result[lookup.text] = matches[0].specifier
-    return result, warnings
-
-
-def lookup_requirements(
-    requirements: list[Requirement], lookups: list[Lookup]
-) -> dict[str, list[dict[str, str]]]:
-    """List the requirements of each requested package.
-
-    Args:
-        requirements: The requirements, as returned by ``collect_requirements``.
-        lookups: The entries to look up.
-
-    Returns:
-        A dict that maps each entry, as written, to the list of all its requirements, in search
-        order, each a dict with the ``specifier`` (``""`` if there is none), the environment
-        ``marker`` (``""`` if there is none) and the ``source`` that declares it (``project``,
-        ``extra:<name>`` or ``group:<name>``). The list is empty if the package is not found.
-    """
-    return {
-        lookup.text: [
-            {"specifier": req.specifier, "marker": req.marker, "source": req.source}
-            for req in find_requirements(requirements, lookup)
-        ]
-        for lookup in lookups
-    }
+    return matches, warnings
