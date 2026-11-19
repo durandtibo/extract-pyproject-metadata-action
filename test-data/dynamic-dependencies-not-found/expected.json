@@ -1,0 +1,36 @@
+{
+  "name": "a",
+  "normalized_name": "a",
+  "file_name": "a",
+  "version": "1",
+  "normalized_version": "1",
+  "requires_python": "",
+  "extras": [],
+  "groups": [],
+  "python_versions": [
+    "3.11",
+    "3.12",
+    "3.13",
+    "3.14",
+    "3.15"
+  ],
+  "python_min": "3.11",
+  "python_max": "3.15",
+  "dependency_specifiers": {
+    "numpy": null
+  },
+  "dependency_requirements": {
+    "numpy": []
+  },
+  "warnings": [
+    {
+      "code": "dynamic-dependencies",
+      "message": "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it"
+    },
+    {
+      "code": "dependency-not-found",
+      "message": "dependency 'numpy' not found"
+    }
+  ],
+  "schema_version": 1
+}

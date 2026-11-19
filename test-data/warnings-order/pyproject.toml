@@ -1,0 +1,8 @@
+[project]
+name = "a"
+dynamic = ["version"]
+requires-python = "python3"
+dependencies = ["x>=1", "x>=2"]
+
+[dependency-groups]
+dev = ["x>=3", "not valid!"]
