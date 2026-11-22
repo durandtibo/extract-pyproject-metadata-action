@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from typing import TYPE_CHECKING
@@ -13,7 +14,8 @@ import pytest
 import yaml
 
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS
-from tests.helpers import PACKAGE_PATH, ROOT_PATH
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
+from tests.helpers import ROOT_PATH
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -105,43 +107,65 @@ def test_ci_and_the_nightly_test_of_the_release_both_run_every_night() -> None:
     assert not (WORKFLOWS_PATH / "nightly-test-released.yaml").exists()
 
 
-def action_steps() -> list[dict]:
-    """Return the steps of ``ci-action.yaml`` that run the action, local or released."""
-    return [
+def action_jobs() -> dict[str, list[dict]]:
+    """Return the steps of each job of ``ci-action.yaml`` that runs the action."""
+    jobs = load_workflow("ci-action.yaml")["jobs"]
+    return {
+        name: job["steps"]
+        for name, job in jobs.items()
+        if any(step.get("uses") == "./.action" for step in job["steps"])
+    }
+
+
+def test_ci_action_runs_the_action_only_as_staged() -> None:
+    steps = [
+        step for job in load_workflow("ci-action.yaml")["jobs"].values() for step in job["steps"]
+    ]
+    uses = [
+        step["uses"] for step in steps if step.get("uses", "").startswith(("./", "durandtibo/"))
+    ]
+
+    assert uses
+    assert set(uses) == {"./.action"}
+    assert all("if" not in step for step in steps if step.get("uses") == "./.action")
+
+
+def test_every_run_of_the_action_follows_the_stage_step_of_its_job() -> None:
+    jobs = action_jobs()
+
+    assert len(jobs) == 8
+    for name, steps in jobs.items():
+        stage = [i for i, step in enumerate(steps) if "stage-action.sh" in step.get("run", "")]
+        runs = [i for i, step in enumerate(steps) if step.get("uses") == "./.action"]
+        assert len(stage) == 1, name
+        assert min(runs) > stage[0], name
+
+
+def test_the_stage_step_resolves_the_ref_from_use_released() -> None:
+    for steps in action_jobs().values():
+        stage = next(step for step in steps if "stage-action.sh" in step.get("run", ""))
+
+        assert stage["env"] == {"USE_RELEASED": "${{ inputs.use-released }}"}
+        assert "git tag --list 'v*' --sort=-v:refname | head -n1" in stage["run"]
+        assert stage["run"].rstrip().endswith('bash scripts/stage-action.sh "$ref" .action')
+        assert steps[0]["with"]["fetch-depth"] == "${{ inputs.use-released && 0 || 1 }}"
+
+
+def test_the_nightly_has_one_pinned_smoke_step_of_the_published_action() -> None:
+    nightly = (WORKFLOWS_PATH / "nightly.yaml").read_text(encoding="utf-8")
+    steps = [
         step
-        for job in load_workflow("ci-action.yaml")["jobs"].values()
-        for step in job["steps"]
-        if step.get("uses", "").startswith(("./", "durandtibo/extract-pyproject-metadata-action@"))
+        for job in load_workflow("nightly.yaml")["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("uses", "").startswith("durandtibo/extract-pyproject-metadata-action@")
     ]
 
-
-def test_ci_action_has_a_local_and_a_released_step_for_every_run_of_the_action() -> None:
-    steps = action_steps()
-    local = [step for step in steps if step["uses"] == "./"]
-    released = [step for step in steps if step["uses"] != "./"]
-
-    assert local
-    assert all(step["id"].endswith("-local") for step in local)
-    assert [step["id"].removesuffix("-released") for step in released] == [
-        step["id"].removesuffix("-local") for step in local
-    ]
-    assert all(step["if"] == "${{ !inputs.use-released }}" for step in local)
-    assert all(step["if"] == "${{ inputs.use-released }}" for step in released)
-
-
-def test_the_released_steps_use_the_pinned_published_action() -> None:
-    released = [step for step in action_steps() if step["uses"] != "./"]
-    text = (WORKFLOWS_PATH / "ci-action.yaml").read_text(encoding="utf-8")
-
-    assert released
-    assert len({step["uses"] for step in released}) == 1
-    assert len(
-        re.findall(
-            r"uses: durandtibo/extract-pyproject-metadata-action@[0-9a-f]{40} "
-            r"# ratchet:\S+@v\d+\.\d+\.\d+",
-            text,
-        )
-    ) == len(released)
+    assert len(steps) == 1
+    assert re.search(
+        r"uses: durandtibo/extract-pyproject-metadata-action@[0-9a-f]{40} "
+        r"# ratchet:\S+@v\d+\.\d+\.\d+",
+        nightly,
+    )
 
 
 def test_ci_action_takes_use_released_as_an_optional_boolean() -> None:
@@ -174,15 +198,25 @@ def test_the_shared_matrix_workflow_reads_the_workflow_config_action() -> None:
     assert "os_unix" in text
 
 
-def test_the_maintenance_workflow_reads_the_default_candidates_where_they_are_defined() -> None:
+def test_the_maintenance_workflow_reads_the_default_candidates_from_action_yaml() -> None:
     text = (WORKFLOWS_PATH / "maintenance.yaml").read_text(encoding="utf-8")
-    module = (PACKAGE_PATH / "python_versions.py").read_text(encoding="utf-8")
 
-    assert (
-        "from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES" in text
-    )
-    assert "DEFAULT_PYTHON_CANDIDATES = " in module
+    assert 'known="$(action_default python-candidates)"' in text
+    assert "DEFAULT_PYTHON_CANDIDATES and the default" not in text
+    assert "Update the default in action.yaml and DEFAULT_PYTHON_CANDIDATES" in text
     assert not (WORKFLOWS_PATH / "packaging-update.yaml").exists()
+
+
+def test_action_default_reads_the_default_candidates_that_the_package_repeats() -> None:
+    result = subprocess.run(
+        ["bash", "-c", "source scripts/test-helper.sh; action_default python-candidates"],
+        cwd=ROOT_PATH,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == DEFAULT_PYTHON_CANDIDATES
 
 
 def load_workflow(name: str) -> dict:
@@ -297,10 +331,10 @@ def test_the_local_workflow_passes_every_input_of_the_action() -> None:
     names = re.findall(r"(?m)^  ([a-z-]+):$", inputs)
     golden = LOCAL_PATH.read_text(encoding="utf-8")
     golden = golden[golden.index("\n  golden:") :]
+    golden = golden[golden.index("uses: ./.action") :]
 
     passed = re.findall(r"(?m)^          ([a-z-]+): \$\{\{", golden)
-    # Every input is passed twice: to the local step and to the released step.
-    assert sorted(passed) == sorted(names * 2)
+    assert sorted(passed) == sorted(names)
     assert sorted(DEFAULT_INPUTS) == sorted(names)
 
 
