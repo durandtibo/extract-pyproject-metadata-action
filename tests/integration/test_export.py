@@ -101,3 +101,38 @@ def test_a_new_file_at_the_root_is_not_exported(tmp_path: Path, name: str) -> No
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "✅ The exported files are the expected ones (11 entries)" in result.stdout
+
+
+STAGE_PATH = ROOT_PATH / "scripts" / "stage-action.sh"
+
+
+def test_stage_action_puts_the_exported_files_of_a_ref_in_a_directory(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    make_repository(repository, attributes=ATTRIBUTES)
+    target = tmp_path / ".action"
+
+    subprocess.run(["bash", str(STAGE_PATH), "HEAD", str(target)], cwd=repository, check=True)
+
+    assert sorted(str(p.relative_to(target)) for p in target.rglob("*") if p.is_file()) == [
+        "LICENSE",
+        "action.yaml",
+        "scripts/extract_metadata.py",
+        "scripts/run.sh",
+        "src/extract_pyproject_metadata/__init__.py",
+        "src/extract_pyproject_metadata/_vendor/licenses/LICENSE",
+    ]
+
+
+@pytest.mark.parametrize("arguments", [[], ["HEAD"], ["", "dir"], ["HEAD", "dir", "extra"]])
+def test_stage_action_rejects_a_wrong_usage(tmp_path: Path, arguments: list[str]) -> None:
+    result = subprocess.run(
+        ["bash", str(STAGE_PATH), *arguments],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "usage: stage-action.sh <ref> <dir>" in result.stderr

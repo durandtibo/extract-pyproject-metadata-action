@@ -162,14 +162,18 @@ Files are prefixed by role:
   - `ci-python.yaml`: the Python tests: unit and integration on the OS and Python matrix, and the
     property-based tests (job `properties`) on the standard Python versions.
   - `ci-export.yaml`: checks the exported set (`make check-export`, `dev/check_export.sh`).
-  - `ci-action.yaml`: runs the action, from this checkout (`uses: ./`, the version not released
-    yet) when its input `use-released` is `false` (the default; `ci.yaml` passes it), or the latest
-    released action when it is `true` (`nightly.yaml`).
+  - `ci-action.yaml`: runs the action as shipped: the first steps of each job stage the
+    `git archive` of a ref in `.action/` (`scripts/stage-action.sh`) and every run is
+    `uses: ./.action`. The ref is `HEAD` when its input `use-released` is `false` (the default;
+    `ci.yaml` passes it, the version not released yet) or the newest `v*` tag when it is `true`
+    (`nightly.yaml`).
 - `ci-verify-workflows.yaml`: lints the workflow files themselves. It has its own triggers and is
   not called from `ci.yaml`.
 - `nightly.yaml`: scheduled entry point that calls `ci-action.yaml` with `use-released: true`,
-  which tests the latest released action. It is not part of `ci.yaml` (which runs nightly too, for
-  the current code). There is no separate workflow for the released action.
+  which tests the latest released action, and runs one smoke step of the published action
+  (`uses: durandtibo/extract-pyproject-metadata-action@<sha>`, pinned). It is not part of `ci.yaml`
+  (which runs nightly too, for the current code). There is no separate workflow for the released
+  action.
 - `security-*.yaml`: dependency review and OSSF Scorecard.
 - `lib-get-test-matrix.yaml`: reusable workflow that loads the shared OS and Python matrix once
   (`os_matrix`, `os_macos`, `python_versions`, `python_versions_standard`, from
@@ -185,7 +189,7 @@ Conventions:
 - Each `ci-*` check is a `workflow_call` workflow that also has `workflow_dispatch`, so it can be
   run alone (the ones that take the `test-matrix` input have `workflow_call` only). Add a check as
   a new `ci-<name>.yaml` plus a job in `ci.yaml`.
-- Name test workflows by what they test: `ci-action` tests the action (local or released),
+- Name test workflows by what they test: `ci-action` tests the action (as shipped, from `HEAD` or the newest tag),
   `ci-python` tests the Python code.
 - Never write an OS or a Python version in a workflow matrix: read the lists from
   `durandtibo/workflow-config-action` through `lib-get-test-matrix.yaml`. A job that needs one
@@ -256,11 +260,14 @@ the properties (T1 to T16) are in `review/testing.md` of `cancel-queued-runs-act
 1. **Code**: the package and the scripts, tested alone (pytest in `tests/`, `ci-python.yaml`) with
    no network and no GitHub. It covers the logic and every edge case, and the golden cases of
    `test-data/` through `tests/integration/test_golden.py`.
-2. **Local action**: the action from this checkout (`uses: ./`) in a real workflow
-   (`ci-action.yaml`, `use-released: false`, called from `ci.yaml`).
-3. **Released action**: the latest stable release (`uses: durandtibo/extract-pyproject-metadata-action@<sha>`,
-   pinned, `# ratchet:...@vX.Y.Z`) with the same jobs as level 2 (`ci-action.yaml`,
-   `use-released: true`, called nightly from `nightly.yaml`). Never run it on pull requests.
+2. **Local action**: the action of this checkout as shipped (the archive of `HEAD` staged in
+   `.action/`, `uses: ./.action`) in a real workflow (`ci-action.yaml`, `use-released: false`,
+   called from `ci.yaml`).
+3. **Released action**: the archive of the newest `v*` tag, staged the same way, with the same jobs
+   as level 2 (`ci-action.yaml`, `use-released: true`, called nightly from `nightly.yaml`), plus
+   one smoke step of the published action (`uses: durandtibo/extract-pyproject-metadata-action@<sha>`,
+   pinned, `# ratchet:...@vX.Y.Z`, the only place that needs the SHA updated after a release).
+   Never run it on pull requests.
 
 Rules:
 
@@ -273,18 +280,17 @@ Rules:
   `test-invalid-inputs`, `test-old-python`: one input, one invalid value, one unusual file or
   interpreter) run on one runner (`ubuntu-latest`). There is no reduced matrix on pull requests:
   the same matrix runs on pull requests, pushes and the schedule.
-- Each run of the action in `ci-action.yaml` is two steps, `uses: ./` with id `<id>-local` and
-  `if: ${{ !inputs.use-released }}`, and the pinned release with id `<id>-released` and
-  `if: ${{ inputs.use-released }}`, with the same `with:`. The verify step reads
-  `steps.<id>-local.outputs.x || steps.<id>-released.outputs.x`, and the outcome with
-  `inputs.use-released && steps.<id>-released.outcome || steps.<id>-local.outcome`. A test checks
-  that every local step has its released twin. After a release, update the pinned SHA and tag in
-  every released step (a tag is never moved). A check of a feature that the last release does not
-  have yet carries `if: ${{ !inputs.use-released }}` until the next release.
+- Each run of the action in `ci-action.yaml` is one step, `uses: ./.action` (an id, no `if:`),
+  after the "Stage the action under test" step of its job (`actions/checkout` with
+  `fetch-depth` 0 for the tags when `use-released` is true). The verify step reads
+  `steps.<id>.outputs.x` and `steps.<id>.outcome`. A test checks that every run follows the stage
+  step. Nothing is edited in these steps after a release (the nightly takes the newest tag). A
+  check of a feature that the newest tag does not have yet carries `if: ${{ !inputs.use-released }}`
+  until the next release.
 - The `golden` cases are the list of its matrix: three cases (`minimal`, `readme-example`,
   `python-candidates-none`) that together set every input and fill every output (a test checks
-  it). The verification code shared by the local and released runs is in `scripts/test-helper.sh`
-  and `scripts/compare_json.py`, not in two workflows.
+  it). The verification code is in `scripts/test-helper.sh` and `scripts/compare_json.py`, not
+  inline in the workflows.
 - Every input has a case that sets it and asserts its effect, and every validated input has a case
   with an invalid value that asserts that the step failed (`continue-on-error: true`, an `id`, and
   `assert_failed` on the outcome and the empty `json` output). Assert the value or the format of
@@ -294,8 +300,9 @@ Rules:
 - Tests have no side effects outside the runner: throwaway files only. The README example is
   checked by `tests/` without GitHub. If something cannot be tested in CI, write down which
   check covers it.
-- Check what is shipped: `make check-export` (`ci-export.yaml`) checks the exported set, because
-  `uses: ./` runs the whole checkout and hides a missing file.
+- Check what is shipped: the action tests run the staged archive, so a file that the export hides
+  fails them; `make check-export` (`ci-export.yaml`) also checks the exported set and names the
+  file.
 - Set `timeout-minutes` and `fail-fast: false` (with `max-parallel`) on matrix jobs. Pass values
   through `env:`, never interpolate them in `run:` (a test checks it). Add a case or a job for every
   new input or output.

@@ -24,8 +24,8 @@
   },
   "warnings": [
     {
-      "code": "dynamic-dependencies",
-      "message": "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it"
+      "code": "dynamic-field",
+      "message": "[project].dependencies is dynamic, the action cannot read it: no requirement is found in it"
     },
     {
       "code": "dependency-not-found",

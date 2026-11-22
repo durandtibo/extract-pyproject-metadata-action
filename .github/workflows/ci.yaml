@@ -7,7 +7,8 @@
 # - ci-type-checking.yaml: pyright.
 # - ci-python.yaml: the Python tests (unit, integration, properties) on Linux and macOS.
 # - ci-export.yaml: the files shipped to the consumers of the action (.gitattributes).
-# - ci-action.yaml: the integration test of the current code of the action (`uses: ./`).
+# - ci-action.yaml: the integration test of the current code of the action as it is shipped
+#   (the archive of HEAD staged in `.action/`, `uses: ./.action`).
 # ci-verify-workflows.yaml lints the workflows; it has its own triggers and is not called from here.
 # The test of the published action is ci-action.yaml with `use-released: true` (nightly.yaml).
 

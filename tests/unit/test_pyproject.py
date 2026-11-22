@@ -227,7 +227,12 @@ def test_read_project_dynamic_version_is_empty_and_warns(tmp_path: Path) -> None
         "extras": [],
         "groups": [],
     }
-    assert messages(warnings) == ["[project].version is dynamic, the version output is empty"]
+    assert messages(warnings) == [
+        (
+            "[project].version is dynamic, the action cannot read it: "
+            "version and normalized-version are empty"
+        )
+    ]
 
 
 def test_read_project_static_version_wins_over_dynamic(tmp_path: Path) -> None:
@@ -436,27 +441,20 @@ def test_static_and_dynamic_warnings() -> None:
 
 
 def test_static_and_dynamic_warnings_none() -> None:
-    assert dynamic_field_warnings({"name": "a"}, ["version"], ALWAYS_READ_FIELDS) == []
+    assert dynamic_field_warnings({"name": "a"}, ["description"], ALWAYS_READ_FIELDS) == []
 
 
 @pytest.mark.parametrize("version", ["1.0-RC1", "1.2.3", "v1.0"])
 def test_read_version_static(version: str) -> None:
-    assert _read_version({"version": version}, []) == (version, [])
+    assert _read_version({"version": version}, []) == version
 
 
 def test_read_version_static_wins_over_dynamic() -> None:
-    assert _read_version({"version": "1.0"}, ["version"]) == ("1.0", [])
+    assert _read_version({"version": "1.0"}, ["version"]) == "1.0"
 
 
-def test_read_version_dynamic_warns() -> None:
-    assert _read_version({}, ["version"]) == (
-        None,
-        [
-            ReportWarning(
-                "dynamic-version", "[project].version is dynamic, the version output is empty"
-            )
-        ],
-    )
+def test_read_version_dynamic_is_none() -> None:
+    assert _read_version({}, ["version"]) is None
 
 
 def test_read_version_missing() -> None:
@@ -587,7 +585,12 @@ def test_read_project_dynamic_version_warns() -> None:
     project, warnings = read_project(data, [])
 
     assert project.version is None
-    assert messages(warnings) == ["[project].version is dynamic, the version output is empty"]
+    assert messages(warnings) == [
+        (
+            "[project].version is dynamic, the action cannot read it: "
+            "version and normalized-version are empty"
+        )
+    ]
 
 
 @pytest.mark.parametrize(
@@ -712,9 +715,9 @@ def test_read_project_a_dynamic_optional_dependencies_warns_that_it_cannot_be_re
 
     assert warnings == [
         ReportWarning(
-            "dynamic-dependencies",
-            "[project].optional-dependencies is dynamic, it cannot be read, "
-            "so no requirement is found in it",
+            "dynamic-field",
+            "[project].optional-dependencies is dynamic, the action cannot read it: "
+            "extras has no extra name from it",
         )
     ]
 
@@ -732,11 +735,30 @@ def test_dynamic_field_warnings_ignores_the_fields_outside_fields() -> None:
     assert dynamic_field_warnings({}, ["dependencies"], ALWAYS_READ_FIELDS) == []
 
 
-@pytest.mark.parametrize("field", ["version", "requires-python"])
-def test_dynamic_field_warnings_a_dynamic_field_that_is_not_set_is_not_a_dependency_warning(
-    field: str,
-) -> None:
-    assert dynamic_field_warnings({}, [field], ALWAYS_READ_FIELDS) == []
+@pytest.mark.parametrize("field", [*ALWAYS_READ_FIELDS[1:], *LOOKUP_FIELDS])
+def test_dynamic_field_warnings_a_dynamic_field_that_is_not_set_warns(field: str) -> None:
+    warnings = dynamic_field_warnings({}, [field], (*ALWAYS_READ_FIELDS, *LOOKUP_FIELDS))
+
+    assert [w.code for w in warnings] == ["dynamic-field"]
+    assert warnings[0].message.startswith(f"[project].{field} is dynamic, ")
+
+
+def test_dynamic_field_warnings_a_dynamic_name_that_is_not_set_does_not_warn() -> None:
+    assert dynamic_field_warnings({}, ["name"], ALWAYS_READ_FIELDS) == []
+
+
+def test_read_project_a_dynamic_requires_python_warns_that_it_cannot_be_read() -> None:
+    project = {"name": "a", "version": "1.0", "dynamic": ["requires-python"]}
+
+    _, warnings = read_project({"project": project}, [])
+
+    assert warnings == [
+        ReportWarning(
+            "dynamic-field",
+            "[project].requires-python is dynamic, the action cannot read it: "
+            "python-versions is every candidate",
+        )
+    ]
 
 
 class Recorder(dict[str, Any]):
