@@ -1,6 +1,8 @@
 # Nightly workflow testing the latest published version of the action, to catch regressions in
-# what consumers pick up: it calls ci-action.yaml with `use-released: true`. The current code is
-# tested nightly by ci.yaml.
+# what consumers pick up: it calls ci-action.yaml with `use-released: true` (the archive of the
+# newest `v*` tag), and runs one smoke step of the published action (`uses: owner/repo@sha`,
+# the only test of GitHub's own resolution of it; bot-pin-action.yaml keeps the SHA of the tag).
+# The current code is tested nightly by ci.yaml.
 
 name: Nightly Tests
 on:
@@ -26,3 +28,35 @@ jobs:
     with:
       use-released: true
       test-matrix: ${{ needs.get-matrix.outputs.test_matrix }}
+
+  # Smoke test of the published action as GitHub resolves it. After a release, the SHA and the tag
+  # of this step are the only things to update (bot-pin-action.yaml does it).
+  smoke-released:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 🧪 Run the published action on a minimal file
+        id: smoke
+        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        with:
+          pyproject-path: test-data/minimal/pyproject.toml
+
+      - name: ✓ Verify the outputs
+        env:
+          NAME: ${{ steps.smoke.outputs.name }}
+          VERSION: ${{ steps.smoke.outputs.version }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "name" "minimal-pkg" "$NAME"
+          assert_equal "version" "0.1.0" "$VERSION"
+          print_success "the published action works"

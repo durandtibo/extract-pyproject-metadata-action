@@ -1,9 +1,10 @@
 name: Test Action
 
-# The integration test of the action (it can only run on GitHub), on the code of this checkout
-# (`use-released: false`, `uses: ./`, called from ci.yaml) or on the latest published tag
-# (`use-released: true`, pinned by SHA, called from nightly.yaml). Every action step exists twice,
-# `<id>-local` and `<id>-released`, and the verify step reads the outputs of the one that ran.
+# The integration test of the action (it can only run on GitHub), on the action as it is shipped:
+# the first steps of each job put the `git archive` of a ref in `.action/` (scripts/stage-action.sh)
+# and every run of the action is `uses: ./.action`. The ref is `HEAD` of this checkout
+# (`use-released: false`, called from ci.yaml, so a file that the export hides fails here) or the
+# newest `v*` tag (`use-released: true`, called from nightly.yaml).
 # It checks that the action works as a whole: the inputs reach the program, every output comes
 # back with the right value, the invalid inputs and the warnings with `strict` fail the step, and
 # nothing is left behind. The logic is covered by tests/.
@@ -17,10 +18,9 @@ name: Test Action
 #   and check the outcome and that no output was set.
 #
 # - Add a job or a golden case for every new input or output.
-# - A check of a feature that the last release does not have yet is skipped by the released run
-#   (`if: ${{ !inputs.use-released }}` on the job) until the next release; then remove the `if`
-#   and update the pinned SHA and tag in every released step (bot-pin-action.yaml keeps the SHA of
-#   the tag).
+# - A check of a feature that the newest tag does not have yet is skipped by the released run
+#   (`if: ${{ !inputs.use-released }}` on the step or the job) until the next release; then remove
+#   the `if`. Nothing else is edited after a release.
 # - Values go through `env:`, never interpolated in `run:`.
 
 on:
@@ -54,27 +54,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: 🧪 Run the action with every input (local)
-        id: action-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/readme-example/pyproject.toml
-          extra-values: '[""]'
-          dependencies: '["numpy", "pytest@group:dev", "missing"]'
-          python-candidates: '["3.11","3.12","3.13"]'
-          strict: "false"
-
-      - name: 🧪 Run the action with every input (released)
-        id: action-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with every input
+        id: action
+        uses: ./.action
         with:
           pyproject-path: test-data/readme-example/pyproject.toml
           extra-values: '[""]'
@@ -84,19 +82,19 @@ jobs:
 
       - name: ✓ Verify every output
         env:
-          NAME: ${{ steps.action-local.outputs.name || steps.action-released.outputs.name }}
-          NORMALIZED_NAME: ${{ steps.action-local.outputs.normalized-name || steps.action-released.outputs.normalized-name }}
-          FILE_NAME: ${{ steps.action-local.outputs.file-name || steps.action-released.outputs.file-name }}
-          VERSION: ${{ steps.action-local.outputs.version || steps.action-released.outputs.version }}
-          NORMALIZED_VERSION: ${{ steps.action-local.outputs.normalized-version || steps.action-released.outputs.normalized-version }}
-          REQUIRES_PYTHON: ${{ steps.action-local.outputs.requires-python || steps.action-released.outputs.requires-python }}
-          PYTHON_VERSIONS: ${{ steps.action-local.outputs.python-versions || steps.action-released.outputs.python-versions }}
-          PYTHON_MIN: ${{ steps.action-local.outputs.python-min || steps.action-released.outputs.python-min }}
-          PYTHON_MAX: ${{ steps.action-local.outputs.python-max || steps.action-released.outputs.python-max }}
-          EXTRAS: ${{ steps.action-local.outputs.extras || steps.action-released.outputs.extras }}
-          GROUPS_: ${{ steps.action-local.outputs.groups || steps.action-released.outputs.groups }}
-          SPECIFIERS: ${{ steps.action-local.outputs.dependency-specifiers || steps.action-released.outputs.dependency-specifiers }}
-          JSON: ${{ steps.action-local.outputs.json || steps.action-released.outputs.json }}
+          NAME: ${{ steps.action.outputs.name }}
+          NORMALIZED_NAME: ${{ steps.action.outputs.normalized-name }}
+          FILE_NAME: ${{ steps.action.outputs.file-name }}
+          VERSION: ${{ steps.action.outputs.version }}
+          NORMALIZED_VERSION: ${{ steps.action.outputs.normalized-version }}
+          REQUIRES_PYTHON: ${{ steps.action.outputs.requires-python }}
+          PYTHON_VERSIONS: ${{ steps.action.outputs.python-versions }}
+          PYTHON_MIN: ${{ steps.action.outputs.python-min }}
+          PYTHON_MAX: ${{ steps.action.outputs.python-max }}
+          EXTRAS: ${{ steps.action.outputs.extras }}
+          GROUPS_: ${{ steps.action.outputs.groups }}
+          SPECIFIERS: ${{ steps.action.outputs.dependency-specifiers }}
+          JSON: ${{ steps.action.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "My_Package" "$NAME"
@@ -115,27 +113,19 @@ jobs:
           assert_equal "json: warning code" "dependency-not-found" "$(jq -r '.warnings[0].code' <<< "$JSON")"
           print_success "every output has the expected value"
 
-      - name: 🧪 Run the action on a minimal file (local)
-        id: minimal-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: 🧪 Run the action on a minimal file (released)
-        id: minimal-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action on a minimal file
+        id: minimal
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
 
       - name: ✓ Verify the defaults
         env:
-          NAME: ${{ steps.minimal-local.outputs.name || steps.minimal-released.outputs.name }}
-          VERSION: ${{ steps.minimal-local.outputs.version || steps.minimal-released.outputs.version }}
-          EXTRAS: ${{ steps.minimal-local.outputs.extras || steps.minimal-released.outputs.extras }}
-          GROUPS_: ${{ steps.minimal-local.outputs.groups || steps.minimal-released.outputs.groups }}
-          SPECIFIERS: ${{ steps.minimal-local.outputs.dependency-specifiers || steps.minimal-released.outputs.dependency-specifiers }}
+          NAME: ${{ steps.minimal.outputs.name }}
+          VERSION: ${{ steps.minimal.outputs.version }}
+          EXTRAS: ${{ steps.minimal.outputs.extras }}
+          GROUPS_: ${{ steps.minimal.outputs.groups }}
+          SPECIFIERS: ${{ steps.minimal.outputs.dependency-specifiers }}
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "minimal-pkg" "$NAME"
@@ -160,39 +150,51 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: 🧪 Run the action on a file with a dynamic version (local)
-        id: action-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-
-      - name: 🧪 Run the action on a file with a dynamic version (released)
-        id: action-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action on a file with a dynamic version
+        id: action
+        uses: ./.action
         with:
           pyproject-path: test-data/dynamic-version/pyproject.toml
 
       - name: ✓ Verify a warning does not fail the step without strict
         env:
-          OUTCOME: ${{ inputs.use-released && steps.action-released.outcome || steps.action-local.outcome }}
-          NAME: ${{ steps.action-local.outputs.name || steps.action-released.outputs.name }}
-          VERSION: ${{ steps.action-local.outputs.version || steps.action-released.outputs.version }}
-          JSON: ${{ steps.action-local.outputs.json || steps.action-released.outputs.json }}
+          OUTCOME: ${{ steps.action.outcome }}
+          NAME: ${{ steps.action.outputs.name }}
+          VERSION: ${{ steps.action.outputs.version }}
+          JSON: ${{ steps.action.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_equal "outcome" "success" "$OUTCOME"
           assert_equal "name" "dynamic-pkg" "$NAME"
           assert_equal "version" "" "$VERSION"
-          assert_equal "warning code" "dynamic-field" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          assert_equal "warnings" "1" "$(jq -r '.warnings | length' <<< "$JSON")"
           print_success "a warning is reported and does not fail the step"
+
+      # v0.3.0 has the code `dynamic-version`: remove the `if` after the release of `dynamic-field`.
+      - name: ✓ Verify the code of the warning
+        if: ${{ !inputs.use-released }}
+        env:
+          JSON: ${{ steps.action.outputs.json }}
+        run: |
+          source scripts/test-helper.sh
+          assert_equal "warning code" "dynamic-field" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          print_success "the warning has the code dynamic-field"
 
   # The default of pyproject-path is `pyproject.toml` of the workspace.
   test-default-path:
@@ -203,6 +205,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
@@ -212,20 +224,14 @@ jobs:
       - name: Put a pyproject.toml at the default path
         run: cp test-data/with-extras/pyproject.toml pyproject.toml
 
-      - name: 🧪 Run the action without pyproject-path (local)
-        id: action-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-
-      - name: 🧪 Run the action without pyproject-path (released)
-        id: action-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action without pyproject-path
+        id: action
+        uses: ./.action
 
       - name: ✓ Verify the file at the default path is read
         env:
-          NAME: ${{ steps.action-local.outputs.name || steps.action-released.outputs.name }}
-          EXTRAS: ${{ steps.action-local.outputs.extras || steps.action-released.outputs.extras }}
+          NAME: ${{ steps.action.outputs.name }}
+          EXTRAS: ${{ steps.action.outputs.extras }}
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "coola" "$NAME"
@@ -241,6 +247,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
@@ -252,23 +268,15 @@ jobs:
           mkdir "dir with spaces"
           cp test-data/with-extras/pyproject.toml "dir with spaces/my pyproject.toml"
 
-      - name: 🧪 Run the action on the path with spaces (local)
-        id: action-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: dir with spaces/my pyproject.toml
-
-      - name: 🧪 Run the action on the path with spaces (released)
-        id: action-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action on the path with spaces
+        id: action
+        uses: ./.action
         with:
           pyproject-path: dir with spaces/my pyproject.toml
 
       - name: ✓ Verify the file is read
         env:
-          NAME: ${{ steps.action-local.outputs.name || steps.action-released.outputs.name }}
+          NAME: ${{ steps.action.outputs.name }}
         run: |
           source scripts/test-helper.sh
           assert_equal "name" "coola" "$NAME"
@@ -283,49 +291,40 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: 🧪 Run the action with strict and no warning (local)
-        id: clean-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          strict: "true"
-
-      - name: 🧪 Run the action with strict and no warning (released)
-        id: clean-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with strict and no warning
+        id: clean
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
           strict: "true"
 
       - name: ✓ Verify strict does not fail without a warning
         env:
-          OUTCOME: ${{ inputs.use-released && steps.clean-released.outcome || steps.clean-local.outcome }}
+          OUTCOME: ${{ steps.clean.outcome }}
         run: |
           source scripts/test-helper.sh
           assert_equal "outcome" "success" "$OUTCOME"
           print_success "strict does not fail without a warning"
 
-      - name: 🧪 Run the action with strict on a warning (local)
-        id: warning-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/dynamic-version/pyproject.toml
-          strict: "true"
-        continue-on-error: true
-
-      - name: 🧪 Run the action with strict on a warning (released)
-        id: warning-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with strict on a warning
+        id: warning
+        uses: ./.action
         with:
           pyproject-path: test-data/dynamic-version/pyproject.toml
           strict: "true"
@@ -333,27 +332,16 @@ jobs:
 
       - name: ✓ Verify strict with a warning fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.warning-released.outcome || steps.warning-local.outcome }}
-          JSON: ${{ steps.warning-local.outputs.json || steps.warning-released.outputs.json }}
+          OUTCOME: ${{ steps.warning.outcome }}
+          JSON: ${{ steps.warning.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
           print_success "strict with a warning fails the step"
 
-      - name: 🧪 Run the action with strict on a missing dependency (local)
-        id: missing-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/with-dependencies/pyproject.toml
-          dependencies: '["invoke-tasklib","missing"]'
-          strict: "true"
-        continue-on-error: true
-
-      - name: 🧪 Run the action with strict on a missing dependency (released)
-        id: missing-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with strict on a missing dependency
+        id: missing
+        uses: ./.action
         with:
           pyproject-path: test-data/with-dependencies/pyproject.toml
           dependencies: '["invoke-tasklib","missing"]'
@@ -362,8 +350,8 @@ jobs:
 
       - name: ✓ Verify strict with a missing dependency fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.missing-released.outcome || steps.missing-local.outcome }}
-          JSON: ${{ steps.missing-local.outputs.json || steps.missing-released.outputs.json }}
+          OUTCOME: ${{ steps.missing.outcome }}
+          JSON: ${{ steps.missing.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
@@ -378,99 +366,73 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: 🧪 Run the action on a valid file (local)
-        id: valid-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-
-      - name: 🧪 Run the action on a valid file (released)
-        id: valid-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action on a valid file
+        id: valid
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
 
       - name: ✓ Verify the valid file succeeds, so that the failures below are caused by the inputs
         env:
-          OUTCOME: ${{ inputs.use-released && steps.valid-released.outcome || steps.valid-local.outcome }}
-          NAME: ${{ steps.valid-local.outputs.name || steps.valid-released.outputs.name }}
+          OUTCOME: ${{ steps.valid.outcome }}
+          NAME: ${{ steps.valid.outputs.name }}
         run: |
           source scripts/test-helper.sh
           assert_equal "outcome" "success" "$OUTCOME"
           assert_equal "name" "minimal-pkg" "$NAME"
           print_success "the valid file succeeds"
 
-      - name: 🧪 Run the action with a missing file (local)
-        id: missing-file-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/does-not-exist/pyproject.toml
-        continue-on-error: true
-
-      - name: 🧪 Run the action with a missing file (released)
-        id: missing-file-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with a missing file
+        id: missing-file
+        uses: ./.action
         with:
           pyproject-path: test-data/does-not-exist/pyproject.toml
         continue-on-error: true
 
       - name: ✓ Verify a missing file fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.missing-file-released.outcome || steps.missing-file-local.outcome }}
-          JSON: ${{ steps.missing-file-local.outputs.json || steps.missing-file-released.outputs.json }}
+          OUTCOME: ${{ steps.missing-file.outcome }}
+          JSON: ${{ steps.missing-file.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
           print_success "a missing file fails the step"
 
-      - name: 🧪 Run the action with a missing version (local)
-        id: missing-version-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/missing-version/pyproject.toml
-        continue-on-error: true
-
-      - name: 🧪 Run the action with a missing version (released)
-        id: missing-version-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with a missing version
+        id: missing-version
+        uses: ./.action
         with:
           pyproject-path: test-data/missing-version/pyproject.toml
         continue-on-error: true
 
       - name: ✓ Verify a missing version fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.missing-version-released.outcome || steps.missing-version-local.outcome }}
-          JSON: ${{ steps.missing-version-local.outputs.json || steps.missing-version-released.outputs.json }}
+          OUTCOME: ${{ steps.missing-version.outcome }}
+          JSON: ${{ steps.missing-version.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
           print_success "a missing version fails the step"
 
-      - name: 🧪 Run the action with an invalid extra-values (local)
-        id: extra-values-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          extra-values: "not json"
-        continue-on-error: true
-
-      - name: 🧪 Run the action with an invalid extra-values (released)
-        id: extra-values-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with an invalid extra-values
+        id: extra-values
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
           extra-values: "not json"
@@ -478,26 +440,16 @@ jobs:
 
       - name: ✓ Verify an invalid extra-values fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.extra-values-released.outcome || steps.extra-values-local.outcome }}
-          JSON: ${{ steps.extra-values-local.outputs.json || steps.extra-values-released.outputs.json }}
+          OUTCOME: ${{ steps.extra-values.outcome }}
+          JSON: ${{ steps.extra-values.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
           print_success "an invalid extra-values fails the step"
 
-      - name: 🧪 Run the action with an invalid dependencies (local)
-        id: dependencies-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          dependencies: '"numpy"'
-        continue-on-error: true
-
-      - name: 🧪 Run the action with an invalid dependencies (released)
-        id: dependencies-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with an invalid dependencies
+        id: dependencies
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
           dependencies: '"numpy"'
@@ -505,26 +457,16 @@ jobs:
 
       - name: ✓ Verify an invalid dependencies fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.dependencies-released.outcome || steps.dependencies-local.outcome }}
-          JSON: ${{ steps.dependencies-local.outputs.json || steps.dependencies-released.outputs.json }}
+          OUTCOME: ${{ steps.dependencies.outcome }}
+          JSON: ${{ steps.dependencies.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
           print_success "an invalid dependencies fails the step"
 
-      - name: 🧪 Run the action with an invalid python-candidates (local)
-        id: python-candidates-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          python-candidates: '["three"]'
-        continue-on-error: true
-
-      - name: 🧪 Run the action with an invalid python-candidates (released)
-        id: python-candidates-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with an invalid python-candidates
+        id: python-candidates
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
           python-candidates: '["three"]'
@@ -532,26 +474,16 @@ jobs:
 
       - name: ✓ Verify an invalid python-candidates fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.python-candidates-released.outcome || steps.python-candidates-local.outcome }}
-          JSON: ${{ steps.python-candidates-local.outputs.json || steps.python-candidates-released.outputs.json }}
+          OUTCOME: ${{ steps.python-candidates.outcome }}
+          JSON: ${{ steps.python-candidates.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
           print_success "an invalid python-candidates fails the step"
 
-      - name: 🧪 Run the action with an invalid strict (local)
-        id: strict-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-          strict: "yes"
-        continue-on-error: true
-
-      - name: 🧪 Run the action with an invalid strict (released)
-        id: strict-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with an invalid strict
+        id: strict
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
           strict: "yes"
@@ -559,8 +491,8 @@ jobs:
 
       - name: ✓ Verify an invalid strict fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.strict-released.outcome || steps.strict-local.outcome }}
-          JSON: ${{ steps.strict-local.outputs.json || steps.strict-released.outputs.json }}
+          OUTCOME: ${{ steps.strict.outcome }}
+          JSON: ${{ steps.strict.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
@@ -581,32 +513,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
         with:
           python-version: "3.10"
 
-      - name: 🧪 Run the action with Python 3.10 (local)
-        id: old-python-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: test-data/minimal/pyproject.toml
-        continue-on-error: true
-
-      - name: 🧪 Run the action with Python 3.10 (released)
-        id: old-python-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action with Python 3.10
+        id: old-python
+        uses: ./.action
         with:
           pyproject-path: test-data/minimal/pyproject.toml
         continue-on-error: true
 
       - name: ✓ Verify Python 3.10 fails the step and sets no output
         env:
-          OUTCOME: ${{ inputs.use-released && steps.old-python-released.outcome || steps.old-python-local.outcome }}
-          JSON: ${{ steps.old-python-local.outputs.json || steps.old-python-released.outputs.json }}
+          OUTCOME: ${{ steps.old-python.outcome }}
+          JSON: ${{ steps.old-python.outputs.json }}
         run: |
           source scripts/test-helper.sh
           assert_failed "$OUTCOME" "$JSON"
@@ -633,6 +566,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.use-released && 0 || 1 }}
+
+      - name: Stage the action under test
+        env:
+          USE_RELEASED: ${{ inputs.use-released }}
+        run: |
+          ref=HEAD
+          if [ "$USE_RELEASED" = "true" ]; then ref="$(git tag --list 'v*' --sort=-v:refname | head -n1)"; fi
+          bash scripts/stage-action.sh "$ref" .action
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # ratchet:actions/setup-python@v7
@@ -652,21 +595,9 @@ jobs:
             '{"python-candidates": $candidates} + .' <<<"$given")"
           echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
 
-      - name: 🧪 Run the action on the case (local)
-        id: action-local
-        if: ${{ !inputs.use-released }}
-        uses: ./
-        with:
-          pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
-          extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
-          dependencies: ${{ fromJSON(steps.case.outputs.inputs)['dependencies'] || '[]' }}
-          python-candidates: ${{ fromJSON(steps.case.outputs.inputs)['python-candidates'] }}
-          strict: ${{ fromJSON(steps.case.outputs.inputs)['strict'] || 'false' }}
-
-      - name: 🧪 Run the action on the case (released)
-        id: action-released
-        if: ${{ inputs.use-released }}
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+      - name: 🧪 Run the action on the case
+        id: action
+        uses: ./.action
         with:
           pyproject-path: ${{ fromJSON(steps.case.outputs.inputs)['pyproject-path'] || format('test-data/{0}/pyproject.toml', matrix.case) }}
           extra-values: ${{ fromJSON(steps.case.outputs.inputs)['extra-values'] || '[]' }}
@@ -677,5 +608,5 @@ jobs:
       - name: ✓ Compare the json output with the golden file
         env:
           EXPECTED: test-data/${{ matrix.case }}/expected.json
-          ACTUAL: ${{ steps.action-local.outputs.json || steps.action-released.outputs.json }}
+          ACTUAL: ${{ steps.action.outputs.json }}
         run: python scripts/compare_json.py "$EXPECTED" "$ACTUAL"
