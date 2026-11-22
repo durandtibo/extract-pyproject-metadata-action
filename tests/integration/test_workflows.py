@@ -263,8 +263,8 @@ def test_ci_runs_the_checks_through_make() -> None:
 
     for tool in ("pyright", "ruff", "generate_docs"):
         assert not [command for command in commands if tool in command.replace("make ", "")]
-    assert "pytest -q --cov" in commands
-    assert "pytest -q" in commands
+    assert "make test PYTHON_RUN=" in commands
+    assert "make test-quick PYTHON_RUN=" in commands
     assert "make lint-python PYTHON_RUN=" in commands
     assert "make docs-check PYTHON_RUN=" in commands
     assert 'make types "PYTHON_RUN=.venv/bin/python -m"' in commands

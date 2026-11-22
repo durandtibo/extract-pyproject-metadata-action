@@ -110,7 +110,8 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   output of the action).
 - Releases are made by hand with a tag `vX.Y.Z` (never from a PR) and a GitHub release; there is
   no release workflow. Workflows pin the exact tag (`@v0.3.0`). The checklist is in the README.
-  Do not create or move tags.
+  Do not create or move tags. Releases are immutable exact version tags: never create or move a
+  floating tag (`v1`, `latest`) and do not document one as an option.
 - When a PR conflicts with `main`, merge `origin/main` into the branch and resolve the
   conflicts (do not rebase and force-push). Check what `main` already contains before choosing
   a side; most conflicts are two PRs appending tests to the same file: keep both.
@@ -142,9 +143,10 @@ module above it (`tests/test_layers.py` holds the ranks and is the source of the
   `scripts/extract_metadata.py` and the package `src/extract_pyproject_metadata/` are exported,
   and `.gitattributes` marks everything else `export-ignore` (the default is `export-ignore` and
   the files above are un-ignored: a new file is not shipped unless it is listed there). When the
-  action starts using a new file, un-ignore it there and add it to `dev/check_export.sh`. Never make the action read tests,
-  fixtures (`test-data/`) or other repo files that are not exported. Check the exported set with
-  `make check-export` (`git archive --worktree-attributes HEAD | tar t`).
+  action starts using a new file, un-ignore it there and add it to `dev/check_export.sh`.
+  Never make the action read tests, fixtures (`test-data/`) or other repo files that are not
+  exported. Check the exported set with `make check-export`
+  (`git archive --worktree-attributes HEAD | tar t`).
 - Check workflow changes with `actionlint` when available.
 - Do not use `concurrency` in the workflows (`.github/workflows/`), in any form: stale queued
   runs are cancelled by `bot-cancel-stale-queued-runs.yaml`. A test checks it.
@@ -290,7 +292,8 @@ Rules:
 - A negative test needs a positive run on the same runner before it, so it cannot pass for the
   wrong reason (`test-strict` and `test-invalid-inputs` start with a run that succeeds).
 - Tests have no side effects outside the runner: throwaway files only. The README example is
-  checked by `tests/` without GitHub.
+  checked by `tests/` without GitHub. If something cannot be tested in CI, write down which
+  check covers it.
 - Check what is shipped: `make check-export` (`ci-export.yaml`) checks the exported set, because
   `uses: ./` runs the whole checkout and hides a missing file.
 - Set `timeout-minutes` and `fail-fast: false` (with `max-parallel`) on matrix jobs. Pass values
@@ -305,3 +308,4 @@ Rules:
   `pytest`), which were not, and that the workflows and CI were not awaited (workflows cannot be
   run locally).
 - Mention failures that already exist on `main` instead of hiding them.
+- If a check fails for a real reason, report it instead of weakening the test.
