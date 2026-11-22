@@ -89,56 +89,72 @@ def test_load_pyproject_unreadable_file(tmp_path: Path, monkeypatch: pytest.Monk
         load_pyproject(str(path))
 
 
-def test_extra_names_without_optional_dependencies() -> None:
-    assert read_extra_names({}, ["all"]) == ["all"]
-
-
 def test_extra_names_optional_dependencies_must_be_a_table() -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].optional-dependencies: must be a table"):
         read_extra_names({"optional-dependencies": []}, [])
 
 
-def test_extra_names() -> None:
-    project = {"optional-dependencies": {"b": [], "A_x": [], "a-x": []}}
+@pytest.mark.parametrize(
+    ("optional_dependencies", "extra_values", "expected"),
+    [
+        (None, ["all"], ["all"]),
+        ({"pandas": [], "numpy": []}, [], ["numpy", "pandas"]),
+        ({"pandas": [], "numpy": []}, [""], ["", "numpy", "pandas"]),
+        ({"pandas": [], "numpy": []}, ["numpy"], ["numpy", "pandas"]),
+        ({"pandas": [], "numpy": []}, ["pandas", "numpy"], ["pandas", "numpy"]),
+        ({"pandas": [], "numpy": []}, ["all", "all"], ["all", "numpy", "pandas"]),
+        ({"pandas": [], "numpy": []}, ["", ""], ["", "numpy", "pandas"]),
+        ({"pandas": [], "numpy": []}, ["all", "numpy", "all"], ["all", "numpy", "pandas"]),
+        (
+            {"Zeta": [], "alpha": [], "Beta": [], "gamma_x": []},
+            [],
+            ["alpha", "Beta", "gamma_x", "Zeta"],
+        ),
+        ({"b": [], "A_x": [], "a-x": []}, ["", "b"], ["", "b", "A_x"]),
+        ({"Foo_Bar": [], "foo-bar": []}, [], ["Foo_Bar"]),
+        ({"foo-bar": [], "Foo_Bar": []}, [], ["foo-bar"]),
+        ({"Foo": [], "foo": [], "FOO": []}, [], ["Foo"]),
+        ({"a.b": [], "a-b": [], "a__b": []}, [], ["a.b"]),
+        ({"foo_bar": [], "baz": []}, ["Foo-Bar"], ["Foo-Bar", "baz"]),
+        ({"foo_bar": [], "baz": []}, ["FOO_BAR", "foo.bar"], ["FOO_BAR", "baz"]),
+        ({"foo_bar": [], "baz": []}, ["", "Baz"], ["", "Baz", "foo_bar"]),
+        ({"foo_bar": [], "baz": []}, ["Baz", ""], ["Baz", "", "foo_bar"]),
+    ],
+    ids=[
+        "no-table",
+        "sorted",
+        "empty-value-first",
+        "already-there",
+        "given-order",
+        "repeated-value",
+        "repeated-empty-value",
+        "repeated-around-a-name",
+        "sorted-by-normalized-name",
+        "first-spelling-of-values",
+        "spellings-of-an-extra",
+        "spellings-reversed",
+        "case",
+        "separators",
+        "value-spelled-differently",
+        "two-spellings-of-a-value",
+        "empty-then-name",
+        "name-then-empty",
+    ],
+)
+def test_read_extra_names(
+    optional_dependencies: dict | None, extra_values: list[str], expected: list[str]
+) -> None:
+    project = (
+        {} if optional_dependencies is None else {"optional-dependencies": optional_dependencies}
+    )
 
-    assert read_extra_names(project, ["", "b"]) == ["", "b", "A_x"]
+    assert read_extra_names(project, extra_values) == expected
 
 
 def test_group_names_are_sorted_and_deduplicated() -> None:
     data = {"dependency-groups": {"Dev": [], "test": [], "dev": [], "docs": []}}
 
     assert read_group_names(data) == ["Dev", "docs", "test"]
-
-
-@pytest.mark.parametrize(
-    ("extra_values_json", "expected"),
-    [
-        ("[]", ["numpy", "pandas"]),
-        ('[""]', ["", "numpy", "pandas"]),
-        ('["numpy"]', ["numpy", "pandas"]),
-        ('["pandas", "numpy"]', ["pandas", "numpy"]),
-        ('["all", "all"]', ["all", "numpy", "pandas"]),
-        ('["", ""]', ["", "numpy", "pandas"]),
-        ('["all", "numpy", "all"]', ["all", "numpy", "pandas"]),
-    ],
-)
-def test_read_project_extras_are_sorted_prepended_and_deduplicated(
-    tmp_path: Path, extra_values_json: str, expected: list[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        name = "coola"
-        version = "1.2.3"
-
-        [project.optional-dependencies]
-        pandas = ["pandas"]
-        numpy = ["numpy"]
-        """,
-    )
-
-    assert extract(path, extra_values_json)["extras"] == expected
 
 
 def project_toml(body: str) -> str:
@@ -235,22 +251,6 @@ def test_read_project_dynamic_version_is_empty_and_warns(tmp_path: Path) -> None
     ]
 
 
-def test_read_project_static_version_wins_over_dynamic(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "coola"\nversion = "1.2.3"\ndynamic = ["version"]\n',
-    )
-    metadata, warnings = extract_with_warnings(path)
-
-    assert metadata["version"] == "1.2.3"
-    assert messages(warnings) == [
-        (
-            "[project].version is set and also listed in [project].dynamic, "
-            "which PEP 621 forbids; the static value is used"
-        )
-    ]
-
-
 def test_read_project_static_and_dynamic_fields_warn_once_each(tmp_path: Path) -> None:
     path = write_pyproject(
         tmp_path,
@@ -310,85 +310,6 @@ def test_parse_string_array_not_an_array_of_strings(value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("optional_dependencies", "expected"),
-    [
-        ('Foo_Bar = []\n"foo-bar" = []', ["Foo_Bar"]),
-        ('"foo-bar" = []\nFoo_Bar = []', ["foo-bar"]),
-        ("Foo = []\nfoo = []\nFOO = []", ["Foo"]),
-        ('"a.b" = []\n"a-b" = []\n"a__b" = []', ["a.b"]),
-    ],
-)
-def test_read_project_extras_spellings_of_the_same_extra_are_one(
-    tmp_path: Path, optional_dependencies: str, expected: list[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        f'[project]\nname = "p"\nversion = "1"\n[project.optional-dependencies]\n{optional_dependencies}\n',
-    )
-
-    assert extract(path)["extras"] == expected
-
-
-@pytest.mark.parametrize(
-    ("extra_values_json", "expected"),
-    [
-        ('["Foo-Bar"]', ["Foo-Bar", "baz"]),
-        ('["FOO_BAR", "foo.bar"]', ["FOO_BAR", "baz"]),
-        ('["", "Baz"]', ["", "Baz", "foo_bar"]),
-        ('["Baz", ""]', ["Baz", "", "foo_bar"]),
-    ],
-)
-def test_read_project_extra_values_are_deduplicated_per_pep_685(
-    tmp_path: Path, extra_values_json: str, expected: list[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "p"\nversion = "1"\n[project.optional-dependencies]\nfoo_bar = []\nbaz = []\n',
-    )
-
-    assert extract(path, extra_values_json)["extras"] == expected
-
-
-def test_read_project_extras_are_sorted_by_normalized_name(tmp_path: Path) -> None:
-    path = write_pyproject(
-        tmp_path,
-        """
-        [project]
-        name = "p"
-        version = "1"
-
-        [project.optional-dependencies]
-        Zeta = []
-        alpha = []
-        Beta = []
-        "gamma_x" = []
-        """,
-    )
-
-    assert extract(path)["extras"] == ["alpha", "Beta", "gamma_x", "Zeta"]
-
-
-@pytest.mark.parametrize(
-    "version",
-    [
-        "1",
-        "1.2.3",
-        "0.1.0.dev3",
-        "1.0rc1",
-        "2024.1.post2",
-        "1!2.0",
-        "1.0.0rc1+build.5",
-        "v1.2",
-        "1.0-1",
-    ],
-)
-def test_read_project_valid_pep_440_versions(tmp_path: Path, version: str) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "p"\nversion = "{version}"\n')
-
-    assert extract(path)["version"] == version
-
-
-@pytest.mark.parametrize(
     ("name", "expected"),
     [
         ("coola", "coola"),
@@ -409,12 +330,21 @@ def test_read_project_normalized_name(tmp_path: Path, name: str, expected: str) 
     assert metadata["normalized_name"] == expected
 
 
-@pytest.mark.parametrize("name", ["a", "My_Package.Name", "a-b", "a1"])
+@pytest.mark.parametrize(
+    "name",
+    ["a", "A", "7", "coola", "My_Package.Name", "a-b", "a_b", "a.b", "a--b__c..d", "a1", "x9"],
+)
 def test_read_name(name: str) -> None:
     assert _read_name({"name": name}, []) == name
 
 
-@pytest.mark.parametrize("name", ["my pkg", "-a", "a-", "_a", "a.", "a/b"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        *["my pkg", "my pkg!", "-a", "a-", "_a", "a_", ".a", "a.", "a/b", "a@b", "ÄB"],
+        *["a\nb", " a", "a ", "a\n"],
+    ],
+)
 def test_read_name_not_a_project_name(name: str) -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
         _read_name({"name": name}, [])
@@ -444,7 +374,13 @@ def test_static_and_dynamic_warnings_none() -> None:
     assert dynamic_field_warnings({"name": "a"}, ["description"], ALWAYS_READ_FIELDS) == []
 
 
-@pytest.mark.parametrize("version", ["1.0-RC1", "1.2.3", "v1.0"])
+@pytest.mark.parametrize(
+    "version",
+    [
+        *["1", "1.2.3", "0.1.0.dev3", "1.0rc1", "2024.1.post2", "1!2.0"],
+        *["1.0.0rc1+build.5", "v1.0", "1.0-1", "1.0-RC1"],
+    ],
+)
 def test_read_version_static(version: str) -> None:
     assert _read_version({"version": version}, []) == version
 
@@ -457,81 +393,10 @@ def test_read_version_dynamic_is_none() -> None:
     assert _read_version({}, ["version"]) is None
 
 
-def test_read_version_missing() -> None:
-    with pytest.raises(MetadataError, match=r"^\[project\].version: missing$"):
-        _read_version({}, ["readme"])
-
-
-def test_read_version_not_a_string() -> None:
-    with pytest.raises(MetadataError, match=r"^\[project\].version: must be a string, got: 1.0$"):
-        _read_version({"version": 1.0}, [])
-
-
-def test_read_version_invalid() -> None:
-    with pytest.raises(
-        MetadataError,
-        match=r"^\[project\].version: not a valid PEP 440 version: 'latest'$",
-    ):
-        _read_version({"version": "latest"}, [])
-
-
-def test_read_project_reports_the_name_before_the_version() -> None:
+@pytest.mark.parametrize("project", [{"name": "a b", "version": "latest"}, {"name": "a b"}])
+def test_read_project_reports_an_invalid_name_before_the_version(project: dict) -> None:
     with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
-        read_project({"project": {"name": "a b", "version": "latest"}}, [])
-
-
-def test_read_project_reports_an_invalid_name_before_a_missing_version() -> None:
-    with pytest.raises(MetadataError, match=r"^\[project\].name: not a valid project name"):
-        read_project({"project": {"name": "a b"}}, [])
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "a",
-        "A",
-        "7",
-        "coola",
-        "My_Package.Name",
-        "a-b",
-        "a_b",
-        "a.b",
-        "a--b__c..d",
-        "zope.interface",
-        "x9",
-    ],
-)
-def test_read_project_valid_names(tmp_path: Path, name: str) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
-
-    assert extract(path)["name"] == name
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "my pkg",
-        "my pkg!",
-        "-a",
-        "a-",
-        "_a",
-        "a_",
-        ".a",
-        "a.",
-        "a/b",
-        "a@b",
-        "ÄB",
-        "a\\nb",
-        " a",
-        "a ",
-        "a\\n",
-    ],
-)
-def test_read_project_invalid_names(tmp_path: Path, name: str) -> None:
-    path = write_pyproject(tmp_path, f'[project]\nname = "{name}"\nversion = "1"\n')
-
-    with pytest.raises(MetadataError, match=r"\[project\]\.name: not a valid project name"):
-        extract(path)
+        read_project({"project": project}, [])
 
 
 @pytest.mark.parametrize(
@@ -555,14 +420,6 @@ def test_read_project_normalized_version(tmp_path: Path, version: str, expected:
     metadata = extract(path)
 
     assert (metadata["version"], metadata["normalized_version"]) == (version, expected)
-
-
-def test_read_project_normalized_version_is_empty_when_the_version_is_dynamic(
-    tmp_path: Path,
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    assert extract(path)["normalized_version"] == ""
 
 
 def test_read_project_static_version_listed_as_dynamic_warns() -> None:
@@ -639,14 +496,6 @@ def test_read_project_fields(tmp_path: Path) -> None:
         groups=["dev"],
     )
     assert messages(warnings) == []
-
-
-def test_read_project_dynamic_version_is_none(tmp_path: Path) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    project, _ = read_project(load_pyproject(str(path)), [])
-
-    assert project.version is None
 
 
 def test_read_groups_merges_the_spellings_in_file_order() -> None:

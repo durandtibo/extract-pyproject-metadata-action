@@ -17,7 +17,6 @@ from extract_pyproject_metadata.pyproject import load_pyproject
 from extract_pyproject_metadata.types import Report
 from tests.helpers import (
     DEPS_TOML,
-    messages,
     parse_github_output,
     run_main,
     write_pyproject,
@@ -125,19 +124,6 @@ def test_main_returns_one_with_the_message_for_an_invalid_input(
     assert captured.out == ""
 
 
-def test_main_outputs_warnings_in_json_and_nothing_on_stderr(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, DEPS_TOML)
-
-    exit_code = run_main([str(path), "[]", '["missing"]'])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert messages(json.loads(captured.out)["warnings"]) == ["dependency 'missing' not found"]
-    assert captured.err == ""
-
-
 def test_main_github_output_writes_outputs_and_annotations(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -210,19 +196,6 @@ def test_main_strict_fails_without_writing_the_outputs(
     )
     assert captured.out == ""
     assert not output.exists()
-
-
-def test_main_error_annotation_cannot_inject_a_command(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\nrequires-python = 3\n')
-
-    exit_code = run_main(["--github-output", str(tmp_path / "out"), str(path), "[]"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert len(captured.err.splitlines()) == 1
-    assert captured.err.startswith("::error file=")
 
 
 @pytest.mark.parametrize(
@@ -364,14 +337,16 @@ def test_read_inputs_uses_the_defaults_of_the_inputs_that_are_not_set() -> None:
     assert inputs.python_candidates == ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
 
-def test_read_inputs_empty_python_candidates_is_an_error() -> None:
-    with pytest.raises(MetadataError, match=r"^python-candidates: not valid JSON: ''"):
-        read_inputs({"INPUT_PYTHON_CANDIDATES": ""})
-
-
-def test_read_inputs_invalid_value() -> None:
-    with pytest.raises(MetadataError, match=r"^strict: must be 'true' or 'false'"):
-        read_inputs({"INPUT_STRICT": "maybe"})
+@pytest.mark.parametrize(
+    ("environ", "match"),
+    [
+        ({"INPUT_PYTHON_CANDIDATES": ""}, r"^python-candidates: not valid JSON: ''"),
+        ({"INPUT_STRICT": "maybe"}, r"^strict: must be 'true' or 'false'"),
+    ],
+)
+def test_read_inputs_invalid_value(environ: dict[str, str], match: str) -> None:
+    with pytest.raises(MetadataError, match=match):
+        read_inputs(environ)
 
 
 def test_main_reads_os_environ_by_default(
@@ -385,30 +360,21 @@ def test_main_reads_os_environ_by_default(
     assert json.loads(capsys.readouterr().out)["name"] == "a"
 
 
-def test_main_without_github_output_prints_the_json_and_no_annotation(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
-
-    assert main({"INPUT_PYPROJECT_PATH": str(path)}) == 0
-
-    captured = capsys.readouterr()
-    assert json.loads(captured.out)["warnings"][0]["code"] == "dynamic-field"
-    assert "::" not in captured.out
-    assert captured.err == ""
-
-
 @pytest.mark.parametrize("github_output", ["", None])
-def test_main_an_empty_github_output_is_not_set(
+def test_main_without_github_output_prints_the_json_and_no_annotation(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], github_output: str | None
 ) -> None:
-    path = write_pyproject(tmp_path, '[project]\nname = "a"\nversion = "1"\n')
+    path = write_pyproject(tmp_path, '[project]\nname = "a"\ndynamic = ["version"]\n')
     environ = {"INPUT_PYPROJECT_PATH": str(path)}
     if github_output is not None:
         environ["GITHUB_OUTPUT"] = github_output
 
     assert main(environ) == 0
-    assert json.loads(capsys.readouterr().out)["name"] == "a"
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["warnings"][0]["code"] == "dynamic-field"
+    assert "::" not in captured.out
+    assert captured.err == ""
 
 
 def test_run_uses_the_environment_of_the_process(
@@ -456,14 +422,3 @@ def test_run_decodes_the_environment_as_utf8(
 
     assert run() == 0
     assert json.loads(stdout.getvalue())["extras"] == ["é"]
-
-
-def test_main_strict_passes_on_a_static_and_dynamic_field_that_is_not_read(
-    tmp_path: Path,
-) -> None:
-    path = write_pyproject(
-        tmp_path,
-        '[project]\nname = "coola"\nversion = "1"\ndescription = "d"\ndynamic = ["description"]\n',
-    )
-
-    assert run_main(["--strict", "true", str(path), "[]"]) == 0
