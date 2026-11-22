@@ -35,9 +35,6 @@ test: ## Run the tests with the coverage gate
 	$(PYTHON_RUN) pytest -q --cov
 
 .PHONY: test-properties
-test-quick: ## Run the tests without the coverage gate
-	$(PYTHON_RUN) pytest -q
-
 test-properties: ## Run the property-based tests (needs the property group)
 	$(PYTHON_RUN) pytest -q tests/properties
 
