@@ -1,0 +1,4 @@
+[project]
+name = "dynamic-requires-python"
+version = "1.0.0"
+dynamic = ["requires-python"]

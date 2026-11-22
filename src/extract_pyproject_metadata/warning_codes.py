@@ -21,10 +21,6 @@ WARNING_CODES: dict[WarningCode, tuple[str, str]] = {
         ),
         "The static value is used.",
     ),
-    "dynamic-version": (
-        "`version` is in `dynamic` and not set.",
-        "`version` and `normalized-version` are empty.",
-    ),
     "invalid-requires-python": (
         "`requires-python` is not a valid version specifier.",
         "`python-versions` is empty.",
@@ -54,12 +50,17 @@ WARNING_CODES: dict[WarningCode, tuple[str, str]] = {
         ),
         "The entry is skipped.",
     ),
-    "dynamic-dependencies": (
+    "dynamic-field": (
         (
-            "`optional-dependencies`, or `dependencies` when `dependencies` is not empty, is in "
+            "A field that the action reads (`version`, `requires-python`, "
+            "`optional-dependencies`, and `dependencies` when `dependencies` is not empty) is in "
             "`dynamic` and not set."
         ),
-        "No requirement is found in it.",
+        (
+            "The build backend computes it, so the action cannot read it: `version` and "
+            "`normalized-version` are empty, `python-versions` is every candidate, `extras` has "
+            "no extra name from it, or no requirement is found in it."
+        ),
     ),
     "dependency-not-found": (
         "A package of `dependencies` is not in the place(s) searched.",

@@ -20,8 +20,8 @@
   "dependency_requirements": {},
   "warnings": [
     {
-      "code": "dynamic-dependencies",
-      "message": "[project].optional-dependencies is dynamic, it cannot be read, so no requirement is found in it"
+      "code": "dynamic-field",
+      "message": "[project].optional-dependencies is dynamic, the action cannot read it: extras has no extra name from it"
     }
   ],
   "schema_version": 1

@@ -42,9 +42,13 @@ UTF8_BOM = b"\xef\xbb\xbf"
 ALWAYS_READ_FIELDS = ("name", "version", "requires-python", "optional-dependencies")
 LOOKUP_FIELDS = ("dependencies",)
 
-# The fields whose value is a list of requirements: when one is dynamic and not set, the
-# action cannot read it.
-_REQUIREMENT_FIELDS = frozenset({"dependencies", "optional-dependencies"})
+# What a dynamic field that is not set changes in the outputs, for the message of ``dynamic-field``.
+_DYNAMIC_EFFECTS = {
+    "version": "version and normalized-version are empty",
+    "requires-python": "python-versions is every candidate",
+    "optional-dependencies": "extras has no extra name from it",
+    "dependencies": "no requirement is found in it",
+}
 
 
 def load_pyproject(pyproject_path: str) -> dict[str, Any]:
@@ -116,8 +120,7 @@ def read_project(
     dynamic = check_string_array(project.get("dynamic", []), "[project].dynamic")
     name = _read_name(project, dynamic)
     warnings = dynamic_field_warnings(project, dynamic, ALWAYS_READ_FIELDS)
-    version, version_warnings = _read_version(project, dynamic)
-    warnings.extend(version_warnings)
+    version = _read_version(project, dynamic)
     requires_python = check_str(project.get("requires-python", ""), "[project].requires-python")
     return Project(
         name=name,
@@ -171,10 +174,10 @@ def dynamic_field_warnings(
     """Describe the ``fields`` that are listed in ``dynamic`` and that the action cannot trust.
 
     A field that is set and also dynamic gets ``static-and-dynamic`` (PEP 621 forbids it; the
-    static value is the one that is read). A requirement field (``dependencies`` or
-    ``optional-dependencies``) that is dynamic and not set gets ``dynamic-dependencies`` (the
-    build backend computes it, so no requirement can be read from it). A field outside
-    ``fields`` is ignored.
+    static value is the one that is read). A field that is dynamic and not set gets
+    ``dynamic-field`` (the build backend computes it, so the action cannot read it). A field
+    outside ``fields`` is ignored, and so is ``name`` that is not set (``read_project`` raises
+    an error for it).
 
     Args:
         project: The ``[project]`` table.
@@ -186,7 +189,7 @@ def dynamic_field_warnings(
     """
     warnings: list[ReportWarning] = []
     for field in dict.fromkeys(dynamic):
-        if field not in fields:
+        if field not in fields or (field == "name" and field not in project):
             continue
         if field in project:
             warnings.append(
@@ -196,20 +199,18 @@ def dynamic_field_warnings(
                     "which PEP 621 forbids; the static value is used",
                 )
             )
-        elif field in _REQUIREMENT_FIELDS:
+        else:
             warnings.append(
                 ReportWarning(
-                    "dynamic-dependencies",
-                    f"[project].{field} is dynamic, it cannot be read, "
-                    "so no requirement is found in it",
+                    "dynamic-field",
+                    f"[project].{field} is dynamic, the action cannot read it: "
+                    f"{_DYNAMIC_EFFECTS[field]}",
                 )
             )
     return warnings
 
 
-def _read_version(
-    project: dict[str, Any], dynamic: list[str]
-) -> tuple[str | None, list[ReportWarning]]:
+def _read_version(project: dict[str, Any], dynamic: list[str]) -> str | None:
     """Return ``[project].version``, which must be a valid PEP 440 version
     or dynamic.
 
@@ -218,9 +219,8 @@ def _read_version(
         dynamic: The ``[project].dynamic`` array.
 
     Returns:
-        A tuple ``(version, warnings)``. ``version`` is the version, unchanged, or ``None``
-        when the build backend computes it (setuptools-scm, hatch-vcs, ...): ``warnings`` then
-        has the ``dynamic-version`` warning, and is empty otherwise.
+        The version, unchanged, or ``None`` when the build backend computes it
+        (setuptools-scm, hatch-vcs, ...); ``dynamic_field_warnings`` reports that.
 
     Raises:
         MetadataError: If ``version`` is neither set nor dynamic, is not a string, or is not a
@@ -230,17 +230,14 @@ def _read_version(
         if "version" not in dynamic:
             msg = "[project].version: missing"
             raise MetadataError(msg)
-        warning = ReportWarning(
-            "dynamic-version", "[project].version is dynamic, the version output is empty"
-        )
-        return None, [warning]
+        return None
     version = check_str(project["version"], "[project].version")
     try:
         Version(version)
     except InvalidVersion as exc:
         msg = f"[project].version: not a valid PEP 440 version: {version!r}"
         raise MetadataError(msg) from exc
-    return version, []
+    return version
 
 
 def read_extra_names(project: dict[str, Any], extra_values: list[str]) -> list[str]:
