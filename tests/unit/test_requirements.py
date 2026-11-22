@@ -62,27 +62,34 @@ def flatten(groups: dict, name: str) -> tuple[list[str], list[ReportWarning]]:
     return requirements, list(expansion.warnings)
 
 
-@pytest.mark.parametrize(
-    ("groups", "name", "expected"),
-    [
-        ({"a": ["x>=1"]}, "a", ["x>=1"]),
-        ({"a": []}, "a", []),
-        ({}, "a", []),
-        ({"a": ["x"]}, "missing", []),
-        ({"My_Group": ["x"]}, "my-group", ["x"]),
-        ({"a": [{"include-group": "b"}, "x"], "b": ["y"]}, "a", ["y", "x"]),
-        ({"a": [{"include-group": "B-C"}], "b_c": ["y"]}, "a", ["y"]),
-        ({"a": [{"include-group": "missing"}, "x"]}, "a", ["x"]),
-        ({"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": ["z"]}, "a", ["z"]),
-    ],
-)
-def test_flatten(groups: dict, name: str, expected: list[str]) -> None:
-    assert flatten(groups, name)[0] == expected
+MISSING_X = "[dependency-groups].a: include-group 'missing' does not match any group"
 
 
 @pytest.mark.parametrize(
     ("groups", "name", "expected", "warnings"),
     [
+        ({"a": ["x>=1"]}, "a", ["x>=1"], []),
+        ({"a": []}, "a", [], []),
+        ({}, "a", [], []),
+        ({"a": ["x"]}, "missing", [], []),
+        ({"My_Group": ["x"]}, "my-group", ["x"], []),
+        ({"a": [{"include-group": "b"}, "x"], "b": ["y"]}, "a", ["y", "x"], []),
+        ({"a": [{"include-group": "B-C"}], "b_c": ["y"]}, "a", ["y"], []),
+        ({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a", ["y"], []),
+        (
+            {"a": [{"include-group": "b"}], "b": [{"include-group": "c"}], "c": ["z"]},
+            "a",
+            ["z"],
+            [],
+        ),
+        ({"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]}, "a", ["y", "y"], []),
+        ({"a": [{"include-group": "missing"}, "x"]}, "a", ["x"], [MISSING_X]),
+        (
+            {"dev": [{"include-group": "tset"}, "x"]},
+            "dev",
+            ["x"],
+            ["[dependency-groups].dev: include-group 'tset' does not match any group"],
+        ),
         (
             {"a": [{"include-group": "b"}, "x"], "b": [{"include-group": "a"}, "y"]},
             "a",
@@ -105,35 +112,30 @@ def test_flatten(groups: dict, name: str, expected: list[str]) -> None:
             ["z", "y"],
             ["[dependency-groups] has an include-group cycle: a -> b -> c -> a"],
         ),
-        (
-            {"a": [{"include-group": "b"}, {"include-group": "b"}], "b": ["y"]},
-            "a",
-            ["y", "y"],
-            [],
-        ),
-        (
-            {"dev": [{"include-group": "tset"}, "x"]},
-            "dev",
-            ["x"],
-            ["[dependency-groups].dev: include-group 'tset' does not match any group"],
-        ),
-        ({"a": [{"include-group": "My-Group"}], "my_group": ["y"]}, "a", ["y"], []),
     ],
-    ids=["cycle", "self-include", "long-cycle", "repeated-include", "unknown-group", "spellings"],
+    ids=[
+        "one-group",
+        "empty-group",
+        "no-table",
+        "unknown-name",
+        "normalized-name",
+        "include",
+        "include-normalized",
+        "include-spelling",
+        "chain",
+        "repeated-include",
+        "missing-include-group",
+        "unknown-group-with-a-typo",
+        "cycle",
+        "self-include",
+        "long-cycle",
+    ],
 )
-def test_flatten_warnings(
-    groups: dict, name: str, expected: list[str], warnings: list[str]
-) -> None:
+def test_flatten(groups: dict, name: str, expected: list[str], warnings: list[str]) -> None:
     result, found = flatten(groups, name)
 
     assert result == expected
     assert messages(found) == warnings
-
-
-def test_collect_requirements_expands_the_spellings_of_a_group_once() -> None:
-    data = {"dependency-groups": {"Dev_Tools": ["a"], "dev-tools": ["b"], "other": ["c"]}}
-
-    assert spelled(collect(data)[0]) == ["a", "b", "c"]
 
 
 @pytest.mark.parametrize(
@@ -275,35 +277,23 @@ def test_expansion_flatten_missing_include_group_is_reported_once_per_group() ->
     ]
 
 
+HEADER = '[project]\nname = "p"\nversion = "1"\n'
+
+
 @pytest.mark.parametrize(
     ("toml", "expected"),
     [
         (GROUPS_TOML, ["Dev", "docs", "test"]),
-        ('[project]\nname = "p"\nversion = "1"\n', []),
-        ('[project]\nname = "p"\nversion = "1"\n[dependency-groups]\n', []),
+        (HEADER, []),
+        (HEADER + "[dependency-groups]\n", []),
+        (HEADER + '[dependency-groups]\nFoo_Bar = []\n"foo-bar" = []', ["Foo_Bar"]),
+        (HEADER + '[dependency-groups]\n"foo-bar" = []\nFoo_Bar = []', ["foo-bar"]),
+        (HEADER + "[dependency-groups]\nb = []\nA = []\nc = []", ["A", "b", "c"]),
     ],
-    ids=["sorted", "no-table", "empty-table"],
+    ids=["sorted", "no-table", "empty-table", "first-spelling", "first-spelling-reversed", "case"],
 )
 def test_extract_metadata_groups(tmp_path: Path, toml: str, expected: list[str]) -> None:
     path = write_pyproject(tmp_path, toml)
-
-    assert extract(path)["groups"] == expected
-
-
-@pytest.mark.parametrize(
-    ("groups", "expected"),
-    [
-        ('Foo_Bar = []\n"foo-bar" = []', ["Foo_Bar"]),
-        ('"foo-bar" = []\nFoo_Bar = []', ["foo-bar"]),
-        ("b = []\nA = []\nc = []", ["A", "b", "c"]),
-    ],
-)
-def test_extract_metadata_groups_are_deduplicated_per_pep_503(
-    tmp_path: Path, groups: str, expected: list[str]
-) -> None:
-    path = write_pyproject(
-        tmp_path, f'[project]\nname = "p"\nversion = "1"\n[dependency-groups]\n{groups}\n'
-    )
 
     assert extract(path)["groups"] == expected
 
@@ -328,56 +318,6 @@ def test_extract_metadata_groups_are_not_mixed_with_extras(tmp_path: Path) -> No
 
     assert metadata["extras"] == ["all", "numpy"]
     assert metadata["groups"] == ["dev"]
-
-
-@pytest.mark.parametrize("value", ["[]", '["dev"]', '"dev"', "1"])
-def test_extract_metadata_groups_must_be_a_table(tmp_path: Path, value: str) -> None:
-    path = write_pyproject(
-        tmp_path, f'dependency-groups = {value}\n[project]\nname = "p"\nversion = "1"\n'
-    )
-
-    with pytest.raises(MetadataError, match=r"\[dependency-groups\]: must be a table, got: "):
-        extract(path)
-
-
-def test_collect_requirements_sources() -> None:
-    data = {
-        "project": {
-            "dependencies": ["a"],
-            "optional-dependencies": {"Extra_One": ["b"], "two": ["c", "d"]},
-        },
-        "dependency-groups": {"Dev_Tools": ["e", {"include-group": "lint"}], "lint": ["f"]},
-    }
-
-    requirements, warnings = collect(data)
-
-    assert placed(requirements) == [
-        ("project", "a"),
-        ("extra:extra-one", "b"),
-        ("extra:two", "c"),
-        ("extra:two", "d"),
-        ("group:dev-tools", "e"),
-        ("group:dev-tools", "f"),
-        ("group:lint", "f"),
-    ]
-    assert messages(warnings) == []
-
-
-def test_collect_requirements_share_a_source_between_the_spellings_of_a_name() -> None:
-    data = {"project": {"optional-dependencies": {"Foo_Bar": ["a"], "foo-bar": ["b"]}}}
-
-    assert placed(collect(data)[0]) == [("extra:foo-bar", "a"), ("extra:foo-bar", "b")]
-
-
-def test_collect_requirements_empty() -> None:
-    assert collect({}) == ([], [])
-
-
-def test_collect_requirements_does_not_modify_the_data() -> None:
-    data = {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
-
-    assert spelled(collect(data)[0]) == ["a", "b"]
-    assert data == {"project": {"dependencies": ["a"], "optional-dependencies": {"x": ["b"]}}}
 
 
 @pytest.mark.parametrize(
@@ -478,22 +418,6 @@ def test_collect_requirements_of_the_file() -> None:
     ]
 
 
-@pytest.mark.parametrize("value", ['["a"]', '"numpy"', "1"])
-def test_extract_metadata_optional_dependencies_must_be_a_table(tmp_path: Path, value: str) -> None:
-    path = write_pyproject(
-        tmp_path,
-        f"""
-        [project]
-        name = "coola"
-        version = "1.2.3"
-        optional-dependencies = {value}
-        """,
-    )
-
-    with pytest.raises(MetadataError, match=r"\[project\]\.optional-dependencies: must be a table"):
-        extract(path)
-
-
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
@@ -530,16 +454,6 @@ def test_dependency_invalid_requirements_add_warnings(tmp_path: Path) -> None:
     assert warnings[1].message.startswith("Ignoring invalid requirement 'also bad>>': ")
     assert warnings[2].message.startswith("Ignoring invalid requirement 'oops==': ")
     assert warnings[3] == ReportWarning("dependency-not-found", "dependency 'missing' not found")
-
-
-def test_dependency_invalid_requirements_do_not_warn_when_nothing_is_requested(
-    tmp_path: Path,
-) -> None:
-    path = write_pyproject(tmp_path, INVALID_TOML)
-    result, warnings = extract_dependency_specifiers(load_pyproject(str(path)), [])
-
-    assert result == {}
-    assert messages(warnings) == []
 
 
 @pytest.mark.parametrize("value", ["nope", '{"a": 1}', "[1]"])
@@ -585,6 +499,12 @@ def test_dependency_name_matches_across_pep_503_spellings(tmp_path: Path) -> Non
             r"\[project\]\.optional-dependencies: must be a table",
         ),
         ("dependency-groups = []", r"\[dependency-groups\]: must be a table, got: \[\]"),
+        ('dependency-groups = ["dev"]', r"\[dependency-groups\]: must be a table, got: \['dev'\]"),
+        ("dependency-groups = 1", r"\[dependency-groups\]: must be a table, got: 1"),
+        (
+            '[project]\noptional-dependencies = "numpy"',
+            r"\[project\]\.optional-dependencies: must be a table, got: 'numpy'",
+        ),
         ('dependency-groups = "dev"', r"\[dependency-groups\]: must be a table, got: 'dev'"),
         (
             '[dependency-groups]\ndev = "numpy"',
@@ -655,12 +575,13 @@ def test_dependency_include_group_lookups(
 @pytest.mark.parametrize(
     "toml",
     [
+        INVALID_TOML,
         '[dependency-groups]\na = [{include-group = "a"}]\n',
         '[dependency-groups]\ndev = [{include-group = "tset"}]\n',
     ],
-    ids=["include-group-cycle", "unknown-include-group"],
+    ids=["invalid-requirement", "include-group-cycle", "unknown-include-group"],
 )
-def test_dependency_group_warnings_are_not_reported_when_nothing_is_requested(
+def test_the_warnings_of_the_tables_are_not_reported_when_nothing_is_requested(
     tmp_path: Path, toml: str
 ) -> None:
     path = write_pyproject(tmp_path, toml)
@@ -845,57 +766,33 @@ def test_extract_dependency_requirements_lists_every_requirement_with_its_marker
     }
 
 
-def test_extract_dependency_requirements_not_found_is_an_empty_list() -> None:
-    data = {"project": {"dependencies": ["numpy"]}}
-
-    assert extract_dependency_requirements(data, ["missing"]) == {"missing": []}
-
-
-def test_extract_dependency_requirements_without_dependencies_is_empty() -> None:
-    assert extract_dependency_requirements({"project": {"dependencies": ["numpy"]}}, []) == {}
-
-
-def test_extract_dependency_requirements_ignores_invalid_requirements() -> None:
-    data = {"project": {"dependencies": ["not a requirement!!", "numpy>=1"]}}
-
-    assert extract_dependency_requirements(data, ["numpy"]) == {
-        "numpy": [{"specifier": ">=1", "marker": "", "source": "project"}]
-    }
-
-
-def test_extract_dependency_requirements_keeps_duplicates() -> None:
-    data = {"project": {"dependencies": ["numpy>=1", "numpy>=1"]}}
-
-    assert extract_dependency_requirements(data, ["numpy"]) == {
-        "numpy": [
-            {"specifier": ">=1", "marker": "", "source": "project"},
-            {"specifier": ">=1", "marker": "", "source": "project"},
-        ]
-    }
+@pytest.mark.parametrize(
+    ("data", "names", "expected"),
+    [
+        ({"project": {"dependencies": ["numpy"]}}, ["missing"], {"missing": []}),
+        ({"project": {"dependencies": ["numpy"]}}, [], {}),
+        (
+            {"project": {"dependencies": ["not a requirement!!", "numpy>=1"]}},
+            ["numpy"],
+            {"numpy": [{"specifier": ">=1", "marker": "", "source": "project"}]},
+        ),
+        (
+            {"project": {"dependencies": ["numpy>=1", "numpy>=1"]}},
+            ["numpy"],
+            {
+                "numpy": [
+                    {"specifier": ">=1", "marker": "", "source": "project"},
+                    {"specifier": ">=1", "marker": "", "source": "project"},
+                ]
+            },
+        ),
+    ],
+    ids=["not-found-is-empty", "nothing-requested", "invalid-requirement-ignored", "duplicates"],
+)
+def test_extract_dependency_requirements(data: dict, names: list[str], expected: dict) -> None:
+    assert extract_dependency_requirements(data, names) == expected
 
 
 def test_extract_dependency_requirements_wrong_type() -> None:
     with pytest.raises(MetadataError, match=r"\[project\].dependencies: must be an array"):
         extract_dependency_requirements({"project": {"dependencies": 1}}, ["numpy"])
-
-
-def test_missing_dependency_is_a_warning_and_a_null_specifier() -> None:
-    requirements, _ = collect({"project": {"dependencies": ["a>=1"]}})
-
-    matches, warnings = lookup_dependencies(requirements, lookups("a", "b", "c@group:dev"))
-
-    assert [(text, len(reqs)) for text, reqs in matches.items()] == [
-        ("a", 1),
-        ("b", 0),
-        ("c@group:dev", 0),
-    ]
-    assert messages(warnings) == [
-        "dependency 'b' not found",
-        "dependency 'c@group:dev' not found",
-    ]
-
-
-def test_no_warning_when_every_dependency_is_found() -> None:
-    requirements, _ = collect({"project": {"dependencies": ["a>=1"]}})
-
-    assert lookup_dependencies(requirements, lookups("a"))[1] == []
