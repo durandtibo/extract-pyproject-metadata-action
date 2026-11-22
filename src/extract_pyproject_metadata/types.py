@@ -19,13 +19,12 @@ __all__ = [
 # The stable identifiers of the warnings; ``warning_codes.WARNING_CODES`` documents each.
 WarningCode = Literal[
     "static-and-dynamic",
-    "dynamic-version",
     "invalid-requires-python",
     "no-python-version",
     "invalid-requirement",
     "include-group-cycle",
     "unknown-include-group",
-    "dynamic-dependencies",
+    "dynamic-field",
     "dependency-not-found",
 ]
 

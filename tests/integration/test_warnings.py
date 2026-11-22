@@ -26,7 +26,6 @@ class Case(NamedTuple):
 
 CASES = [
     Case("static-and-dynamic", PROJECT + 'version = "1"\ndynamic = ["version"]\n'),
-    Case("dynamic-version", PROJECT + 'dynamic = ["version"]\n'),
     Case("invalid-requires-python", PROJECT + 'version = "1"\nrequires-python = "3"\n'),
     Case("no-python-version", PROJECT + 'version = "1"\nrequires-python = ">=4"\n'),
     Case(
@@ -47,7 +46,7 @@ CASES = [
         '["numpy"]',
     ),
     Case(
-        "dynamic-dependencies",
+        "dynamic-field",
         PROJECT + 'version = "1"\ndynamic = ["dependencies"]\n',
         '["numpy"]',
     ),
@@ -130,13 +129,13 @@ def test_a_dynamic_optional_dependencies_warns_without_a_lookup(tmp_path: Path) 
     report = _strict_report(tmp_path, DYNAMIC_EXTRAS, "[]", strict=False)
 
     assert report["extras"] == []
-    assert [w["code"] for w in report["warnings"]] == ["dynamic-dependencies"]
+    assert [w["code"] for w in report["warnings"]] == ["dynamic-field"]
 
 
 def test_a_dynamic_optional_dependencies_fails_strict_without_a_lookup(tmp_path: Path) -> None:
     with pytest.raises(
         MetadataError,
-        match=r"^strict: true and there are 1 warning\(s\):\n- dynamic-dependencies: ",
+        match=r"^strict: true and there are 1 warning\(s\):\n- dynamic-field: ",
     ):
         _strict_report(tmp_path, DYNAMIC_EXTRAS, "[]", strict=True)
 
@@ -151,3 +150,21 @@ def test_a_dynamic_dependencies_that_is_set_warns_with_a_lookup(tmp_path: Path) 
     report = _strict_report(tmp_path, DYNAMIC_AND_SET_DEPENDENCIES, '["x"]', strict=False)
 
     assert [w["code"] for w in report["warnings"]] == ["static-and-dynamic"]
+
+
+DYNAMIC_REQUIRES_PYTHON = PROJECT + 'version = "1"\ndynamic = ["requires-python"]\n'
+
+
+def test_a_dynamic_requires_python_warns_and_gives_every_candidate(tmp_path: Path) -> None:
+    report = _strict_report(tmp_path, DYNAMIC_REQUIRES_PYTHON, "[]", strict=False)
+
+    assert report["python_versions"] == ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    assert [w["code"] for w in report["warnings"]] == ["dynamic-field"]
+
+
+def test_a_dynamic_requires_python_fails_strict(tmp_path: Path) -> None:
+    with pytest.raises(
+        MetadataError,
+        match=r"^strict: true and there are 1 warning\(s\):\n- dynamic-field: ",
+    ):
+        _strict_report(tmp_path, DYNAMIC_REQUIRES_PYTHON, "[]", strict=True)

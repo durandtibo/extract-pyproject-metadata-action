@@ -287,8 +287,9 @@ def test_main_warning_annotation_names_the_file_and_escapes_it(
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines()[0] == (
-        f"::warning file={escaped},title=dynamic-version::"
-        "[project].version is dynamic, the version output is empty"
+        f"::warning file={escaped},title=dynamic-field::"
+        "[project].version is dynamic, the action cannot read it: "
+        "version and normalized-version are empty"
     )
 
 
@@ -392,7 +393,7 @@ def test_main_without_github_output_prints_the_json_and_no_annotation(
     assert main({"INPUT_PYPROJECT_PATH": str(path)}) == 0
 
     captured = capsys.readouterr()
-    assert json.loads(captured.out)["warnings"][0]["code"] == "dynamic-version"
+    assert json.loads(captured.out)["warnings"][0]["code"] == "dynamic-field"
     assert "::" not in captured.out
     assert captured.err == ""
 

@@ -191,7 +191,7 @@ jobs:
           assert_equal "outcome" "success" "$OUTCOME"
           assert_equal "name" "dynamic-pkg" "$NAME"
           assert_equal "version" "" "$VERSION"
-          assert_equal "warning code" "dynamic-version" "$(jq -r '.warnings[0].code' <<< "$JSON")"
+          assert_equal "warning code" "dynamic-field" "$(jq -r '.warnings[0].code' <<< "$JSON")"
           print_success "a warning is reported and does not fail the step"
 
   # The default of pyproject-path is `pyproject.toml` of the workspace.

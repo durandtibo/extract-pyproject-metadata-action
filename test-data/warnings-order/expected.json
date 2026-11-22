@@ -36,8 +36,8 @@
   },
   "warnings": [
     {
-      "code": "dynamic-version",
-      "message": "[project].version is dynamic, the version output is empty"
+      "code": "dynamic-field",
+      "message": "[project].version is dynamic, the action cannot read it: version and normalized-version are empty"
     },
     {
       "code": "invalid-requires-python",

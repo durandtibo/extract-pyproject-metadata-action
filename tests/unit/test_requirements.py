@@ -437,8 +437,9 @@ def test_collect_requirements_reports_a_cycle_once() -> None:
 def test_collect_requirements_warns_about_the_dynamic_fields(data: dict, fields: list[str]) -> None:
     assert collect(data)[1] == [
         ReportWarning(
-            "dynamic-dependencies",
-            f"[project].{field} is dynamic, it cannot be read, so no requirement is found in it",
+            "dynamic-field",
+            f"[project].{field} is dynamic, the action cannot read it: "
+            "no requirement is found in it",
         )
         for field in fields
     ]
@@ -699,7 +700,10 @@ def test_dependency_dynamic_dependencies_adds_a_warning() -> None:
 
     assert result == {"numpy": None}
     assert messages(warnings) == [
-        "[project].dependencies is dynamic, it cannot be read, so no requirement is found in it",
+        (
+            "[project].dependencies is dynamic, the action cannot read it: "
+            "no requirement is found in it"
+        ),
         "dependency 'numpy' not found",
     ]
 
