@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from typing import TYPE_CHECKING
@@ -13,7 +14,8 @@ import pytest
 import yaml
 
 from extract_pyproject_metadata.inputs import DEFAULT_INPUTS
-from tests.helpers import PACKAGE_PATH, ROOT_PATH
+from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES
+from tests.helpers import ROOT_PATH
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -196,15 +198,25 @@ def test_the_shared_matrix_workflow_reads_the_workflow_config_action() -> None:
     assert "os_unix" in text
 
 
-def test_the_maintenance_workflow_reads_the_default_candidates_where_they_are_defined() -> None:
+def test_the_maintenance_workflow_reads_the_default_candidates_from_action_yaml() -> None:
     text = (WORKFLOWS_PATH / "maintenance.yaml").read_text(encoding="utf-8")
-    module = (PACKAGE_PATH / "python_versions.py").read_text(encoding="utf-8")
 
-    assert (
-        "from extract_pyproject_metadata.python_versions import DEFAULT_PYTHON_CANDIDATES" in text
-    )
-    assert "DEFAULT_PYTHON_CANDIDATES = " in module
+    assert 'known="$(action_default python-candidates)"' in text
+    assert "DEFAULT_PYTHON_CANDIDATES and the default" not in text
+    assert "Update the default in action.yaml and DEFAULT_PYTHON_CANDIDATES" in text
     assert not (WORKFLOWS_PATH / "packaging-update.yaml").exists()
+
+
+def test_action_default_reads_the_default_candidates_that_the_package_repeats() -> None:
+    result = subprocess.run(
+        ["bash", "-c", "source scripts/test-helper.sh; action_default python-candidates"],
+        cwd=ROOT_PATH,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == DEFAULT_PYTHON_CANDIDATES
 
 
 def load_workflow(name: str) -> dict:
