@@ -47,7 +47,7 @@ jobs:
 
       - name: 🧪 Run the published action on a minimal file
         id: smoke
-        uses: durandtibo/extract-pyproject-metadata-action@6d9935d8d2af1ffc9baa090b516342e152dac85f # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.0
+        uses: durandtibo/extract-pyproject-metadata-action@aa5867876178387ad9d5da757d157c5febfaef5d # ratchet:durandtibo/extract-pyproject-metadata-action@v0.3.1
         with:
           pyproject-path: test-data/minimal/pyproject.toml
 
